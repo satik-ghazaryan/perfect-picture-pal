@@ -3,17 +3,17 @@ import { Menu, Mountain, Sparkles, UserRound, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const navItems = [
-  { label: "Tours Calendar", href: "#calendar" },
-  { label: "Audio Guides", href: "#tours" },
-  { label: "360° Virtual Tours", href: "#tours" },
-  { label: "My Loyalty Points", href: "#loyalty" },
+  { label: "Տուրերի օրացույց", href: "#calendar" },
+  { label: "Աուդիոգիդեր", href: "#tours" },
+  { label: "360° վիրտուալ տուրեր", href: "#tours" },
+  { label: "Իմ միավորները", href: "#loyalty" },
 ];
 
 const languages = ["HY", "EN", "RU"];
 
 export function SiteHeader() {
   const [open, setOpen] = useState(false);
-  const [lang, setLang] = useState("EN");
+  const [lang, setLang] = useState("HY");
 
   return (
     <header className="sticky top-0 z-50 border-b border-border/70 bg-background/85 backdrop-blur-xl">
@@ -24,10 +24,10 @@ export function SiteHeader() {
           </span>
           <span className="min-w-0">
             <span className="block truncate text-base font-extrabold leading-tight tracking-tight">
-              Armenia One-Day Tours
+              Արի Գնանք
             </span>
             <span className="block text-[11px] font-medium text-muted-foreground">
-              Out at dawn, back by dinner
+              Մեկօրյա տուրեր Արմավիրից
             </span>
           </span>
         </a>
@@ -62,12 +62,12 @@ export function SiteHeader() {
           </div>
           <Button size="sm" className="rounded-full font-semibold">
             <UserRound className="h-4 w-4" />
-            <span className="hidden sm:inline">Sign in</span>
+            <span className="hidden sm:inline">Մուտք</span>
           </Button>
           <button
             className="grid h-9 w-9 place-items-center rounded-full border border-border lg:hidden"
             onClick={() => setOpen((v) => !v)}
-            aria-label="Toggle menu"
+            aria-label="Բացել ընտրացանկը"
           >
             {open ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
           </button>
@@ -90,7 +90,7 @@ export function SiteHeader() {
           </nav>
           <div className="mt-2 flex items-center gap-2 px-3 pt-2 text-xs text-muted-foreground">
             <Sparkles className="h-3.5 w-3.5 text-accent" />
-            Phone or Google sign-in — 1 point per 100 ֏ spent
+            Մուտք հեռախոսահամարով կամ Google-ով — 1 միավոր յուրաքանչյուր 100 ֏-ի դիմաց
           </div>
         </div>
       )}

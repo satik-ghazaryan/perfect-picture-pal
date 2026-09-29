@@ -19,12 +19,12 @@ export function TourCard({ tour }: { tour: Tour }) {
         <div className="absolute inset-x-3 top-3 flex flex-wrap gap-1.5">
           {tour.has360 && (
             <span className="inline-flex items-center gap-1 rounded-full bg-navy/85 px-2.5 py-1 text-[11px] font-semibold text-navy-foreground backdrop-blur">
-              <Rotate3d className="h-3.5 w-3.5" /> 360° View
+              <Rotate3d className="h-3.5 w-3.5" /> 360° դիտում
             </span>
           )}
           {tour.hasAudioGuide && (
             <span className="inline-flex items-center gap-1 rounded-full bg-primary/90 px-2.5 py-1 text-[11px] font-semibold text-primary-foreground backdrop-blur">
-              <Headphones className="h-3.5 w-3.5" /> Audio Guide
+              <Headphones className="h-3.5 w-3.5" /> Աուդիոգիդ
             </span>
           )}
         </div>
@@ -35,7 +35,7 @@ export function TourCard({ tour }: { tour: Tour }) {
               : "bg-card/90 text-foreground backdrop-blur"
           }`}
         >
-          {low ? `Only ${tour.seatsLeft} seats left!` : `${tour.seatsLeft} seats available`}
+          {low ? `Մնացել է ընդամենը ${tour.seatsLeft} տեղ` : `Առկա է ${tour.seatsLeft} տեղ`}
         </span>
       </div>
 
@@ -50,13 +50,13 @@ export function TourCard({ tour }: { tour: Tour }) {
 
         <div className="space-y-1 text-xs text-muted-foreground">
           <p className="flex items-center gap-1.5">
-            <Clock className="h-3.5 w-3.5 shrink-0" /> 1 Day · departs {tour.departureTime}
+            <Clock className="h-3.5 w-3.5 shrink-0" /> 1 օր · մեկնումը՝ {tour.departureTime}
           </p>
           <p className="flex items-center gap-1.5">
             <MapPin className="h-3.5 w-3.5 shrink-0" />
             <span className="truncate">{tour.departurePlace}</span>
           </p>
-          <p>{tour.reviews} reviews · {tour.type}</p>
+          <p>{tour.reviews} կարծիք · {tour.type}</p>
         </div>
 
         <div className="mt-auto flex items-end justify-between gap-3 pt-1">
@@ -67,15 +67,15 @@ export function TourCard({ tour }: { tour: Tour }) {
               </span>
             )}
             <span className="text-lg font-extrabold text-primary">{formatAmd(tour.price)}</span>
-            <span className="block text-[11px] text-muted-foreground">per person</span>
+            <span className="block text-[11px] text-muted-foreground">մեկ անձի համար</span>
           </div>
         </div>
 
         <div className="grid grid-cols-2 gap-2">
           <Button variant="outline" className="rounded-full font-semibold">
-            View Details
+            Մանրամասներ
           </Button>
-          <Button className="rounded-full font-semibold">Book Now</Button>
+          <Button className="rounded-full font-semibold">Ամրագրել</Button>
         </div>
       </div>
     </article>
