@@ -32,17 +32,19 @@ import heroImage from "@/assets/hero-armenia.jpg";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Armenia One-Day Tours — Book Weekend Trips from Yerevan" },
+      { title: "Արի Գնանք — Մեկօրյա տուրեր Արմավիրից" },
       {
         name: "description",
         content:
-          "Guided one-day tours to Tatev, Lake Sevan, Garni and Geghard. Live seat availability, audio guides, 360° previews and instant booking in AMD.",
+          "Մեկօրյա տուրեր Արմավիրից դեպի Գառնի, Գեղարդ, Սևան, Դիլիջան և Տաթև։ Ամրագրեք ձեր տեղը առցանց։",
       },
-      { property: "og:title", content: "Armenia One-Day Tours" },
+      { property: "og:title", content: "Արի Գնանք — Մեկօրյա տուրեր Արմավիրից" },
       {
         property: "og:description",
-        content: "Discover Armenia in one day — weekend departures from Yerevan.",
+        content: "Բացահայտեք Հայաստանը մեկ օրում՝ շաբաթավերջի մեկնումներով Արմավիրից։",
       },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
   component: Index,
@@ -86,16 +88,16 @@ function Index() {
         <div className="absolute inset-0 flex items-center">
           <div className="mx-auto w-full max-w-7xl px-4 sm:px-6">
             <span className="inline-flex items-center gap-1.5 rounded-full bg-accent/20 px-3 py-1 text-xs font-bold text-accent ring-1 ring-accent/40">
-              <Sparkles className="h-3.5 w-3.5" /> Weekend departures from Yerevan
+              <Sparkles className="h-3.5 w-3.5" /> Շաբաթավերջի մեկնումներ Արմավիրից
             </span>
             <h1 className="mt-4 max-w-3xl text-4xl font-black leading-[1.05] tracking-tight text-navy-foreground sm:text-6xl">
-              Discover Armenia
+              Բացահայտիր Հայաստանը
               <br />
-              in One Day
+              մեկ օրում
             </h1>
             <p className="mt-4 max-w-xl text-sm text-navy-foreground/80 sm:text-base">
-              Monasteries on cliff edges, alpine lakes and canyon ziplines — small-group trips that
-              leave at dawn and get you home for dinner.
+              Հնագույն վանքեր, լեռնային լճեր ու անմոռանալի տեսարաններ՝ փոքր խմբերով
+              ճանապարհորդություններ, որոնք սկսվում են Արմավիրից։
             </p>
           </div>
         </div>
@@ -115,7 +117,7 @@ function Index() {
                   )}
                 >
                   <CalendarIcon className="h-4 w-4 text-primary" />
-                  {date ? format(date, "EEE, d MMM") : "Pick a date"}
+                  {date ? format(date, "d MMM") : "Ընտրեք ամսաթիվը"}
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-0" align="start">
@@ -132,10 +134,10 @@ function Index() {
 
             <Select value={region} onValueChange={setRegion}>
               <SelectTrigger className="!h-12 rounded-2xl font-medium">
-                <SelectValue placeholder="Destination" />
+                <SelectValue placeholder="Ուղղություն" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All destinations</SelectItem>
+                <SelectItem value="all">Բոլոր ուղղությունները</SelectItem>
                 {regions.map((r) => (
                   <SelectItem key={r} value={r}>
                     {r}
@@ -146,10 +148,10 @@ function Index() {
 
             <Select value={type} onValueChange={setType}>
               <SelectTrigger className="!h-12 rounded-2xl font-medium">
-                <SelectValue placeholder="Tour type" />
+                <SelectValue placeholder="Տուրի տեսակ" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Any type</SelectItem>
+                <SelectItem value="all">Բոլոր տեսակները</SelectItem>
                 {tourTypes.map((t) => (
                   <SelectItem key={t} value={t}>
                     {t}
@@ -160,7 +162,7 @@ function Index() {
 
             <Button className="h-12 rounded-2xl px-8 text-sm font-bold">
               <Search className="h-4 w-4" />
-              Search
+              Որոնել
             </Button>
           </div>
         </div>
@@ -171,9 +173,9 @@ function Index() {
         <div className="rounded-3xl bg-navy p-5 text-navy-foreground sm:p-7">
           <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 sm:flex sm:justify-between">
             <div className="min-w-0">
-              <h2 className="text-xl font-extrabold sm:text-2xl">This weekend</h2>
+              <h2 className="text-xl font-extrabold sm:text-2xl">Այս շաբաթավերջին</h2>
               <p className="text-xs text-navy-foreground/70 sm:text-sm">
-                Departures confirmed for {format(saturday, "d MMM")} – {format(sunday, "d MMM")}
+                Հաստատված մեկնումներ՝ {format(saturday, "d MMM")} – {format(sunday, "d MMM")}
               </p>
             </div>
             <div className="flex shrink-0 rounded-full bg-navy-foreground/10 p-1">
@@ -188,7 +190,7 @@ function Index() {
                       : "text-navy-foreground/70 hover:text-navy-foreground",
                   )}
                 >
-                  {d.slice(0, 3)} {format(d === "saturday" ? saturday : sunday, "d")}
+                    {d === "saturday" ? "Շբ" : "Կիր"} {format(d === "saturday" ? saturday : sunday, "d")}
                 </button>
               ))}
             </div>
@@ -205,7 +207,7 @@ function Index() {
                   {t.departureTime} · {t.departurePlace}
                 </p>
                 <p className="mt-3 text-sm font-extrabold text-accent">
-                  {t.seatsLeft} seats left
+                  Մնացել է {t.seatsLeft} տեղ
                 </p>
               </div>
             ))}
@@ -218,18 +220,18 @@ function Index() {
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-4 sm:flex sm:justify-between">
           <div className="min-w-0">
             <h2 className="text-2xl font-black tracking-tight sm:text-3xl">
-              Featured one-day tours
+              Առաջարկվող մեկօրյա տուրեր
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              {filtered.length} trips match your filters
+              Գտնվել է {filtered.length} տուր
             </p>
           </div>
           <div className="hidden shrink-0 items-center gap-3 text-xs text-muted-foreground sm:flex">
             <span className="inline-flex items-center gap-1.5">
-              <Rotate3d className="h-4 w-4 text-primary" /> 360° previews
+              <Rotate3d className="h-4 w-4 text-primary" /> 360° դիտում
             </span>
             <span className="inline-flex items-center gap-1.5">
-              <Headphones className="h-4 w-4 text-primary" /> Audio guides
+              <Headphones className="h-4 w-4 text-primary" /> Աուդիոգիդեր
             </span>
           </div>
         </div>
@@ -245,9 +247,9 @@ function Index() {
       <section id="loyalty" className="mx-auto max-w-7xl px-4 pb-12 sm:px-6">
         <div className="grid gap-4 rounded-3xl bg-primary-soft p-6 sm:grid-cols-3">
           {[
-            { icon: Sparkles, title: "Loyalty points", text: "Earn 1 point per 100 ֏, redeem on any tour." },
-            { icon: ShieldCheck, title: "Free cancellation", text: "Cancel up to 24h before departure." },
-            { icon: Headphones, title: "Guides in 3 languages", text: "Armenian, English and Russian." },
+            { icon: Sparkles, title: "Հավատարմության միավորներ", text: "Ստացեք 1 միավոր յուրաքանչյուր 100 ֏-ի դիմաց։" },
+            { icon: ShieldCheck, title: "Անվճար չեղարկում", text: "Չեղարկեք մեկնումից մինչև 24 ժամ առաջ։" },
+            { icon: Headphones, title: "Գիդեր 3 լեզվով", text: "Հայերեն, անգլերեն և ռուսերեն։" },
           ].map((item) => (
             <div key={item.title} className="flex min-w-0 items-start gap-3">
               <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-card text-primary">
@@ -266,9 +268,9 @@ function Index() {
       <footer className="bg-navy text-navy-foreground">
         <div className="mx-auto grid max-w-7xl gap-8 px-4 py-12 sm:grid-cols-2 sm:px-6 lg:grid-cols-4">
           <div>
-            <p className="text-base font-extrabold">Armenia One-Day Tours</p>
+            <p className="text-base font-extrabold">Արի Գնանք</p>
             <p className="mt-2 text-xs text-navy-foreground/70">
-              Small-group day trips from Yerevan, every weekend of the year.
+              Մեկօրյա տուրեր Արմավիրից՝ տարվա յուրաքանչյուր շաբաթավերջին։
             </p>
             <div className="mt-4 flex gap-2">
               {[Instagram, Facebook, MessageCircle].map((Icon, i) => (
@@ -283,33 +285,33 @@ function Index() {
             </div>
           </div>
           <div>
-            <p className="text-sm font-bold">Explore</p>
+            <p className="text-sm font-bold">Բացահայտեք</p>
             <ul className="mt-3 space-y-2 text-xs text-navy-foreground/70">
-              <li><a href="#calendar" className="hover:text-accent">Tours calendar</a></li>
-              <li><a href="#tours" className="hover:text-accent">Audio guides</a></li>
-              <li><a href="#tours" className="hover:text-accent">360° virtual tours</a></li>
-              <li><a href="#loyalty" className="hover:text-accent">Loyalty points</a></li>
+              <li><a href="#calendar" className="hover:text-accent">Տուրերի օրացույց</a></li>
+              <li><a href="#tours" className="hover:text-accent">Աուդիոգիդեր</a></li>
+              <li><a href="#tours" className="hover:text-accent">360° վիրտուալ տուրեր</a></li>
+              <li><a href="#loyalty" className="hover:text-accent">Հավատարմության միավորներ</a></li>
             </ul>
           </div>
           <div>
-            <p className="text-sm font-bold">Good to know</p>
+            <p className="text-sm font-bold">Օգտակար տեղեկություն</p>
             <ul className="mt-3 space-y-2 text-xs text-navy-foreground/70">
-              <li><a href="#top" className="hover:text-accent">Cancellation policy</a></li>
-              <li><a href="#top" className="hover:text-accent">Terms &amp; conditions</a></li>
-              <li><a href="#top" className="hover:text-accent">Privacy policy</a></li>
+              <li><a href="#top" className="hover:text-accent">Չեղարկման պայմաններ</a></li>
+              <li><a href="#top" className="hover:text-accent">Օգտագործման պայմաններ</a></li>
+              <li><a href="#top" className="hover:text-accent">Գաղտնիության քաղաքականություն</a></li>
             </ul>
           </div>
           <div>
-            <p className="text-sm font-bold">Talk to us</p>
+            <p className="text-sm font-bold">Կապ մեզ հետ</p>
             <ul className="mt-3 space-y-2 text-xs text-navy-foreground/70">
               <li className="flex items-center gap-2"><Phone className="h-3.5 w-3.5" /> +374 10 000 000</li>
               <li className="flex items-center gap-2"><MessageCircle className="h-3.5 w-3.5" /> WhatsApp / Viber</li>
-              <li>Republic Square, Yerevan</li>
+              <li>Կենտրոնական հրապարակ, Արմավիր</li>
             </ul>
           </div>
         </div>
         <div className="border-t border-navy-foreground/10 px-4 py-5 text-center text-[11px] text-navy-foreground/60">
-          © {new Date().getFullYear()} Armenia One-Day Tours. All rights reserved.
+          © {new Date().getFullYear()} Արի Գնանք։ Բոլոր իրավունքները պաշտպանված են։
         </div>
       </footer>
     </div>

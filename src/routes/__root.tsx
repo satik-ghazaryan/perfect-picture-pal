@@ -77,10 +77,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Armenia One-Day Tours" },
+      { title: "Արի Գնանք" },
       {
         name: "description",
-        content: "Book guided one-day tours across Armenia — Tatev, Sevan, Garni and more.",
+        content: "Մեկօրյա տուրեր Արմավիրից դեպի Հայաստանի տեսարժան վայրեր։",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -108,7 +108,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="hy">
       <head>
         <HeadContent />
       </head>
