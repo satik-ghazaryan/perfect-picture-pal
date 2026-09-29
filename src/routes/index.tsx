@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { format } from "date-fns";
+import { hy } from "date-fns/locale";
 import {
   CalendarIcon,
   Headphones,
@@ -117,7 +118,7 @@ function Index() {
                   )}
                 >
                   <CalendarIcon className="h-4 w-4 text-primary" />
-                  {date ? format(date, "d MMM") : "Ընտրեք ամսաթիվը"}
+                  {date ? format(date, "d MMM", { locale: hy }) : "Ընտրեք ամսաթիվը"}
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-0" align="start">
@@ -127,6 +128,7 @@ function Index() {
                   onSelect={setDate}
                   defaultMonth={saturday}
                   initialFocus
+                  locale={hy}
                   className={cn("p-3 pointer-events-auto")}
                 />
               </PopoverContent>
@@ -170,12 +172,12 @@ function Index() {
 
       {/* Weekend calendar widget */}
       <section id="calendar" className="mx-auto max-w-7xl px-4 pt-12 sm:px-6">
-        <div className="rounded-3xl bg-navy p-5 text-navy-foreground sm:p-7">
-          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 sm:flex sm:justify-between">
+        <div className="min-w-0 overflow-hidden rounded-3xl bg-navy p-5 text-navy-foreground sm:p-7">
+          <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <h2 className="text-xl font-extrabold sm:text-2xl">Այս շաբաթավերջին</h2>
               <p className="text-xs text-navy-foreground/70 sm:text-sm">
-                Հաստատված մեկնումներ՝ {format(saturday, "d MMM")} – {format(sunday, "d MMM")}
+                Հաստատված մեկնումներ՝ {format(saturday, "d MMM", { locale: hy })} – {format(sunday, "d MMM", { locale: hy })}
               </p>
             </div>
             <div className="flex shrink-0 rounded-full bg-navy-foreground/10 p-1">
@@ -190,17 +192,17 @@ function Index() {
                       : "text-navy-foreground/70 hover:text-navy-foreground",
                   )}
                 >
-                    {d === "saturday" ? "Շբ" : "Կիր"} {format(d === "saturday" ? saturday : sunday, "d")}
+                    {d === "saturday" ? "Շբ" : "Կիր"} {format(d === "saturday" ? saturday : sunday, "d", { locale: hy })}
                 </button>
               ))}
             </div>
           </div>
 
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-5 grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {weekendTours.map((t) => (
               <div
                 key={t.id}
-                className="rounded-2xl bg-navy-foreground/10 p-4 ring-1 ring-navy-foreground/10"
+                className="min-w-0 rounded-2xl bg-navy-foreground/10 p-4 ring-1 ring-navy-foreground/10"
               >
                 <p className="truncate text-sm font-bold">{t.title}</p>
                 <p className="mt-1 text-xs text-navy-foreground/70">
