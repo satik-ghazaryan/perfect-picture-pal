@@ -7,7 +7,7 @@ export type Tour = {
   title: string;
   image: string;
   region: string;
-  type: "Hiking" | "Cultural" | "Extreme";
+  type: "Արշավային" | "Մշակութային" | "Էքստրեմալ";
   departurePlace: string;
   departureTime: string;
   price: number;
@@ -21,59 +21,26 @@ export type Tour = {
 };
 
 export const regions = [
-  "Tatev & Khndzoresk",
-  "Sevan & Dilijan",
-  "Garni & Geghard",
-  "Areni & Noravank",
+  "Գառնի և Գեղարդ",
+  "Սևան և Դիլիջան",
+  "Տաթև",
 ];
 
-export const tourTypes = ["Hiking", "Cultural", "Extreme"] as const;
+export const tourTypes = ["Արշավային", "Մշակութային", "Էքստրեմալ"] as const;
+
+const armavirDeparture = "Արմավիր քաղաք, Կենտրոնական հրապարակ";
 
 export const tours: Tour[] = [
   {
-    id: "tatev",
-    title: "Tatev Monastery & Wings of Tatev Ropeway",
-    image: tatev,
-    region: "Tatev & Khndzoresk",
-    type: "Cultural",
-    departurePlace: "Republic Square",
-    departureTime: "08:30",
-    price: 24000,
-    oldPrice: 29000,
-    seatsLeft: 3,
-    rating: 4.9,
-    reviews: 412,
-    has360: true,
-    hasAudioGuide: true,
-    day: "saturday",
-  },
-  {
-    id: "sevan",
-    title: "Lake Sevan, Dilijan & Haghartsin Forest Walk",
-    image: sevan,
-    region: "Sevan & Dilijan",
-    type: "Hiking",
-    departurePlace: "Yeritasardakan Metro",
-    departureTime: "09:00",
-    price: 15500,
-    seatsLeft: 11,
-    rating: 4.7,
-    reviews: 287,
-    has360: true,
-    hasAudioGuide: true,
-    day: "sunday",
-  },
-  {
     id: "garni",
-    title: "Garni Temple, Geghard & Symphony of Stones",
+    title: "Արմավիր – Գառնի, Գեղարդ և Քարերի Սիմֆոնիա",
     image: garni,
-    region: "Garni & Geghard",
-    type: "Cultural",
-    departurePlace: "Republic Square",
+    region: "Գառնի և Գեղարդ",
+    type: "Մշակութային",
+    departurePlace: armavirDeparture,
     departureTime: "08:30",
     price: 12000,
-    oldPrice: 14000,
-    seatsLeft: 6,
+    seatsLeft: 3,
     rating: 4.8,
     reviews: 531,
     has360: false,
@@ -81,52 +48,36 @@ export const tours: Tour[] = [
     day: "saturday",
   },
   {
-    id: "azat-zipline",
-    title: "Azat Gorge Zipline & Off-Road Adventure",
-    image: garni,
-    region: "Garni & Geghard",
-    type: "Extreme",
-    departurePlace: "Northern Avenue",
-    departureTime: "07:45",
-    price: 32000,
-    seatsLeft: 2,
-    rating: 4.6,
-    reviews: 98,
-    has360: true,
-    hasAudioGuide: false,
-    day: "sunday",
-  },
-  {
-    id: "noravank",
-    title: "Areni Wine Cave & Noravank Canyon",
+    id: "sevan",
+    title: "Արմավիր – Սևանա լիճ, Դիլիջան և Հաղարծին",
     image: sevan,
-    region: "Areni & Noravank",
-    type: "Cultural",
-    departurePlace: "Republic Square",
+    region: "Սևան և Դիլիջան",
+    type: "Մշակութային",
+    departurePlace: armavirDeparture,
     departureTime: "08:00",
-    price: 18000,
-    seatsLeft: 14,
-    rating: 4.8,
-    reviews: 203,
-    has360: false,
+    price: 15000,
+    seatsLeft: 8,
+    rating: 4.7,
+    reviews: 287,
+    has360: true,
     hasAudioGuide: true,
     day: "sunday",
   },
   {
-    id: "khustup",
-    title: "Mount Khustup Summit Day Hike",
+    id: "tatev",
+    title: "Արմավիր – Տաթևի վանք և Տաթևեր ճոպանուղի",
     image: tatev,
-    region: "Tatev & Khndzoresk",
-    type: "Hiking",
-    departurePlace: "Kilikia Bus Station",
-    departureTime: "06:30",
-    price: 21000,
+    region: "Տաթև",
+    type: "Մշակութային",
+    departurePlace: armavirDeparture,
+    departureTime: "07:00",
+    price: 22000,
     seatsLeft: 5,
     rating: 4.9,
-    reviews: 76,
-    has360: false,
-    hasAudioGuide: false,
-    day: "saturday",
+    reviews: 412,
+    has360: true,
+    hasAudioGuide: true,
+    day: "sunday",
   },
 ];
 
