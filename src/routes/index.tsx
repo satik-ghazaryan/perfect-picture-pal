@@ -102,7 +102,7 @@ function Index() {
       </section>
 
       {/* Search bar */}
-      <section className="mx-auto -mt-12 max-w-7xl px-4 sm:px-6">
+      <section className="relative z-10 mx-auto -mt-12 max-w-7xl px-4 sm:px-6">
         <div className="rounded-3xl border border-border bg-card p-3 shadow-float sm:p-4">
           <div className="grid gap-3 lg:grid-cols-[1.1fr_1.2fr_1fr_auto]">
             <Popover>
