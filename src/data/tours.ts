@@ -2,6 +2,26 @@ import tatev from "@/assets/tour-tatev.jpg";
 import sevan from "@/assets/tour-sevan.jpg";
 import garni from "@/assets/tour-garni.jpg";
 
+export type ItineraryStop = {
+  time: string;
+  title: string;
+  description: string;
+};
+
+export type AudioChapter = {
+  id: string;
+  title: string;
+  duration: number; // seconds
+};
+
+export type Hotspot = {
+  id: string;
+  x: number; // percent of panorama width
+  y: number; // percent of viewer height
+  title: string;
+  description: string;
+};
+
 export type Tour = {
   id: string;
   title: string;
@@ -10,6 +30,7 @@ export type Tour = {
   type: "Արշավային" | "Մշակութային" | "Էքստրեմալ";
   departurePlace: string;
   departureTime: string;
+  returnTime: string;
   price: number;
   oldPrice?: number;
   seatsLeft: number;
@@ -18,7 +39,15 @@ export type Tour = {
   has360: boolean;
   hasAudioGuide: boolean;
   day: "saturday" | "sunday";
+  summary: string;
+  highlights: string[];
+  itinerary: ItineraryStop[];
+  included: string[];
+  excluded: string[];
+  audioChapters: AudioChapter[];
+  hotspots: Hotspot[];
 };
+
 
 export const regions = [
   "Գառնի և Գեղարդ",
