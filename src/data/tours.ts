@@ -8,10 +8,14 @@ export type ItineraryStop = {
   description: string;
 };
 
+export type AudioLanguage = "hy" | "en" | "ru";
+
 export type AudioChapter = {
   id: string;
   title: string;
   duration: number; // seconds
+  audioUrl?: string;
+  language?: AudioLanguage;
 };
 
 export type Hotspot = {
@@ -46,6 +50,7 @@ export type Tour = {
   excluded: string[];
   audioChapters: AudioChapter[];
   hotspots: Hotspot[];
+  panoramaUrl?: string;
 };
 
 
@@ -56,6 +61,15 @@ export const regions = [
 ];
 
 export const tourTypes = ["Արշավային", "Մշակութային", "Էքստրեմալ"] as const;
+
+export const packingList = [
+  "Հարմար քայլելու կոշիկներ",
+  "Արևապաշտպան գլխարկ և արևային ակնոց",
+  "Թեթև բաճկոն կամ հողմապաշտպան",
+  "Անձնագիր կամ նույնականացման քարտ",
+  "Լիցքավորված հեռախոս",
+  "Կանխիկ կամ քարտ՝ ճաշի և հուշանվերների համար",
+];
 
 const armavirDeparture = "Արմավիր քաղաք, Կենտրոնական հրապարակ";
 

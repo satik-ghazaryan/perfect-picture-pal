@@ -1,12 +1,18 @@
+import { useNavigate } from "@tanstack/react-router";
 import { Clock, Headphones, MapPin, Rotate3d, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatAmd, type Tour } from "@/data/tours";
 
 export function TourCard({ tour }: { tour: Tour }) {
+  const navigate = useNavigate();
   const low = tour.seatsLeft <= 5;
+  const openDetails = () => navigate({ to: "/tours/$id", params: { id: tour.id } });
 
   return (
-    <article className="group flex flex-col overflow-hidden rounded-3xl border border-border bg-card shadow-card transition-all duration-300 hover:-translate-y-1 hover:shadow-float">
+    <article
+      onClick={openDetails}
+      className="group flex cursor-pointer flex-col overflow-hidden rounded-3xl border border-border bg-card shadow-card transition-all duration-300 hover:-translate-y-1 hover:shadow-float"
+    >
       <div className="relative">
         <img
           src={tour.image}
@@ -72,10 +78,25 @@ export function TourCard({ tour }: { tour: Tour }) {
         </div>
 
         <div className="grid grid-cols-2 gap-2">
-          <Button variant="outline" className="rounded-full font-semibold">
+          <Button
+            variant="outline"
+            className="rounded-full font-semibold"
+            onClick={(event) => {
+              event.stopPropagation();
+              openDetails();
+            }}
+          >
             Մանրամասներ
           </Button>
-          <Button className="rounded-full font-semibold">Ամրագրել</Button>
+          <Button
+            className="rounded-full font-semibold"
+            onClick={(event) => {
+              event.stopPropagation();
+              navigate({ to: "/tours/$id", params: { id: tour.id }, hash: "book" });
+            }}
+          >
+            Ամրագրել
+          </Button>
         </div>
       </div>
     </article>

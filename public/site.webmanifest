@@ -1,0 +1,25 @@
+{
+  "name": "Արի Գնանք",
+  "short_name": "Ari Gnank",
+  "description": "Մեկօրյա տուրեր Արմավիրից",
+  "lang": "hy",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f7fbf9",
+  "theme_color": "#0f766e",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Headphones, Languages, Pause, Play, SkipBack, SkipForward } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
@@ -20,43 +20,123 @@ const languages = [
   { code: "ru", label: "Русский" },
 ];
 
+function LanguageSelect({ lang, onChange }: { lang: string; onChange: (value: string) => void }) {
+  return (
+    <Select value={lang} onValueChange={onChange}>
+      <SelectTrigger className="h-9 w-[140px] rounded-full bg-card text-xs font-semibold">
+        <Languages className="h-3.5 w-3.5" />
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {languages.map((item) => (
+          <SelectItem key={item.code} value={item.code}>
+            {item.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 const fmt = (s: number) =>
   `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
-export function AudioGuidePlayer({ chapters }: { chapters: AudioChapter[] }) {
+const emptyChapters: AudioChapter[] = [];
+
+export function AudioGuidePlayer({ chapters = emptyChapters }: { chapters?: AudioChapter[] }) {
+  const source = chapters ?? emptyChapters;
   const [index, setIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [position, setPosition] = useState(0);
   const [speed, setSpeed] = useState<number>(1);
   const [lang, setLang] = useState("hy");
+  const [mediaDuration, setMediaDuration] = useState(0);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const list = useMemo(
+    () => source.filter((chapter) => (chapter.language ?? "hy") === lang),
+    [source, lang],
+  );
 
-  const current = chapters[index];
-  const total = useMemo(() => chapters.reduce((a, c) => a + c.duration, 0), [chapters]);
+  const safeIndex = list.length === 0 ? 0 : Math.min(index, list.length - 1);
+  const current = list[safeIndex];
+  const total = useMemo(() => list.reduce((sum, chapter) => sum + chapter.duration, 0), [list]);
+  const duration = mediaDuration > 0 ? mediaDuration : current?.duration ?? 0;
 
   useEffect(() => {
-    if (!playing) return;
+    setIndex(0);
+    setPosition(0);
+    setPlaying(false);
+    setMediaDuration(0);
+  }, [lang]);
+
+  useEffect(() => {
+    setMediaDuration(0);
+    setPosition(0);
+  }, [current?.id]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || !current?.audioUrl) return;
+    audio.playbackRate = speed;
+    if (!playing) {
+      audio.pause();
+      return;
+    }
+    void audio.play().catch(() => setPlaying(false));
+  }, [playing, speed, current?.id, current?.audioUrl]);
+
+  useEffect(() => {
+    if (!playing || !current || current.audioUrl) return;
+    const chapterDuration = current.duration;
+    const chapterIndex = safeIndex;
+    const count = list.length;
     const id = window.setInterval(() => {
       setPosition((p) => {
         const next = p + speed;
-        if (next >= current.duration) {
-          if (index < chapters.length - 1) {
-            setIndex(index + 1);
+        if (next >= chapterDuration) {
+          if (chapterIndex < count - 1) {
+            setIndex(chapterIndex + 1);
             return 0;
           }
           setPlaying(false);
-          return current.duration;
+          return chapterDuration;
         }
         return next;
       });
     }, 1000);
     return () => window.clearInterval(id);
-  }, [playing, speed, current, index, chapters.length]);
+  }, [playing, speed, current, safeIndex, list.length]);
 
   const select = (i: number) => {
     setIndex(i);
     setPosition(0);
     setPlaying(true);
   };
+
+  const finishChapter = () => {
+    if (safeIndex < list.length - 1) {
+      setIndex(safeIndex + 1);
+      setPosition(0);
+      return;
+    }
+    setPlaying(false);
+    setPosition(duration);
+  };
+
+  if (!current) {
+    return (
+      <div className="rounded-3xl border border-border bg-card p-4 shadow-card">
+        {source.length > 0 && (
+          <div className="mb-3 flex justify-end">
+            <LanguageSelect lang={lang} onChange={setLang} />
+          </div>
+        )}
+        <p className="text-sm text-muted-foreground">
+          {source.length > 0 ? "Այս լեզվով գլուխներ դեռ չկան։" : "Աուդիոգիդը այս տուրի համար դեռ հասանելի չէ։"}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="overflow-hidden rounded-3xl border border-border bg-card shadow-card">
@@ -68,43 +148,50 @@ export function AudioGuidePlayer({ chapters }: { chapters: AudioChapter[] }) {
           <div>
             <p className="text-sm font-bold leading-tight">Աուդիոգիդ</p>
             <p className="text-[11px] text-muted-foreground">
-              {chapters.length} գլուխ · {fmt(total)} ընդհանուր
+              {list.length} գլուխ · {fmt(total)} ընդհանուր
             </p>
           </div>
         </div>
-        <Select value={lang} onValueChange={setLang}>
-          <SelectTrigger className="h-9 w-[140px] rounded-full bg-card text-xs font-semibold">
-            <Languages className="h-3.5 w-3.5" />
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {languages.map((l) => (
-              <SelectItem key={l.code} value={l.code}>
-                {l.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <LanguageSelect lang={lang} onChange={setLang} />
       </div>
 
       <div className="space-y-3 p-4">
+        {current.audioUrl && (
+          <audio
+            key={current.id}
+            ref={audioRef}
+            src={current.audioUrl}
+            preload="metadata"
+            onLoadedMetadata={(event) => {
+              const next = event.currentTarget.duration;
+              if (Number.isFinite(next) && next > 0) setMediaDuration(next);
+            }}
+            onTimeUpdate={(event) => setPosition(event.currentTarget.currentTime)}
+            onEnded={finishChapter}
+          />
+        )}
         <div>
           <p className="text-xs font-semibold text-muted-foreground">
-            Գլուխ {index + 1} / {chapters.length}
+            Գլուխ {safeIndex + 1} / {list.length}
           </p>
           <p className="text-base font-bold leading-snug">{current.title}</p>
         </div>
 
         <Slider
-          value={[Math.min(position, current.duration)]}
-          max={current.duration}
+          value={[Math.min(position, duration || 1)]}
+          max={duration || 1}
           step={1}
-          onValueChange={(v) => setPosition(v[0])}
+          onValueChange={(v) => {
+            const next = v[0];
+            if (next === undefined) return;
+            setPosition(next);
+            if (audioRef.current && current.audioUrl) audioRef.current.currentTime = next;
+          }}
           aria-label="Նվագարկման ժամանակագիծ"
         />
         <div className="flex justify-between text-[11px] font-medium text-muted-foreground">
           <span>{fmt(position)}</span>
-          <span>{fmt(current.duration)}</span>
+          <span>{fmt(duration)}</span>
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -130,7 +217,7 @@ export function AudioGuidePlayer({ chapters }: { chapters: AudioChapter[] }) {
               size="icon"
               variant="outline"
               className="rounded-full"
-              onClick={() => select(Math.min(chapters.length - 1, index + 1))}
+              onClick={() => select(Math.min(list.length - 1, index + 1))}
               aria-label="Հաջորդ գլուխ"
             >
               <SkipForward className="h-4 w-4" />
@@ -156,19 +243,19 @@ export function AudioGuidePlayer({ chapters }: { chapters: AudioChapter[] }) {
         </div>
 
         <ul className="divide-y divide-border rounded-2xl border border-border">
-          {chapters.map((c, i) => (
+          {list.map((c, i) => (
             <li key={c.id}>
               <button
                 onClick={() => select(i)}
                 className={cn(
                   "flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-primary-soft",
-                  i === index && "bg-primary-soft",
+                  i === safeIndex && "bg-primary-soft",
                 )}
               >
                 <span
                   className={cn(
                     "grid h-7 w-7 shrink-0 place-items-center rounded-full text-[11px] font-bold",
-                    i === index
+                    i === safeIndex
                       ? "bg-primary text-primary-foreground"
                       : "bg-muted text-muted-foreground",
                   )}

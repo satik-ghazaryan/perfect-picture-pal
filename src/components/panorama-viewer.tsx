@@ -79,8 +79,14 @@ export function PanoramaViewer({ image, title, hotspots }: Props) {
         onMouseMove={(e) => dragRef.current && moveDrag(e.clientX)}
         onMouseUp={endDrag}
         onMouseLeave={endDrag}
-        onTouchStart={(e) => startDrag(e.touches[0].clientX)}
-        onTouchMove={(e) => moveDrag(e.touches[0].clientX)}
+        onTouchStart={(e) => {
+          const x = e.touches[0]?.clientX;
+          if (x !== undefined) startDrag(x);
+        }}
+        onTouchMove={(e) => {
+          const x = e.touches[0]?.clientX;
+          if (x !== undefined) moveDrag(x);
+        }}
         onTouchEnd={endDrag}
         role="img"
         aria-label={`${title} — 360° համայնապատկեր`}

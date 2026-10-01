@@ -10,33 +10,156 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AdminRouteImport } from './routes/admin'
+import { Route as GuideRouteImport } from './routes/guide'
+import { Route as LoyaltyRouteImport } from './routes/loyalty'
+import { Route as VendorRouteImport } from './routes/vendor'
+import { Route as ToursIdRouteImport } from './routes/tours/$id'
+import { Route as ApiNotificationsDispatchRouteImport } from './routes/api/notifications/dispatch'
+import { Route as ApiPaymentArcaCallbackRouteImport } from './routes/api/payment/arca-callback'
+import { Route as ApiPaymentIdramCallbackRouteImport } from './routes/api/payment/idram-callback'
+import { Route as ApiPaymentTelcellCallbackRouteImport } from './routes/api/payment/telcell-callback'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GuideRoute = GuideRouteImport.update({
+  id: '/guide',
+  path: '/guide',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoyaltyRoute = LoyaltyRouteImport.update({
+  id: '/loyalty',
+  path: '/loyalty',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VendorRoute = VendorRouteImport.update({
+  id: '/vendor',
+  path: '/vendor',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ToursIdRoute = ToursIdRouteImport.update({
+  id: '/tours/$id',
+  path: '/tours/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiNotificationsDispatchRoute =
+  ApiNotificationsDispatchRouteImport.update({
+    id: '/api/notifications/dispatch',
+    path: '/api/notifications/dispatch',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPaymentArcaCallbackRoute = ApiPaymentArcaCallbackRouteImport.update({
+  id: '/api/payment/arca-callback',
+  path: '/api/payment/arca-callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPaymentIdramCallbackRoute = ApiPaymentIdramCallbackRouteImport.update({
+  id: '/api/payment/idram-callback',
+  path: '/api/payment/idram-callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPaymentTelcellCallbackRoute =
+  ApiPaymentTelcellCallbackRouteImport.update({
+    id: '/api/payment/telcell-callback',
+    path: '/api/payment/telcell-callback',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
+  '/guide': typeof GuideRoute
+  '/loyalty': typeof LoyaltyRoute
+  '/vendor': typeof VendorRoute
+  '/tours/$id': typeof ToursIdRoute
+  '/api/notifications/dispatch': typeof ApiNotificationsDispatchRoute
+  '/api/payment/arca-callback': typeof ApiPaymentArcaCallbackRoute
+  '/api/payment/idram-callback': typeof ApiPaymentIdramCallbackRoute
+  '/api/payment/telcell-callback': typeof ApiPaymentTelcellCallbackRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
+  '/guide': typeof GuideRoute
+  '/loyalty': typeof LoyaltyRoute
+  '/vendor': typeof VendorRoute
+  '/tours/$id': typeof ToursIdRoute
+  '/api/notifications/dispatch': typeof ApiNotificationsDispatchRoute
+  '/api/payment/arca-callback': typeof ApiPaymentArcaCallbackRoute
+  '/api/payment/idram-callback': typeof ApiPaymentIdramCallbackRoute
+  '/api/payment/telcell-callback': typeof ApiPaymentTelcellCallbackRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
+  '/guide': typeof GuideRoute
+  '/loyalty': typeof LoyaltyRoute
+  '/vendor': typeof VendorRoute
+  '/tours/$id': typeof ToursIdRoute
+  '/api/notifications/dispatch': typeof ApiNotificationsDispatchRoute
+  '/api/payment/arca-callback': typeof ApiPaymentArcaCallbackRoute
+  '/api/payment/idram-callback': typeof ApiPaymentIdramCallbackRoute
+  '/api/payment/telcell-callback': typeof ApiPaymentTelcellCallbackRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/admin'
+    | '/guide'
+    | '/loyalty'
+    | '/vendor'
+    | '/tours/$id'
+    | '/api/notifications/dispatch'
+    | '/api/payment/arca-callback'
+    | '/api/payment/idram-callback'
+    | '/api/payment/telcell-callback'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/admin'
+    | '/guide'
+    | '/loyalty'
+    | '/vendor'
+    | '/tours/$id'
+    | '/api/notifications/dispatch'
+    | '/api/payment/arca-callback'
+    | '/api/payment/idram-callback'
+    | '/api/payment/telcell-callback'
+  id:
+    | '__root__'
+    | '/'
+    | '/admin'
+    | '/guide'
+    | '/loyalty'
+    | '/vendor'
+    | '/tours/$id'
+    | '/api/notifications/dispatch'
+    | '/api/payment/arca-callback'
+    | '/api/payment/idram-callback'
+    | '/api/payment/telcell-callback'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AdminRoute: typeof AdminRoute
+  GuideRoute: typeof GuideRoute
+  LoyaltyRoute: typeof LoyaltyRoute
+  VendorRoute: typeof VendorRoute
+  ToursIdRoute: typeof ToursIdRoute
+  ApiNotificationsDispatchRoute: typeof ApiNotificationsDispatchRoute
+  ApiPaymentArcaCallbackRoute: typeof ApiPaymentArcaCallbackRoute
+  ApiPaymentIdramCallbackRoute: typeof ApiPaymentIdramCallbackRoute
+  ApiPaymentTelcellCallbackRoute: typeof ApiPaymentTelcellCallbackRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +171,83 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guide': {
+      id: '/guide'
+      path: '/guide'
+      fullPath: '/guide'
+      preLoaderRoute: typeof GuideRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/loyalty': {
+      id: '/loyalty'
+      path: '/loyalty'
+      fullPath: '/loyalty'
+      preLoaderRoute: typeof LoyaltyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/vendor': {
+      id: '/vendor'
+      path: '/vendor'
+      fullPath: '/vendor'
+      preLoaderRoute: typeof VendorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tours/$id': {
+      id: '/tours/$id'
+      path: '/tours/$id'
+      fullPath: '/tours/$id'
+      preLoaderRoute: typeof ToursIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/notifications/dispatch': {
+      id: '/api/notifications/dispatch'
+      path: '/api/notifications/dispatch'
+      fullPath: '/api/notifications/dispatch'
+      preLoaderRoute: typeof ApiNotificationsDispatchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/payment/arca-callback': {
+      id: '/api/payment/arca-callback'
+      path: '/api/payment/arca-callback'
+      fullPath: '/api/payment/arca-callback'
+      preLoaderRoute: typeof ApiPaymentArcaCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/payment/idram-callback': {
+      id: '/api/payment/idram-callback'
+      path: '/api/payment/idram-callback'
+      fullPath: '/api/payment/idram-callback'
+      preLoaderRoute: typeof ApiPaymentIdramCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/payment/telcell-callback': {
+      id: '/api/payment/telcell-callback'
+      path: '/api/payment/telcell-callback'
+      fullPath: '/api/payment/telcell-callback'
+      preLoaderRoute: typeof ApiPaymentTelcellCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AdminRoute: AdminRoute,
+  GuideRoute: GuideRoute,
+  LoyaltyRoute: LoyaltyRoute,
+  VendorRoute: VendorRoute,
+  ToursIdRoute: ToursIdRoute,
+  ApiNotificationsDispatchRoute: ApiNotificationsDispatchRoute,
+  ApiPaymentArcaCallbackRoute: ApiPaymentArcaCallbackRoute,
+  ApiPaymentIdramCallbackRoute: ApiPaymentIdramCallbackRoute,
+  ApiPaymentTelcellCallbackRoute: ApiPaymentTelcellCallbackRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

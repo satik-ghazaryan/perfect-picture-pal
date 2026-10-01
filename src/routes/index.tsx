@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { format } from "date-fns";
 import { hy } from "date-fns/locale";
 import {
@@ -15,6 +15,13 @@ import {
   Facebook,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -27,7 +34,8 @@ import {
 import { cn } from "@/lib/utils";
 import { SiteHeader } from "@/components/site-header";
 import { TourCard } from "@/components/tour-card";
-import { regions, tours, tourTypes } from "@/data/tours";
+import { regions, tourTypes } from "@/data/tours";
+import { getAdminServerSnapshot, getAdminSnapshot, hydrateAdmin, subscribeAdmin } from "@/lib/admin";
 import heroImage from "@/assets/hero-armenia.jpg";
 
 export const Route = createFileRoute("/")({
@@ -60,17 +68,55 @@ function upcomingWeekend() {
   return { saturday, sunday };
 }
 
+const policies = [
+  {
+    id: "cancel",
+    title: "Չեղարկման պայմաններ",
+    paragraphs: [
+      "Ամրագրումը կարող եք չեղարկել մեկնումից առնվազն 24 ժամ առաջ և ստանալ ամբողջական վերադարձ։",
+      "24 ժամից պակաս մնալու դեպքում վերադարձ չի կատարվում, քանի որ տեղը Արմավիրից մեկնող խմբում արդեն ամրագրված է։",
+      "Չեղարկման համար զանգահարեք +374 10 000 000 կամ գրեք WhatsApp-ով՝ նշելով տոմսի կոդը։",
+    ],
+  },
+  {
+    id: "terms",
+    title: "Օգտագործման պայմաններ",
+    paragraphs: [
+      "Արի Գնանքը կազմակերպում է մեկօրյա տուրեր, որոնք մեկնում են Արմավիր քաղաքի Կենտրոնական հրապարակից։",
+      "Տոմսը անձնական է։ Ուղևորը պարտավոր է ժամանել նշված ժամին և ունենալ թվային տոմսի կոդը։",
+      "Ծրագրում նշված ժամերը կարող են փոխվել եղանակի կամ ճանապարհի պատճառով։ Ճաշը և անձնական ծախսերը ներառված չեն, եթե այլ բան նշված չէ։",
+    ],
+  },
+  {
+    id: "privacy",
+    title: "Գաղտնիության քաղաքականություն",
+    paragraphs: [
+      "Ամրագրման համար պահում ենք անունը և հեռախոսահամարը՝ տոմսը, ուղևորացուցակը և հաստատման հաղորդագրությունն ուղարկելու համար։",
+      "Հավատարմության միավորները կապված են այդ հեռախոսահամարին։ Տվյալները չենք վաճառում երրորդ կողմերի։",
+      "Վճարումը անցնում է Idram-ի, Telcell-ի կամ ArCa-ի միջով։ Քարտի լրիվ տվյալները մենք չենք պահում։",
+    ],
+  },
+] as const;
+
 function Index() {
+  const catalog = useSyncExternalStore(subscribeAdmin, getAdminSnapshot, getAdminServerSnapshot);
   const { saturday, sunday } = useMemo(upcomingWeekend, []);
   const [date, setDate] = useState<Date | undefined>(saturday);
   const [region, setRegion] = useState("all");
   const [type, setType] = useState("all");
   const [day, setDay] = useState<"saturday" | "sunday">("saturday");
+  const [policyId, setPolicyId] = useState<(typeof policies)[number]["id"] | null>(null);
+  const policy = policies.find((item) => item.id === policyId);
+  const tourList = catalog.tours;
 
-  const filtered = tours.filter(
+  useEffect(() => {
+    hydrateAdmin();
+  }, []);
+
+  const filtered = tourList.filter(
     (t) => (region === "all" || t.region === region) && (type === "all" || t.type === type),
   );
-  const weekendTours = tours.filter((t) => t.day === day);
+  const weekendTours = tourList.filter((t) => t.day === day);
 
   return (
     <div id="top" className="min-h-screen bg-background font-sans">
@@ -92,13 +138,12 @@ function Index() {
               <Sparkles className="h-3.5 w-3.5" /> Շաբաթավերջի մեկնումներ Արմավիրից
             </span>
             <h1 className="mt-4 max-w-3xl text-4xl font-black leading-[1.05] tracking-tight text-navy-foreground sm:text-6xl">
-              Բացահայտիր Հայաստանը
-              <br />
-              մեկ օրում
+              {catalog.settings.bannerTitle.split("\n").map((line, index) => (
+                <span key={`${index}-${line}`} className="block">{line}</span>
+              ))}
             </h1>
             <p className="mt-4 max-w-xl text-sm text-navy-foreground/80 sm:text-base">
-              Հնագույն վանքեր, լեռնային լճեր ու անմոռանալի տեսարաններ՝ փոքր խմբերով
-              ճանապարհորդություններ, որոնք սկսվում են Արմավիրից։
+              {catalog.settings.bannerText}
             </p>
           </div>
         </div>
@@ -249,7 +294,7 @@ function Index() {
       <section id="loyalty" className="mx-auto max-w-7xl px-4 pb-12 sm:px-6">
         <div className="grid gap-4 rounded-3xl bg-primary-soft p-6 sm:grid-cols-3">
           {[
-            { icon: Sparkles, title: "Հավատարմության միավորներ", text: "Ստացեք 1 միավոր յուրաքանչյուր 100 ֏-ի դիմաց։" },
+            { icon: Sparkles, title: "Հավատարմության միավորներ", text: `Արմավիրից ամրագրված յուրաքանչյուր տուրի ${catalog.settings.cashbackPercent}%-ը վերադառնում է միավորներով։` },
             { icon: ShieldCheck, title: "Անվճար չեղարկում", text: "Չեղարկեք մեկնումից մինչև 24 ժամ առաջ։" },
             { icon: Headphones, title: "Գիդեր 3 լեզվով", text: "Հայերեն, անգլերեն և ռուսերեն։" },
           ].map((item) => (
@@ -292,15 +337,19 @@ function Index() {
               <li><a href="#calendar" className="hover:text-accent">Տուրերի օրացույց</a></li>
               <li><a href="#tours" className="hover:text-accent">Աուդիոգիդեր</a></li>
               <li><a href="#tours" className="hover:text-accent">360° վիրտուալ տուրեր</a></li>
-              <li><a href="#loyalty" className="hover:text-accent">Հավատարմության միավորներ</a></li>
+              <li><Link to="/loyalty" className="hover:text-accent">Հավատարմության միավորներ</Link></li>
             </ul>
           </div>
           <div>
             <p className="text-sm font-bold">Օգտակար տեղեկություն</p>
             <ul className="mt-3 space-y-2 text-xs text-navy-foreground/70">
-              <li><a href="#top" className="hover:text-accent">Չեղարկման պայմաններ</a></li>
-              <li><a href="#top" className="hover:text-accent">Օգտագործման պայմաններ</a></li>
-              <li><a href="#top" className="hover:text-accent">Գաղտնիության քաղաքականություն</a></li>
+              {policies.map((item) => (
+                <li key={item.id}>
+                  <button type="button" className="hover:text-accent" onClick={() => setPolicyId(item.id)}>
+                    {item.title}
+                  </button>
+                </li>
+              ))}
             </ul>
           </div>
           <div>
@@ -316,6 +365,20 @@ function Index() {
           © {new Date().getFullYear()} Արի Գնանք։ Բոլոր իրավունքները պաշտպանված են։
         </div>
       </footer>
+
+      <Dialog open={policy !== undefined} onOpenChange={(open) => { if (!open) setPolicyId(null); }}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto rounded-3xl sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{policy?.title}</DialogTitle>
+            <DialogDescription>Արի Գնանք · մեկօրյա տուրեր Արմավիրից</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-sm text-muted-foreground">
+            {policy?.paragraphs.map((paragraph) => (
+              <p key={paragraph}>{paragraph}</p>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
