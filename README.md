@@ -8,3 +8,5 @@ Ari Gnank — one-day tours departing from Armavir.
 npm i
 npm run dev
 ```
+
+<!-- Updated by satik-ghazaryan -->
