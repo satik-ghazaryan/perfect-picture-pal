@@ -15,11 +15,19 @@ export type LoyaltyEntry = {
   createdAt: string;
 };
 
+export type PromoCredit = {
+  id: string;
+  code: string;
+  amount: number;
+  createdAt: string;
+};
+
 export type LoyaltyAccount = {
   phone: string;
   fullName: string;
   points: number;
   history: LoyaltyEntry[];
+  credits: PromoCredit[];
 };
 
 type LoyaltyState = {
@@ -47,6 +55,29 @@ export function quoteCheckout(balance: number, total: number, usePoints: boolean
   return { redeem, payable, earn, maxRedeem, cashbackPercent: Math.round(safeRate * 100) };
 }
 
+function creditsOf(value: unknown): PromoCredit[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const credit = item as Partial<PromoCredit>;
+    if (typeof credit.id !== "string" || typeof credit.code !== "string" || typeof credit.amount !== "number") return [];
+    const amount = Math.max(0, Math.round(credit.amount));
+    if (amount < 1) return [];
+    return [
+      {
+        id: credit.id,
+        code: credit.code,
+        amount,
+        createdAt: typeof credit.createdAt === "string" ? credit.createdAt : "",
+      },
+    ];
+  });
+}
+
+function withCredits(account: LoyaltyAccount, credits = creditsOf(account.credits)): LoyaltyAccount {
+  return { ...account, credits };
+}
+
 function emit() {
   listeners.forEach((listener) => listener());
 }
@@ -70,8 +101,13 @@ export function hydrateLoyalty() {
   try {
     const parsed = JSON.parse(raw) as LoyaltyState;
     if (!parsed || typeof parsed !== "object" || typeof parsed.accounts !== "object") return;
+    const accounts: Record<string, LoyaltyAccount> = {};
+    for (const [key, account] of Object.entries(parsed.accounts)) {
+      if (!account || typeof account !== "object") continue;
+      accounts[key] = withCredits(account);
+    }
     state = {
-      accounts: parsed.accounts,
+      accounts,
       lastPhone: typeof parsed.lastPhone === "string" ? parsed.lastPhone : "",
     };
     emit();
@@ -101,7 +137,7 @@ export function accountForPhone(phone: string) {
 
 function remember(account: LoyaltyAccount) {
   setState({
-    accounts: { ...state.accounts, [account.phone]: account },
+    accounts: { ...state.accounts, [account.phone]: withCredits(account) },
     lastPhone: account.phone,
   });
 }
@@ -124,6 +160,7 @@ function mapAccount(row: LoyaltyAccountRow): LoyaltyAccount {
     fullName: row.full_name,
     points: row.points,
     history: (row.history ?? []).map(mapEntry),
+    credits: creditsOf(state.accounts[row.phone]?.credits),
   };
 }
 
@@ -132,7 +169,7 @@ export async function loadLoyalty(phone: string) {
   if (key.length < 8) throw new Error("Գրեք գործող հեռախոսահամար։");
   if (!supabase) {
     const existing = state.accounts[key];
-    const account = existing ?? { phone: key, fullName: "", points: 0, history: [] };
+    const account = existing ?? { phone: key, fullName: "", points: 0, history: [], credits: [] };
     setState({ ...state, lastPhone: key });
     return account;
   }
@@ -202,6 +239,53 @@ export async function revertLoyalty(input: {
   remember(mapAccount(data));
 }
 
+export async function adjustLoyaltyPoints(input: { phone: string; fullName: string; delta: number }) {
+  const key = phoneKey(input.phone);
+  const delta = Math.trunc(input.delta);
+  if (key.length < 8) throw new Error("Հեռախոսահամարը պակաս է։");
+  if (!Number.isFinite(delta) || delta === 0) throw new Error("Գրեք միավորների քանակը։");
+  hydrateLoyalty();
+  if (supabase) {
+    return commitLoyalty({
+      phone: key,
+      fullName: input.fullName,
+      redeem: delta < 0 ? Math.abs(delta) : 0,
+      earn: delta > 0 ? delta : 0,
+      tourId: "admin",
+      tourTitle: "Ադմինի ուղղում",
+      cashbackPercent: 0,
+    });
+  }
+  const current = state.accounts[key] ?? {
+    phone: key,
+    fullName: input.fullName.trim(),
+    points: 0,
+    history: [],
+    credits: [],
+  };
+  if (current.points + delta < 0) throw new Error("Միավորները բավարար չեն։");
+  const account: LoyaltyAccount = {
+    phone: key,
+    fullName: input.fullName.trim() || current.fullName,
+    points: current.points + delta,
+    history: [
+      {
+        id: crypto.randomUUID(),
+        tourId: "admin",
+        tourTitle: "Ադմինի ուղղում",
+        kind: delta > 0 ? "earn" : "redeem",
+        points: Math.abs(delta),
+        note: delta > 0 ? "Ադմինի ավելացում" : "Ադմինի նվազեցում",
+        createdAt: new Date().toISOString(),
+      },
+      ...current.history,
+    ],
+    credits: current.credits,
+  };
+  remember(account);
+  return account;
+}
+
 function commitLocal(input: {
   phone: string;
   fullName: string;
@@ -216,6 +300,7 @@ function commitLocal(input: {
     fullName: input.fullName.trim(),
     points: 0,
     history: [],
+    credits: [],
   };
   if (input.redeem > current.points) throw new Error("Միավորները բավարար չեն։");
   const now = new Date().toISOString();
@@ -247,7 +332,78 @@ function commitLocal(input: {
     fullName: input.fullName.trim() || current.fullName,
     points: current.points - input.redeem + input.earn,
     history,
+    credits: creditsOf(current.credits),
   };
   remember(account);
   return account;
+}
+
+export function activeCreditTotal(phone: string) {
+  const account = accountForPhone(phone);
+  return creditsOf(account?.credits).reduce((sum, credit) => sum + credit.amount, 0);
+}
+
+export async function issuePromoCredit(input: { phone: string; fullName: string; points: number }) {
+  const key = phoneKey(input.phone);
+  const points = Math.trunc(input.points);
+  if (key.length < 8) throw new Error("Հեռախոսահամարը պակաս է։");
+  if (!Number.isFinite(points) || points < 1) throw new Error("Գրեք փոխարինվող միավորները։");
+  hydrateLoyalty();
+  const balance = state.accounts[key]?.points ?? 0;
+  if (points > balance) throw new Error("Միավորները բավարար չեն։");
+  const code = `AG-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
+  const credit: PromoCredit = {
+    id: crypto.randomUUID(),
+    code,
+    amount: points,
+    createdAt: new Date().toISOString(),
+  };
+  await commitLoyalty({
+    phone: key,
+    fullName: input.fullName,
+    redeem: points,
+    earn: 0,
+    tourId: "credit",
+    tourTitle: `Զեղչի կտրոն ${code}`,
+    cashbackPercent: 0,
+  });
+  const current = state.accounts[key];
+  if (!current) throw new Error("Զեղչի կտրոնը չպահվեց։");
+  const account = withCredits(current, [credit, ...creditsOf(current.credits)]);
+  remember(account);
+  return { account, credit };
+}
+
+export function takePromoCredits(phone: string, amount: number) {
+  const key = phoneKey(phone);
+  const account = state.accounts[key];
+  const requested = Math.max(0, Math.round(amount));
+  if (!account || requested < 1) return { applied: 0, restore: () => undefined };
+  const before = creditsOf(account.credits);
+  let left = requested;
+  let applied = 0;
+  const next: PromoCredit[] = [];
+  for (const credit of before) {
+    if (left < 1) {
+      next.push(credit);
+      continue;
+    }
+    if (credit.amount <= left) {
+      applied += credit.amount;
+      left -= credit.amount;
+      continue;
+    }
+    applied += left;
+    next.push({ ...credit, amount: credit.amount - left });
+    left = 0;
+  }
+  remember(withCredits(account, next));
+  return {
+    applied,
+    restore: () => {
+      const current = state.accounts[key];
+      if (!current) return;
+      remember(withCredits(current, before));
+    },
+  };
 }

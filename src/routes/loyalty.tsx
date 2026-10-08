@@ -5,6 +5,7 @@ import { format } from "date-fns";
 import { hy } from "date-fns/locale";
 import { Sparkles } from "lucide-react";
 import { toast } from "sonner";
+import { DepartureCrew } from "@/components/departure-crew";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +20,8 @@ import {
   type LoyaltyAccount,
 } from "@/lib/loyalty";
 import { getAdminServerSnapshot, getAdminSnapshot, hydrateAdmin, subscribeAdmin } from "@/lib/admin";
+import { tourTitle, useSiteLocale } from "@/lib/locale";
+import { getPortalServerSnapshot, getPortalSnapshot, subscribePortal, upcomingDepartureDate } from "@/lib/guide-api";
 import { notificationsForPhone, hydrateNotifications } from "@/lib/notifications";
 
 export const Route = createFileRoute("/loyalty")({
@@ -36,8 +39,10 @@ export const Route = createFileRoute("/loyalty")({
 
 function LoyaltyPage() {
   const wallet = useSyncExternalStore(subscribeLoyalty, getLoyaltySnapshot, getLoyaltyServerSnapshot);
-  const cashback = useSyncExternalStore(subscribeAdmin, getAdminSnapshot, getAdminServerSnapshot).settings
-    .cashbackPercent;
+  const catalog = useSyncExternalStore(subscribeAdmin, getAdminSnapshot, getAdminServerSnapshot);
+  const portal = useSyncExternalStore(subscribePortal, getPortalSnapshot, getPortalServerSnapshot);
+  const cashback = catalog.settings.cashbackPercent;
+  const lang = useSiteLocale();
   const [ready, setReady] = useState(false);
   const [phone, setPhone] = useState("");
   const [account, setAccount] = useState<LoyaltyAccount | null>(null);
@@ -52,6 +57,10 @@ function LoyaltyPage() {
   }, []);
 
   const shown = account ?? (phoneKey(phone) ? wallet.accounts[phoneKey(phone)] ?? null : null);
+  const bookingPhone = phoneKey(shown?.phone || phone);
+  const myBookings = bookingPhone
+    ? portal.bookings.filter((booking) => phoneKey(booking.phone) === bookingPhone)
+    : [];
   const messages = shown ? notificationsForPhone(shown.phone) : [];
 
   const lookup = async () => {
@@ -73,7 +82,7 @@ function LoyaltyPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <SiteHeader showBack />
+      <SiteHeader />
       <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
         <p className="text-xs font-bold uppercase tracking-wide text-primary">Հավատարմություն</p>
         <h1 className="mt-2 text-3xl font-black tracking-tight">Իմ միավորները</h1>
@@ -153,6 +162,43 @@ function LoyaltyPage() {
                 <Link to="/">Ընտրել տուր</Link>
               </Button>
             </section>
+
+            {ready && bookingPhone.length >= 8 && (
+              <section className="space-y-3">
+                <h2 className="text-sm font-bold">Իմ ամրագրումները</h2>
+                {myBookings.length === 0 ? (
+                  <p className="rounded-3xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
+                    Այս համարով ամրագրում չկա։
+                  </p>
+                ) : (
+                  myBookings.map((booking) => {
+                    const tour = catalog.tours.find(
+                      (item) => item.id === booking.tourId && item.is_virtual_only !== true,
+                    );
+                    if (!tour) return null;
+                    const departureDate = upcomingDepartureDate(tour.day);
+                    return (
+                      <article key={booking.id} className="space-y-3">
+                        <div className="rounded-3xl border border-border bg-card px-4 py-3">
+                          <p className="text-sm font-bold">{tourTitle(tour, lang)}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {format(new Date(`${departureDate}T12:00:00`), "d MMMM", { locale: hy })} · {tour.departureTime}
+                            {" · "}
+                            {booking.ticketCode}
+                          </p>
+                        </div>
+                        <DepartureCrew
+                          departureDate={departureDate}
+                          departureTime={tour.departureTime}
+                          guideId={tour.guideId}
+                          driverId={tour.driverId}
+                        />
+                      </article>
+                    );
+                  })
+                )}
+              </section>
+            )}
 
             {messages.length > 0 && (
               <section className="rounded-3xl border border-border bg-card p-4">

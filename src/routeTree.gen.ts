@@ -11,9 +11,13 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
+import { Route as DriverRouteImport } from './routes/driver'
 import { Route as GuideRouteImport } from './routes/guide'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as LoyaltyRouteImport } from './routes/loyalty'
+import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as VendorRouteImport } from './routes/vendor'
+import { Route as VirtualRouteImport } from './routes/virtual'
 import { Route as ToursIdRouteImport } from './routes/tours/$id'
 import { Route as ApiNotificationsDispatchRouteImport } from './routes/api/notifications/dispatch'
 import { Route as ApiPaymentArcaCallbackRouteImport } from './routes/api/payment/arca-callback'
@@ -30,9 +34,19 @@ const AdminRoute = AdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DriverRoute = DriverRouteImport.update({
+  id: '/driver',
+  path: '/driver',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const GuideRoute = GuideRouteImport.update({
   id: '/guide',
   path: '/guide',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoyaltyRoute = LoyaltyRouteImport.update({
@@ -40,9 +54,19 @@ const LoyaltyRoute = LoyaltyRouteImport.update({
   path: '/loyalty',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProfileRoute = ProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const VendorRoute = VendorRouteImport.update({
   id: '/vendor',
   path: '/vendor',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VirtualRoute = VirtualRouteImport.update({
+  id: '/virtual',
+  path: '/virtual',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ToursIdRoute = ToursIdRouteImport.update({
@@ -76,9 +100,13 @@ const ApiPaymentTelcellCallbackRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/driver': typeof DriverRoute
   '/guide': typeof GuideRoute
+  '/login': typeof LoginRoute
   '/loyalty': typeof LoyaltyRoute
+  '/profile': typeof ProfileRoute
   '/vendor': typeof VendorRoute
+  '/virtual': typeof VirtualRoute
   '/tours/$id': typeof ToursIdRoute
   '/api/notifications/dispatch': typeof ApiNotificationsDispatchRoute
   '/api/payment/arca-callback': typeof ApiPaymentArcaCallbackRoute
@@ -88,9 +116,13 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/driver': typeof DriverRoute
   '/guide': typeof GuideRoute
+  '/login': typeof LoginRoute
   '/loyalty': typeof LoyaltyRoute
+  '/profile': typeof ProfileRoute
   '/vendor': typeof VendorRoute
+  '/virtual': typeof VirtualRoute
   '/tours/$id': typeof ToursIdRoute
   '/api/notifications/dispatch': typeof ApiNotificationsDispatchRoute
   '/api/payment/arca-callback': typeof ApiPaymentArcaCallbackRoute
@@ -101,9 +133,13 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/driver': typeof DriverRoute
   '/guide': typeof GuideRoute
+  '/login': typeof LoginRoute
   '/loyalty': typeof LoyaltyRoute
+  '/profile': typeof ProfileRoute
   '/vendor': typeof VendorRoute
+  '/virtual': typeof VirtualRoute
   '/tours/$id': typeof ToursIdRoute
   '/api/notifications/dispatch': typeof ApiNotificationsDispatchRoute
   '/api/payment/arca-callback': typeof ApiPaymentArcaCallbackRoute
@@ -115,9 +151,13 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/admin'
+    | '/driver'
     | '/guide'
+    | '/login'
     | '/loyalty'
+    | '/profile'
     | '/vendor'
+    | '/virtual'
     | '/tours/$id'
     | '/api/notifications/dispatch'
     | '/api/payment/arca-callback'
@@ -127,9 +167,13 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/admin'
+    | '/driver'
     | '/guide'
+    | '/login'
     | '/loyalty'
+    | '/profile'
     | '/vendor'
+    | '/virtual'
     | '/tours/$id'
     | '/api/notifications/dispatch'
     | '/api/payment/arca-callback'
@@ -139,9 +183,13 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/admin'
+    | '/driver'
     | '/guide'
+    | '/login'
     | '/loyalty'
+    | '/profile'
     | '/vendor'
+    | '/virtual'
     | '/tours/$id'
     | '/api/notifications/dispatch'
     | '/api/payment/arca-callback'
@@ -152,9 +200,13 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRoute
+  DriverRoute: typeof DriverRoute
   GuideRoute: typeof GuideRoute
+  LoginRoute: typeof LoginRoute
   LoyaltyRoute: typeof LoyaltyRoute
+  ProfileRoute: typeof ProfileRoute
   VendorRoute: typeof VendorRoute
+  VirtualRoute: typeof VirtualRoute
   ToursIdRoute: typeof ToursIdRoute
   ApiNotificationsDispatchRoute: typeof ApiNotificationsDispatchRoute
   ApiPaymentArcaCallbackRoute: typeof ApiPaymentArcaCallbackRoute
@@ -178,11 +230,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/driver': {
+      id: '/driver'
+      path: '/driver'
+      fullPath: '/driver'
+      preLoaderRoute: typeof DriverRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/guide': {
       id: '/guide'
       path: '/guide'
       fullPath: '/guide'
       preLoaderRoute: typeof GuideRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/loyalty': {
@@ -192,11 +258,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoyaltyRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/profile': {
+      id: '/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof ProfileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/vendor': {
       id: '/vendor'
       path: '/vendor'
       fullPath: '/vendor'
       preLoaderRoute: typeof VendorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/virtual': {
+      id: '/virtual'
+      path: '/virtual'
+      fullPath: '/virtual'
+      preLoaderRoute: typeof VirtualRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/tours/$id': {
@@ -240,9 +320,13 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
+  DriverRoute: DriverRoute,
   GuideRoute: GuideRoute,
+  LoginRoute: LoginRoute,
   LoyaltyRoute: LoyaltyRoute,
+  ProfileRoute: ProfileRoute,
   VendorRoute: VendorRoute,
+  VirtualRoute: VirtualRoute,
   ToursIdRoute: ToursIdRoute,
   ApiNotificationsDispatchRoute: ApiNotificationsDispatchRoute,
   ApiPaymentArcaCallbackRoute: ApiPaymentArcaCallbackRoute,

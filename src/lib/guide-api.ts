@@ -1,10 +1,10 @@
 import { tours } from "@/data/tours";
 import type {
+  AttendanceStatus,
   BookingStatus,
   PaymentProviderName,
   PaymentState,
   TourStatus,
-  UserRole,
 } from "@/lib/database.types";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 
@@ -15,7 +15,7 @@ export type StaffProfile = {
   fullName: string;
   phone: string;
   email: string;
-  role: Extract<UserRole, "guide" | "driver">;
+  role: "guide";
 };
 
 export type AssignedTour = {
@@ -42,6 +42,7 @@ export type BookingRecord = {
   paymentProvider: PaymentProviderName | null;
   paymentStatus: PaymentState | null;
   amount: number;
+  attendance: AttendanceStatus | null;
 };
 
 export type TourPhoto = {
@@ -65,6 +66,7 @@ type PortalState = {
 export const LOCAL_STAFF_ID = "local-staff";
 export const LOCAL_DRIVER_ID = "local-driver-armen";
 const SESSION_KEY = "ari-gnank-guide-session";
+const GUIDE_LOCAL_KEY = "ari-gnank-guide-session";
 const DATA_KEY = "ari-gnank-guide-data";
 
 function upcomingDate(day: "saturday" | "sunday") {
@@ -80,7 +82,7 @@ function upcomingDate(day: "saturday" | "sunday") {
 function seedTours(): AssignedTour[] {
   return tours.map((tour) => ({
     id: tour.id,
-    title: tour.title,
+    title: tour.title_hy,
     departurePlace: tour.departurePlace,
     departureTime: tour.departureTime,
     departureDate: upcomingDate(tour.day),
@@ -109,6 +111,7 @@ function seedBookings(): BookingRecord[] {
       paymentProvider: "idram",
       paymentStatus: "SUCCESS",
       amount: 12000,
+      attendance: null,
     },
     {
       id: "local-b2",
@@ -123,6 +126,7 @@ function seedBookings(): BookingRecord[] {
       paymentProvider: "telcell",
       paymentStatus: "PENDING",
       amount: 36000,
+      attendance: null,
     },
   ];
 }
@@ -141,17 +145,22 @@ function paymentStatusOf(value: unknown): PaymentState | null {
   return value === "SUCCESS" || value === "FAILED" || value === "PENDING" ? value : null;
 }
 
+function attendanceOf(value: unknown): AttendanceStatus | null {
+  return value === "present" || value === "absent" ? value : null;
+}
+
 function normalizeBooking(booking: BookingRecord): BookingRecord {
   const paymentProvider = paymentProviderOf(booking.paymentProvider);
   const paymentStatus = paymentStatusOf(booking.paymentStatus);
   const amount = typeof booking.amount === "number" ? booking.amount : 0;
+  const attendance = attendanceOf(booking.attendance);
   if (booking.id === "local-b1" && paymentProvider === null && amount === 0) {
-    return { ...booking, paymentProvider: "idram", paymentStatus: "SUCCESS", amount: 12000 };
+    return { ...booking, paymentProvider: "idram", paymentStatus: "SUCCESS", amount: 12000, attendance };
   }
   if (booking.id === "local-b2" && paymentProvider === null && amount === 0) {
-    return { ...booking, paymentProvider: "telcell", paymentStatus: "PENDING", amount: 36000 };
+    return { ...booking, paymentProvider: "telcell", paymentStatus: "PENDING", amount: 36000, attendance };
   }
-  return { ...booking, paymentProvider, paymentStatus, amount };
+  return { ...booking, paymentProvider, paymentStatus, amount, attendance };
 }
 
 function readSavedData(): Pick<PortalState, "tours" | "bookings" | "photos"> | null {
@@ -222,23 +231,37 @@ export function getPortalServerSnapshot() {
   return serverSnapshot;
 }
 
-function readStoredProfile(): StaffProfile | null {
-  if (typeof sessionStorage === "undefined") return null;
-  const raw = sessionStorage.getItem(SESSION_KEY);
+function parseGuideProfile(raw: string | null): StaffProfile | null {
   if (!raw) return null;
   try {
     const profile = JSON.parse(raw) as StaffProfile;
-    if (profile.role !== "guide" && profile.role !== "driver") return null;
+    if (profile.role !== "guide" || typeof profile.id !== "string" || typeof profile.fullName !== "string") return null;
     return profile;
   } catch {
     return null;
   }
 }
 
+function readStoredProfile(): StaffProfile | null {
+  const local = typeof localStorage === "undefined" ? null : parseGuideProfile(localStorage.getItem(GUIDE_LOCAL_KEY));
+  if (local) return local;
+  if (typeof sessionStorage === "undefined") return null;
+  return parseGuideProfile(sessionStorage.getItem(SESSION_KEY));
+}
+
 function storeProfile(profile: StaffProfile | null) {
+  if (typeof localStorage !== "undefined") {
+    if (!profile) localStorage.removeItem(GUIDE_LOCAL_KEY);
+    else localStorage.setItem(GUIDE_LOCAL_KEY, JSON.stringify(profile));
+  }
   if (typeof sessionStorage === "undefined") return;
   if (!profile) sessionStorage.removeItem(SESSION_KEY);
   else sessionStorage.setItem(SESSION_KEY, JSON.stringify(profile));
+}
+
+export function clearGuideProfile() {
+  storeProfile(null);
+  setState({ profile: null });
 }
 
 export function ticketCodeFromScan(raw: string) {
@@ -253,17 +276,22 @@ async function requireStaffProfile(userId: string): Promise<StaffProfile> {
     .select("id, full_name, phone, email, role")
     .eq("id", userId)
     .maybeSingle();
-  if (error || !data || (data.role !== "guide" && data.role !== "driver")) {
+  if (error || !data || data.role !== "guide") {
     await supabase.auth.signOut();
-    throw new Error("Այս հաշիվը ուղեկցորդ կամ վարորդ չէ։");
+    throw new Error("Այս հաշիվը զբոսավար չէ։");
   }
   return {
     id: data.id,
     fullName: data.full_name,
     phone: data.phone ?? "",
     email: data.email ?? "",
-    role: data.role,
+    role: "guide",
   };
+}
+
+export function openGuideSession(profile: StaffProfile) {
+  storeProfile(profile);
+  setState({ profile });
 }
 
 export async function restoreGuideSession() {
@@ -289,70 +317,6 @@ export async function restoreGuideSession() {
   }
 }
 
-export async function signInWithEmail(email: string, password: string, role: StaffProfile["role"]) {
-  const trimmed = email.trim();
-  if (!supabase) {
-    if (!trimmed.includes("@") || password.length < 4) {
-      throw new Error("Գրեք էլ. փոստ և առնվազն 4 նիշ գաղտնաբառ։");
-    }
-    const profile: StaffProfile = {
-      id: LOCAL_STAFF_ID,
-      fullName: role === "driver" ? "Արմավիրի վարորդ" : "Արմավիրի ուղեկցորդ",
-      phone: "",
-      email: trimmed,
-      role,
-    };
-    storeProfile(profile);
-    setState({ profile });
-    return profile;
-  }
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email: trimmed,
-    password,
-  });
-  if (error || !data.user) throw new Error("Էլ. փոստը կամ գաղտնաբառը սխալ է։");
-  const profile = await requireStaffProfile(data.user.id);
-  const assigned = await listAssignedTours(profile.id);
-  setState({ profile, tours: assigned, bookings: [], photos: [] });
-  return profile;
-}
-
-export async function sendPhoneCode(phone: string) {
-  const trimmed = phone.trim();
-  if (trimmed.replace(/\D/g, "").length < 8) throw new Error("Գրեք գործող հեռախոսահամար։");
-  if (!supabase) return;
-  const { error } = await supabase.auth.signInWithOtp({ phone: trimmed });
-  if (error) throw new Error("Կոդը չուղարկվեց։ Ստուգեք հեռախոսահամարը։");
-}
-
-export async function verifyPhoneCode(phone: string, token: string, role: StaffProfile["role"]) {
-  const trimmedPhone = phone.trim();
-  const trimmedToken = token.trim();
-  if (!/^\d{6}$/.test(trimmedToken)) throw new Error("Գրեք 6 նիշանոց կոդը։");
-  if (!supabase) {
-    const profile: StaffProfile = {
-      id: LOCAL_STAFF_ID,
-      fullName: role === "driver" ? "Արմավիրի վարորդ" : "Արմավիրի ուղեկցորդ",
-      phone: trimmedPhone,
-      email: "",
-      role,
-    };
-    storeProfile(profile);
-    setState({ profile });
-    return profile;
-  }
-  const { data, error } = await supabase.auth.verifyOtp({
-    phone: trimmedPhone,
-    token: trimmedToken,
-    type: "sms",
-  });
-  if (error || !data.user) throw new Error("Կոդը սխալ է կամ ժամկետն անցել է։");
-  const profile = await requireStaffProfile(data.user.id);
-  const assigned = await listAssignedTours(profile.id);
-  setState({ profile, tours: assigned, bookings: [], photos: [] });
-  return profile;
-}
-
 export async function signOutGuide() {
   storeProfile(null);
   if (supabase) await supabase.auth.signOut();
@@ -366,21 +330,21 @@ export async function signOutGuide() {
 
 export async function listAssignedTours(userId: string): Promise<AssignedTour[]> {
   if (!supabase) {
-    return state.tours.filter((tour) => tour.guideId === userId || tour.driverId === userId);
+    return state.tours.filter((tour) => tour.guideId === userId);
   }
   const { data, error } = await supabase
     .from("tours")
-    .select("id, title, departure_place, departure_time, departure_date, status, guide_id, driver_id")
-    .or(`guide_id.eq.${userId},driver_id.eq.${userId}`)
+    .select("id, title_hy, departure_place, departure_time, departure_date, status, guide_id, driver_id")
+    .eq("guide_id", userId)
     .order("departure_date");
   if (error) throw new Error("Տուրերի ցանկը չբեռնվեց։");
   return data.map((row) => ({
     id: row.id,
-    title: row.title,
-    departurePlace: row.departure_place,
-    departureTime: row.departure_time,
-    departureDate: row.departure_date,
-    status: row.status,
+    title: row.title_hy,
+    departurePlace: row.departure_place ?? "",
+    departureTime: row.departure_time ?? "",
+    departureDate: row.departure_date ?? "",
+    status: row.status ?? "scheduled",
     guideId: row.guide_id,
     driverId: row.driver_id,
   }));
@@ -424,17 +388,48 @@ export function removePortalTour(tourId: string) {
   setState({ tours: state.tours.filter((tour) => tour.id !== tourId) });
 }
 
+export async function setAttendance(bookingId: string, attendance: AttendanceStatus | null) {
+  const current = state.bookings.find((booking) => booking.id === bookingId);
+  if (!current) throw new Error("Ուղևորը չի գտնվել։");
+  setState({
+    bookings: state.bookings.map((booking) => (booking.id === bookingId ? { ...booking, attendance } : booking)),
+  });
+  if (!supabase) return;
+  const { error } = await supabase.from("bookings").update({ attendance: attendance ?? "pending" }).eq("id", bookingId);
+  if (error) throw new Error("Ներկայությունը չպահվեց։ Տեղային վիճակը թարմացվեց։");
+}
+
 export async function listBookings(tourId: string): Promise<BookingRecord[]> {
-  if (!supabase) return state.bookings.filter((booking) => booking.tourId === tourId);
+  if (!supabase) {
+    return state.bookings
+      .filter((booking) => booking.tourId === tourId)
+      .slice()
+      .sort((a, b) => a.seatNumber - b.seatNumber);
+  }
   const { data, error } = await supabase
     .from("bookings")
     .select(
-      "id, tour_id, passenger_name, phone, seat_number, ticket_code, status, adults, children, checked_in_at",
+      "id, tour_id, passenger_name, phone, seat_number, ticket_code, status, adults, children, payment_provider, payment_status, amount, attendance",
     )
     .eq("tour_id", tourId)
     .order("seat_number");
   if (error) throw new Error("Ուղևորացուցակը չբեռնվեց։");
   return data.map(mapBooking);
+}
+
+export async function loadTourManifest(tourId: string, departureDate = "") {
+  const byTour = await listBookings(tourId);
+  const sameDepartureIds = departureDate
+    ? state.tours.filter((tour) => tour.id === tourId && tour.departureDate === departureDate).map((tour) => tour.id)
+    : [];
+  const relatedIds = new Set([tourId, ...sameDepartureIds]);
+  const localMatches = state.bookings.filter((booking) => relatedIds.has(booking.tourId));
+  const merged = new Map<string, BookingRecord>();
+  for (const booking of [...localMatches, ...byTour]) merged.set(booking.id, booking);
+  const manifest = [...merged.values()].sort((a, b) => a.seatNumber - b.seatNumber);
+  const rest = state.bookings.filter((booking) => !relatedIds.has(booking.tourId));
+  setState({ bookings: [...rest, ...manifest] });
+  return manifest;
 }
 
 export async function listPhotos(tourId: string): Promise<TourPhoto[]> {
@@ -455,31 +450,34 @@ export async function listPhotos(tourId: string): Promise<TourPhoto[]> {
 
 function mapBooking(row: {
   id: string;
-  tour_id: string;
-  passenger_name: string;
-  phone: string;
-  seat_number: number;
-  ticket_code: string;
+  tour_id?: string | null;
+  passenger_name?: string | null;
+  phone?: string | null;
+  seat_number?: number;
+  ticket_code?: string | null;
   status: BookingStatus;
-  adults: number;
-  children: number;
+  adults?: number;
+  children?: number;
   payment_provider?: string | null;
   payment_status?: string | null;
-  amount?: number;
+  amount?: number | null;
+  total_price?: number | null;
+  attendance?: string | null;
 }): BookingRecord {
   return {
     id: row.id,
-    tourId: row.tour_id,
-    passengerName: row.passenger_name,
-    phone: row.phone,
-    seatNumber: row.seat_number,
-    ticketCode: row.ticket_code,
+    tourId: row.tour_id ?? "",
+    passengerName: row.passenger_name ?? "",
+    phone: row.phone ?? "",
+    seatNumber: row.seat_number ?? 1,
+    ticketCode: row.ticket_code ?? "",
     status: row.status,
-    adults: row.adults,
-    children: row.children,
+    adults: row.adults ?? 1,
+    children: row.children ?? 0,
     paymentProvider: paymentProviderOf(row.payment_provider),
     paymentStatus: paymentStatusOf(row.payment_status),
-    amount: row.amount ?? 0,
+    amount: row.amount ?? row.total_price ?? 0,
+    attendance: attendanceOf(row.attendance),
   };
 }
 
@@ -521,6 +519,7 @@ export async function registerBooking(input: {
       paymentProvider: input.paymentProvider ?? null,
       paymentStatus: input.paymentStatus ?? null,
       amount: input.amount ?? 0,
+      attendance: null,
     };
     setState({ bookings: [...state.bookings, booking] });
     return booking;

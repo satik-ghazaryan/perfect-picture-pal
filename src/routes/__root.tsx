@@ -10,6 +10,7 @@ import {
 import { useEffect, useState, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
+import { RoleGate } from "../components/role-gate";
 import { Toaster } from "../components/ui/sonner";
 
 function NotFoundComponent() {
@@ -134,6 +135,7 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
+      <RoleGate />
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
       <Outlet />
       {toastsReady && <Toaster position="top-center" />}

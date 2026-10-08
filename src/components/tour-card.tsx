@@ -1,10 +1,14 @@
 import { useNavigate } from "@tanstack/react-router";
 import { Clock, Headphones, MapPin, Rotate3d, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { formatAmd, type Tour } from "@/data/tours";
+import { formatAmd, tourTypeLabels, type Tour } from "@/data/tours";
+import { pickLocale, tourTitle, useSiteLocale } from "@/lib/locale";
 
 export function TourCard({ tour }: { tour: Tour }) {
   const navigate = useNavigate();
+  const lang = useSiteLocale();
+  const title = tourTitle(tour, lang);
+  const typeLabel = pickLocale(tourTypeLabels[tour.type], lang);
   const low = tour.seatsLeft <= 5;
   const openDetails = () => navigate({ to: "/tours/$id", params: { id: tour.id } });
 
@@ -15,15 +19,15 @@ export function TourCard({ tour }: { tour: Tour }) {
     >
       <div className="relative">
         <img
-          src={tour.image}
-          alt={tour.title}
+          src={tour.image_url}
+          alt={title}
           loading="lazy"
           width={1024}
           height={768}
           className="h-48 w-full object-cover transition-transform duration-500 group-hover:scale-105 sm:h-52"
         />
         <div className="absolute inset-x-3 top-3 flex flex-wrap gap-1.5">
-          {tour.has360 && (
+          {tour.virtual_tour_id?.trim() && (
             <span className="inline-flex items-center gap-1 rounded-full bg-navy/85 px-2.5 py-1 text-[11px] font-semibold text-navy-foreground backdrop-blur">
               <Rotate3d className="h-3.5 w-3.5" /> 360° դիտում
             </span>
@@ -47,7 +51,7 @@ export function TourCard({ tour }: { tour: Tour }) {
 
       <div className="flex flex-1 flex-col gap-3 p-4">
         <div className="flex items-start justify-between gap-3">
-          <h3 className="min-w-0 text-base font-bold leading-snug">{tour.title}</h3>
+          <h3 className="min-w-0 text-base font-bold leading-snug">{title}</h3>
           <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-accent/15 px-2 py-1 text-xs font-bold text-accent-foreground">
             <Star className="h-3.5 w-3.5 fill-accent text-accent" />
             {tour.rating}
@@ -62,7 +66,7 @@ export function TourCard({ tour }: { tour: Tour }) {
             <MapPin className="h-3.5 w-3.5 shrink-0" />
             <span className="truncate">{tour.departurePlace}</span>
           </p>
-          <p>{tour.reviews} կարծիք · {tour.type}</p>
+          <p>{tour.reviews} կարծիք · {typeLabel}</p>
         </div>
 
         <div className="mt-auto flex items-end justify-between gap-3 pt-1">

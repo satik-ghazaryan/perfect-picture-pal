@@ -34,7 +34,8 @@ import {
 import { cn } from "@/lib/utils";
 import { SiteHeader } from "@/components/site-header";
 import { TourCard } from "@/components/tour-card";
-import { regions, tourTypes } from "@/data/tours";
+import { regions, tourTypeLabels, tourTypes } from "@/data/tours";
+import { pickLocale, tourTitle, useSiteLocale } from "@/lib/locale";
 import { getAdminServerSnapshot, getAdminSnapshot, hydrateAdmin, subscribeAdmin } from "@/lib/admin";
 import heroImage from "@/assets/hero-armenia.jpg";
 
@@ -106,15 +107,16 @@ function Index() {
   const [type, setType] = useState("all");
   const [day, setDay] = useState<"saturday" | "sunday">("saturday");
   const [policyId, setPolicyId] = useState<(typeof policies)[number]["id"] | null>(null);
+  const lang = useSiteLocale();
   const policy = policies.find((item) => item.id === policyId);
-  const tourList = catalog.tours;
+  const tourList = catalog.tours.filter((tour) => tour.is_virtual_only !== true);
 
   useEffect(() => {
     hydrateAdmin();
   }, []);
 
   const filtered = tourList.filter(
-    (t) => (region === "all" || t.region === region) && (type === "all" || t.type === type),
+    (t) => (region === "all" || t.category === region || t.location_hy === region) && (type === "all" || t.type === type),
   );
   const weekendTours = tourList.filter((t) => t.day === day);
 
@@ -185,9 +187,9 @@ function Index() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Բոլոր ուղղությունները</SelectItem>
-                {regions.map((r) => (
-                  <SelectItem key={r} value={r}>
-                    {r}
+                {regions.map((item) => (
+                  <SelectItem key={item.hy} value={item.hy}>
+                    {pickLocale(item, lang)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -199,9 +201,9 @@ function Index() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Բոլոր տեսակները</SelectItem>
-                {tourTypes.map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {t}
+                {tourTypes.map((item) => (
+                  <SelectItem key={item} value={item}>
+                    {pickLocale(tourTypeLabels[item], lang)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -249,7 +251,7 @@ function Index() {
                 key={t.id}
                 className="min-w-0 rounded-2xl bg-navy-foreground/10 p-4 ring-1 ring-navy-foreground/10"
               >
-                <p className="truncate text-sm font-bold">{t.title}</p>
+                <p className="truncate text-sm font-bold">{tourTitle(t, lang)}</p>
                 <p className="mt-1 text-xs text-navy-foreground/70">
                   {t.departureTime} · {t.departurePlace}
                 </p>
@@ -336,7 +338,7 @@ function Index() {
             <ul className="mt-3 space-y-2 text-xs text-navy-foreground/70">
               <li><a href="#calendar" className="hover:text-accent">Տուրերի օրացույց</a></li>
               <li><a href="#tours" className="hover:text-accent">Աուդիոգիդեր</a></li>
-              <li><a href="#tours" className="hover:text-accent">360° վիրտուալ տուրեր</a></li>
+              <li><Link to="/virtual" className="hover:text-accent">360° Վիրտուալ Տուրեր</Link></li>
               <li><Link to="/loyalty" className="hover:text-accent">Հավատարմության միավորներ</Link></li>
             </ul>
           </div>

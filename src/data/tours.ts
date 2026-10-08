@@ -1,6 +1,12 @@
 import tatev from "@/assets/tour-tatev.jpg";
 import sevan from "@/assets/tour-sevan.jpg";
 import garni from "@/assets/tour-garni.jpg";
+import type { LocalizedText } from "@/lib/locale";
+import type { Tour as LocalizedTour } from "@/types";
+
+function L(hy: string, en: string, ru: string): LocalizedText {
+  return { hy, en, ru };
+}
 
 export type ItineraryStop = {
   time: string;
@@ -26,16 +32,11 @@ export type Hotspot = {
   description: string;
 };
 
-export type Tour = {
-  id: string;
-  title: string;
-  image: string;
-  region: string;
+export type Tour = LocalizedTour & {
   type: "Արշավային" | "Մշակութային" | "Էքստրեմալ";
   departurePlace: string;
   departureTime: string;
   returnTime: string;
-  price: number;
   oldPrice?: number;
   seatsLeft: number;
   rating: number;
@@ -43,7 +44,6 @@ export type Tour = {
   has360: boolean;
   hasAudioGuide: boolean;
   day: "saturday" | "sunday";
-  summary: string;
   highlights: string[];
   itinerary: ItineraryStop[];
   included: string[];
@@ -51,16 +51,24 @@ export type Tour = {
   audioChapters: AudioChapter[];
   hotspots: Hotspot[];
   panoramaUrl?: string;
+  virtual_tour_url?: string;
+  is_virtual_only?: boolean;
+  virtual_tour_id?: string | null;
 };
 
-
-export const regions = [
-  "Գառնի և Գեղարդ",
-  "Սևան և Դիլիջան",
-  "Տաթև",
+export const regions: LocalizedText[] = [
+  L("Գառնի և Գեղարդ", "Garni and Geghard", "Гарни и Гегард"),
+  L("Սևան և Դիլիջան", "Sevan and Dilijan", "Севан и Дилижан"),
+  L("Տաթև", "Tatev", "Татев"),
 ];
 
 export const tourTypes = ["Արշավային", "Մշակութային", "Էքստրեմալ"] as const;
+
+export const tourTypeLabels: Record<(typeof tourTypes)[number], LocalizedText> = {
+  Արշավային: L("Արշավային", "Hiking", "Поход"),
+  Մշակութային: L("Մշակութային", "Cultural", "Культурный"),
+  Էքստրեմալ: L("Էքստրեմալ", "Extreme", "Экстрим"),
+};
 
 export const packingList = [
   "Հարմար քայլելու կոշիկներ",
@@ -91,9 +99,20 @@ const baseExcluded = [
 export const tours: Tour[] = [
   {
     id: "garni",
-    title: "Արմավիր – Գառնի, Գեղարդ և Քարերի Սիմֆոնիա",
-    image: garni,
-    region: "Գառնի և Գեղարդ",
+    title_hy: "Արմավիր – Գառնի, Գեղարդ և Քարերի Սիմֆոնիա",
+    title_en: "Armavir – Garni, Geghard and the Symphony of Stones",
+    title_ru: "Армавир – Гарни, Гегард и Симфония камней",
+    description_hy:
+      "Մեկ օրում՝ հեթանոսական Գառնիի տաճարը, ժայռափոր Գեղարդի վանքը և Ազատի կիրճի բազալտե «Քարերի սիմֆոնիան»։ Մեկնումը՝ Արմավիրի կենտրոնական հրապարակից։",
+    description_en:
+      "In one day: the pagan temple of Garni, the rock-hewn Geghard monastery, and the basalt Symphony of Stones. Departure from Armavir's central square.",
+    description_ru:
+      "За один день: языческий храм Гарни, скальный монастырь Гегард и базальтовая «Симфония камней». Отправление с центральной площади Армавира.",
+    location_hy: "Գառնի և Գեղարդ",
+    location_en: "Garni and Geghard",
+    location_ru: "Гарни и Гегард",
+    image_url: garni,
+    category: "Գառնի և Գեղարդ",
     type: "Մշակութային",
     departurePlace: armavirDeparture,
     departureTime: "08:30",
@@ -105,8 +124,6 @@ export const tours: Tour[] = [
     has360: true,
     hasAudioGuide: true,
     day: "saturday",
-    summary:
-      "Մեկ օրում՝ հեթանոսական Գառնիի տաճարը, ժայռափոր Գեղարդի վանքը և Ազատի կիրճի բազալտե «Քարերի սիմֆոնիան»։ Մեկնումը՝ Արմավիրի կենտրոնական հրապարակից։",
     highlights: [
       "Գառնիի տաճար՝ միակ պահպանված հելլենիստական տաճարը Հայաստանում",
       "Գեղարդի վանք՝ ՅՈՒՆԵՍԿՕ-ի ժառանգություն",
@@ -167,9 +184,20 @@ export const tours: Tour[] = [
   },
   {
     id: "sevan",
-    title: "Արմավիր – Սևանա լիճ, Դիլիջան և Հաղարծին",
-    image: sevan,
-    region: "Սևան և Դիլիջան",
+    title_hy: "Արմավիր – Սևանա լիճ, Դիլիջան և Հաղարծին",
+    title_en: "Armavir – Lake Sevan, Dilijan and Haghartsin",
+    title_ru: "Армавир – озеро Севан, Дилижан и Агарцин",
+    description_hy:
+      "Կապույտ Սևանը, Սևանավանքի բլուրը, Դիլիջանի անտառները և Հաղարծնի վանքը՝ մեկ օրում, Արմավիրից ուղիղ մեկնումով։",
+    description_en:
+      "Blue Sevan, the Sevanavank hill, Dilijan's forests and Haghartsin monastery in one day, departing from Armavir.",
+    description_ru:
+      "Синий Севан, холм Севанаванка, леса Дилижана и монастырь Агарцин за один день, с отправлением из Армавира.",
+    location_hy: "Սևան և Դիլիջան",
+    location_en: "Sevan and Dilijan",
+    location_ru: "Севан и Дилижан",
+    image_url: sevan,
+    category: "Սևան և Դիլիջան",
     type: "Մշակութային",
     departurePlace: armavirDeparture,
     departureTime: "08:00",
@@ -181,8 +209,6 @@ export const tours: Tour[] = [
     has360: true,
     hasAudioGuide: true,
     day: "sunday",
-    summary:
-      "Կապույտ Սևանը, Սևանավանքի բլուրը, Դիլիջանի անտառները և Հաղարծնի վանքը՝ մեկ օրում, Արմավիրից ուղիղ մեկնումով։",
     highlights: [
       "Սևանավանք՝ լճի վրա բացվող համայնապատկերով",
       "Դիլիջանի հին Շարամբեյան փողոց",
@@ -216,9 +242,20 @@ export const tours: Tour[] = [
   },
   {
     id: "tatev",
-    title: "Արմավիր – Տաթևի վանք և Տաթևեր ճոպանուղի",
-    image: tatev,
-    region: "Տաթև",
+    title_hy: "Արմավիր – Տաթևի վանք և Տաթևեր ճոպանուղի",
+    title_en: "Armavir – Tatev Monastery and the Wings of Tatev",
+    title_ru: "Армавир – монастырь Татев и канатная дорога «Крылья Татева»",
+    description_hy:
+      "Երկար, բայց անմոռանալի օր՝ «Տաթևեր» աշխարհի ամենաերկար ճոպանուղին, Տաթևի վանքը և Որոտանի կիրճը։ Մեկնում Արմավիրից վաղ առավոտյան։",
+    description_en:
+      "A long but unforgettable day: the Wings of Tatev cable car, Tatev Monastery and the Vorotan gorge. Early departure from Armavir.",
+    description_ru:
+      "Долгий, но незабываемый день: канатная дорога «Крылья Татева», монастырь Татев и Воротанское ущелье. Раннее отправление из Армавира.",
+    location_hy: "Տաթև",
+    location_en: "Tatev",
+    location_ru: "Татев",
+    image_url: tatev,
+    category: "Տաթև",
     type: "Մշակութային",
     departurePlace: armavirDeparture,
     departureTime: "07:00",
@@ -230,8 +267,6 @@ export const tours: Tour[] = [
     has360: true,
     hasAudioGuide: true,
     day: "sunday",
-    summary:
-      "Երկար, բայց անմոռանալի օր՝ «Տաթևեր» աշխարհի ամենաերկար ճոպանուղին, Տաթևի վանքը և Որոտանի կիրճը։ Մեկնում Արմավիրից վաղ առավոտյան։",
     highlights: [
       "«Տաթևեր»՝ 5,7 կմ ճոպանուղի Որոտանի կիրճի վրայով",
       "Տաթևի 9-րդ դարի վանական համալիր",

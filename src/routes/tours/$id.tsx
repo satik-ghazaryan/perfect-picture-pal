@@ -1,13 +1,14 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { createFileRoute, Link, Navigate } from "@tanstack/react-router";
 import { Check, Clock, MapPin, Star } from "lucide-react";
 import { SiteHeader } from "@/components/site-header";
-import { PanoramaViewer } from "@/components/panorama-viewer";
+import { TourPanorama } from "@/components/tour-panorama";
 import { AudioGuidePlayer } from "@/components/audio-guide-player";
 import { BookingPanel } from "@/components/express-booking";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
-import { packingList, type Tour } from "@/data/tours";
+import { packingList, tourTypeLabels } from "@/data/tours";
+import { pickLocale, tourDescription, tourLocation, tourTitle, useSiteLocale } from "@/lib/locale";
 import { getAdminServerSnapshot, getAdminSnapshot, hydrateAdmin, resolveTour, subscribeAdmin } from "@/lib/admin";
 
 export const Route = createFileRoute("/tours/$id")({
@@ -20,11 +21,11 @@ export const Route = createFileRoute("/tours/$id")({
   head: ({ loaderData }) => ({
     meta: [
       {
-        title: loaderData?.tour ? `${loaderData.tour.title} — Արի Գնանք` : "Տուր — Արի Գնանք",
+        title: loaderData?.tour ? `${tourTitle(loaderData.tour)} — Արի Գնանք` : "Տուր — Արի Գնանք",
       },
       {
         name: "description",
-        content: loaderData?.tour?.summary ?? "Մեկօրյա տուրեր Արմավիրից։",
+        content: loaderData?.tour ? tourDescription(loaderData.tour) || "Մեկօրյա տուրեր Արմավիրից։" : "Մեկօրյա տուրեր Արմավիրից։",
       },
     ],
   }),
@@ -35,7 +36,7 @@ export const Route = createFileRoute("/tours/$id")({
 function TourNotFound() {
   return (
     <div className="min-h-screen bg-background">
-      <SiteHeader showBack />
+      <SiteHeader />
       <div className="mx-auto flex min-h-[70vh] max-w-lg flex-col items-center justify-center px-4 text-center">
         <p className="text-7xl font-black text-foreground">404</p>
         <h1 className="mt-4 text-xl font-bold">Տուրը չի գտնվել</h1>
@@ -53,15 +54,6 @@ function TourNotFound() {
   );
 }
 
-function panoramaSource(tour: Tour) {
-  const url = tour.panoramaUrl?.trim() ?? "";
-  if (!url) return tour.image;
-  if (/\.(jpe?g|png|webp|gif|avif)(\?.*)?$/i.test(url) || url.startsWith("data:image") || url.startsWith("/")) {
-    return url;
-  }
-  return tour.image;
-}
-
 function TourDetailPage() {
   const { id, tour: loaded } = Route.useLoaderData();
   const catalog = useSyncExternalStore(subscribeAdmin, getAdminSnapshot, getAdminServerSnapshot);
@@ -69,7 +61,18 @@ function TourDetailPage() {
   const live = ready ? catalog.tours.find((item) => item.id === id) : undefined;
   const tour = live ?? loaded;
   const { ticket: shownTicket = "" } = Route.useSearch();
-  const [tab, setTab] = useState(tour?.has360 ? "panorama" : tour?.hasAudioGuide ? "audio" : "overview");
+  const linkedId = tour?.is_virtual_only ? "" : tour?.virtual_tour_id?.trim() ?? "";
+  const linkedTour = linkedId
+    ? catalog.tours.find((item) => item.id === linkedId && item.is_virtual_only === true)
+    : undefined;
+  const showPanorama = linkedId.length > 0 && Boolean(linkedTour);
+  const [tab, setTab] = useState(tour?.hasAudioGuide ? "audio" : "overview");
+  const opened = useRef(false);
+  const lang = useSiteLocale();
+  const title = tour ? tourTitle(tour, lang) : "";
+  const summary = tour ? tourDescription(tour, lang) : "";
+  const regionLabel = tour ? tourLocation(tour, lang) : "";
+  const typeLabel = tour ? pickLocale(tourTypeLabels[tour.type], lang) : "";
 
   useEffect(() => {
     hydrateAdmin();
@@ -77,20 +80,28 @@ function TourDetailPage() {
   }, []);
 
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || opened.current) return;
+    if (linkedId && !linkedTour) return;
+    opened.current = true;
     if (!tour) {
       document.title = "Տուրը չի գտնվել — Արի Գնանք";
       return;
     }
-    document.title = `${tour.title} — Արի Գնանք`;
+    document.title = `${tourTitle(tour, lang)} — Արի Գնանք`;
     if (window.location.hash === "#audio" && tour.hasAudioGuide) setTab("audio");
-  }, [ready, tour]);
+    else if (linkedTour) setTab("panorama");
+  }, [ready, tour, linkedId, linkedTour, lang]);
+
+  useEffect(() => {
+    if (!ready || !tour) return;
+    document.title = `${tourTitle(tour, lang)} — Արի Գնանք`;
+  }, [ready, tour, lang]);
 
   if (!tour) {
     if (!ready) {
       return (
         <div className="min-h-screen bg-background">
-          <SiteHeader showBack />
+          <SiteHeader />
           <p className="px-4 py-16 text-center text-sm text-muted-foreground">Բեռնվում է...</p>
         </div>
       );
@@ -98,37 +109,41 @@ function TourDetailPage() {
     return <TourNotFound />;
   }
 
+  if (tour.is_virtual_only) {
+    return <Navigate to="/virtual" hash={tour.id} replace />;
+  }
+
   return (
     <div className="min-h-screen bg-background pb-[340px] lg:pb-16">
-      <SiteHeader showBack />
+      <SiteHeader />
 
       <div className="mx-auto grid max-w-7xl gap-8 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_340px] lg:py-10">
         <div className="min-w-0 space-y-8">
           <section className="overflow-hidden rounded-3xl border border-border bg-card shadow-card">
             <img
-              src={tour.image}
-              alt={tour.title}
+              src={tour.image_url}
+              alt={title}
               width={1280}
               height={720}
               className="h-56 w-full object-cover sm:h-80"
             />
             <div className="space-y-4 p-5 sm:p-6">
               <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
-                <span className="rounded-full bg-primary-soft px-2.5 py-1 text-primary">{tour.region}</span>
-                <span className="rounded-full bg-muted px-2.5 py-1">{tour.type}</span>
+                <span className="rounded-full bg-primary-soft px-2.5 py-1 text-primary">{regionLabel}</span>
+                <span className="rounded-full bg-muted px-2.5 py-1">{typeLabel}</span>
                 <span className="inline-flex items-center gap-1 rounded-full bg-accent/15 px-2.5 py-1">
                   <Star className="h-3.5 w-3.5 fill-accent text-accent" />
                   {tour.rating}
                   <span className="font-medium text-muted-foreground">({tour.reviews})</span>
                 </span>
               </div>
-              <h1 className="text-2xl font-black tracking-tight sm:text-4xl">{tour.title}</h1>
+              <h1 className="text-2xl font-black tracking-tight sm:text-4xl">{title}</h1>
               {shownTicket && (
                 <p className="w-fit rounded-full bg-primary-soft px-3 py-1 font-mono text-xs font-bold text-primary">
                   Թվային տոմս {shownTicket}
                 </p>
               )}
-              <p className="max-w-2xl text-sm text-muted-foreground sm:text-base">{tour.summary}</p>
+              <p className="max-w-2xl text-sm text-muted-foreground sm:text-base">{summary}</p>
             </div>
           </section>
 
@@ -140,7 +155,7 @@ function TourDetailPage() {
 
           <Tabs value={tab} onValueChange={setTab}>
             <TabsList className="h-auto w-full flex-wrap justify-start gap-1 rounded-2xl p-1">
-              {tour.has360 && (
+              {showPanorama && (
                 <TabsTrigger value="panorama" className="rounded-xl px-4 py-2">
                   360° դիտում
                 </TabsTrigger>
@@ -154,9 +169,9 @@ function TourDetailPage() {
                 Կարևոր կետեր
               </TabsTrigger>
             </TabsList>
-            {tour.has360 && (
+            {showPanorama && linkedTour && (
               <TabsContent value="panorama" className="mt-4">
-                <PanoramaViewer image={panoramaSource(tour)} title={tour.title} hotspots={tour.hotspots} />
+                <TourPanorama tour={linkedTour} />
               </TabsContent>
             )}
             {tour.hasAudioGuide && (

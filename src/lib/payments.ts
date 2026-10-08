@@ -1,5 +1,5 @@
 import { peekNextSeat, registerBooking } from "@/lib/guide-api";
-import { accountForPhone, commitLoyalty, loadLoyalty, quoteCheckout, revertLoyalty } from "@/lib/loyalty";
+import { accountForPhone, activeCreditTotal, commitLoyalty, loadLoyalty, quoteCheckout, revertLoyalty, takePromoCredits } from "@/lib/loyalty";
 import {
   formatSeatNumbers,
   publishBookingNotices,
@@ -267,6 +267,7 @@ export type CheckoutSuccess = {
   seatNumber: number;
   payable: number;
   redeemed: number;
+  creditApplied: number;
   earned: number;
   points: number;
   pointsSaved: boolean;
@@ -291,6 +292,7 @@ export async function completeCheckout(input: {
   total: number;
   usePoints: boolean;
   balance: number;
+  credit: number;
   notify: boolean;
   departureTime: string;
 }): Promise<CheckoutSuccess | CheckoutFailure> {
@@ -301,7 +303,12 @@ export async function completeCheckout(input: {
   } catch {
     balance = input.balance;
   }
-  const quote = quoteCheckout(balance, input.total, input.usePoints);
+  const creditApplied = Math.min(
+    Math.max(0, Math.round(input.credit)),
+    activeCreditTotal(input.phone),
+    Math.max(0, Math.round(input.total)),
+  );
+  const quote = quoteCheckout(balance, input.total - creditApplied, input.usePoints);
   if (input.usePoints && quote.redeem < 1) {
     return { ok: false, status: "FAILED", message: "Միավորները բավարար չեն։" };
   }
@@ -311,7 +318,11 @@ export async function completeCheckout(input: {
 
   let points = balance;
   let undo: (() => Promise<void>) | null = null;
+  let restoreCredits: (() => void) | null = null;
   const fail = async (status: "FAILED" | "PENDING", message: string): Promise<CheckoutFailure> => {
+    const restore = restoreCredits;
+    restoreCredits = null;
+    restore?.();
     if (!undo) return { ok: false, status, message };
     try {
       await undo();
@@ -353,6 +364,14 @@ export async function completeCheckout(input: {
         earn: quote.earn,
         tourId: input.tourId,
       });
+  }
+
+  if (creditApplied > 0) {
+    const taken = takePromoCredits(input.phone, creditApplied);
+    restoreCredits = taken.restore;
+    if (taken.applied !== creditApplied) {
+      return fail("FAILED", "Զեղչի կտրոնը չկիրառվեց։ Ամրագրումը չի ստեղծվել։");
+    }
   }
 
   const prefix = input.tourId.slice(0, 3).toUpperCase();
@@ -446,6 +465,7 @@ export async function completeCheckout(input: {
     seatNumber: booking.seatNumber,
     payable: quote.payable,
     redeemed: quote.redeem,
+    creditApplied,
     earned: quote.earn,
     points,
     pointsSaved: true,

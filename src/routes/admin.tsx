@@ -40,7 +40,7 @@ function AdminPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <SiteHeader showBack />
+      <SiteHeader />
       {!ready ? (
         <p className="px-4 py-16 text-center text-sm text-muted-foreground">Բեռնվում է...</p>
       ) : catalog.session?.role === "admin" ? (
