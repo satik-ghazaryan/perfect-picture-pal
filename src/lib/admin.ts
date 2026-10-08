@@ -60,6 +60,10 @@ type AdminState = {
   session: AdminSession | null;
 };
 
+export const LOCAL_ADMIN_EMAIL = "arev@arignank.am";
+export const LOCAL_ADMIN_PASSWORD = "#arev#";
+export const LOCAL_ADMIN_USERNAME = "arev";
+
 export function seedUsers(): DirectoryUser[] {
   return [
     {
@@ -128,6 +132,17 @@ export function seedUsers(): DirectoryUser[] {
       bio: "",
       birthDate: "1994-05-12",
       createdAt: "2026-09-12T08:00:00.000Z",
+    },
+    {
+      id: "local-admin",
+      fullName: "Ադմինիստրատոր",
+      phone: "+37410000000",
+      email: LOCAL_ADMIN_EMAIL,
+      password: LOCAL_ADMIN_PASSWORD,
+      role: "admin",
+      birthDate: "",
+      avatarUrl: "",
+      bio: "Արի Գնանք կայքի ադմինիստրատոր։",
     },
   ];
 }
@@ -200,6 +215,183 @@ function setState(patch: Partial<AdminState>) {
   state = { ...state, ...patch };
   persist();
   emit();
+}
+
+function textOrEmpty(value: string | null | undefined) {
+  return typeof value === "string" ? value : "";
+}
+
+function managedFromLiveTour(row: {
+  id: string;
+  title_hy: string;
+  title_en: string;
+  title_ru: string;
+  description_hy: string;
+  description_en: string;
+  description_ru: string;
+  location_hy: string;
+  location_en: string;
+  location_ru: string;
+  price: number;
+  image_url: string | null;
+  category: string | null;
+  created_at?: string;
+  departure_place?: string | null;
+  departure_time?: string | null;
+  departure_date?: string | null;
+  guide_id?: string | null;
+  driver_id?: string | null;
+}): ManagedTour | null {
+  const weekend: "saturday" | "sunday" | undefined = (() => {
+    if (!row.departure_date) return undefined;
+    const day = new Date(`${row.departure_date}T12:00:00`).getDay();
+    if (day === 0) return "sunday";
+    if (day === 6) return "saturday";
+    return undefined;
+  })();
+  const raw: Record<string, unknown> = {
+    id: row.id,
+    title_hy: row.title_hy,
+    title_en: row.title_en,
+    title_ru: row.title_ru,
+    description_hy: row.description_hy,
+    description_en: row.description_en,
+    description_ru: row.description_ru,
+    location_hy: row.location_hy,
+    location_en: row.location_en,
+    location_ru: row.location_ru,
+    price: row.price,
+    image_url: row.image_url,
+    category: row.category,
+    departurePlace: row.departure_place,
+    departureTime: row.departure_time,
+    is_virtual_only: false,
+    guideId: row.guide_id,
+    driverId: row.driver_id,
+  };
+  if (weekend) raw["day"] = weekend;
+  if (row.created_at) raw["created_at"] = row.created_at;
+  return sanitizeTour(raw);
+}
+
+function managedFromLiveVirtual(row: {
+  id: string;
+  title_hy: string;
+  title_en: string;
+  title_ru: string;
+  description_hy: string;
+  description_en: string;
+  description_ru: string;
+  embed_url: string | null;
+  thumbnail_url: string | null;
+  created_at?: string;
+}): ManagedTour | null {
+  const embed = textOrEmpty(row.embed_url).trim();
+  const thumb = textOrEmpty(row.thumbnail_url).trim();
+  const raw: Record<string, unknown> = {
+    id: row.id,
+    title_hy: row.title_hy,
+    title_en: row.title_en,
+    title_ru: row.title_ru,
+    description_hy: row.description_hy,
+    description_en: row.description_en,
+    description_ru: row.description_ru,
+    location_hy: row.title_hy,
+    location_en: row.title_en,
+    location_ru: row.title_ru,
+    price: 0,
+    image_url: thumb || undefined,
+    category: row.title_hy,
+    is_virtual_only: true,
+    panoramaUrl: embed,
+    virtual_tour_url: embed,
+    guideId: null,
+    driverId: null,
+  };
+  if (row.created_at) raw["created_at"] = row.created_at;
+  return sanitizeTour(raw);
+}
+
+function applyDepartures(
+  catalog: ManagedTour[],
+  departures: { tour_id: string; available_seats: number; guide_id: string | null; driver_id: string | null }[],
+) {
+  if (departures.length === 0) return catalog;
+  const latest = new Map<string, (typeof departures)[number]>();
+  for (const row of departures) latest.set(row.tour_id, row);
+  return catalog.map((tour) => {
+    const assigned = latest.get(tour.id);
+    if (!assigned) return tour;
+    return {
+      ...tour,
+      seatsLeft: assigned.available_seats,
+      guideId: assigned.guide_id,
+      driverId: assigned.driver_id,
+    };
+  });
+}
+
+let liveCatalogRequest = 0;
+
+async function refreshLiveCatalog() {
+  if (!isSupabaseConfigured || !supabase) return;
+  const request = ++liveCatalogRequest;
+  try {
+    const [toursResult, virtualResult, departuresResult] = await Promise.all([
+      supabase
+        .from("tours")
+        .select(
+          "id, title_hy, title_en, title_ru, description_hy, description_en, description_ru, location_hy, location_en, location_ru, price, image_url, category, created_at, departure_place, departure_time, departure_date, guide_id, driver_id",
+        )
+        .order("id"),
+      supabase
+        .from("virtual_tours")
+        .select("id, title_hy, title_en, title_ru, description_hy, description_en, description_ru, embed_url, thumbnail_url, created_at")
+        .order("id"),
+      supabase.from("departures").select("tour_id, available_seats, guide_id, driver_id, departure_date").order("departure_date"),
+    ]);
+    if (request !== liveCatalogRequest) return;
+    if (toursResult.error && virtualResult.error) {
+      setState({ tours: seedManaged() });
+      return;
+    }
+    const physical = (toursResult.data ?? [])
+      .map(managedFromLiveTour)
+      .filter((tour): tour is ManagedTour => tour !== null);
+    const virtualRows = virtualResult.data ?? [];
+    const byId = new Map(physical.map((tour) => [tour.id, tour]));
+    for (const row of virtualRows) {
+      const embed = textOrEmpty(row.embed_url).trim();
+      const existing = byId.get(row.id);
+      if (existing) {
+        byId.set(row.id, {
+          ...existing,
+          has360: existing.has360 || Boolean(embed),
+          panoramaUrl: existing.panoramaUrl || embed,
+          ...(embed ? { virtual_tour_url: existing.virtual_tour_url || embed } : {}),
+        });
+        continue;
+      }
+      const virtualTour = managedFromLiveVirtual(row);
+      if (virtualTour) byId.set(virtualTour.id, virtualTour);
+    }
+    let next = [...byId.values()];
+    if (next.length === 0) {
+      setState({ tours: seedManaged() });
+      return;
+    }
+    if (!departuresResult.error && departuresResult.data) {
+      next = applyDepartures(next, departuresResult.data);
+    }
+    next = clearBrokenLinks(next);
+    setState({ tours: next });
+    next.forEach((tour) => {
+      if (tour.is_virtual_only !== true) syncPortal(tour);
+    });
+  } catch {
+    if (request !== liveCatalogRequest) return;
+    setState({ tours: seedManaged() });
+  }
 }
 
 export function subscribeAdmin(listener: () => void) {
@@ -602,7 +794,16 @@ export function hydrateAdmin() {
   const stored = readCatalog();
   const session = isSupabaseConfigured ? null : readSession();
   const users = stored?.users ?? seedUsers();
-  if (stored || session) {
+  if (isSupabaseConfigured) {
+    state = {
+      tours: seedManaged(),
+      settings: stored?.settings ?? state.settings,
+      users,
+      session: null,
+    };
+    emit();
+    void refreshLiveCatalog();
+  } else if (stored || session) {
     state = {
       tours: stored?.tours ?? state.tours,
       settings: stored?.settings ?? state.settings,
@@ -620,6 +821,8 @@ export function hydrateAdmin() {
 }
 
 export function resolveTour(id: string): Tour | null {
+  const current = state.tours.find((tour) => tour.id === id);
+  if (current) return current;
   if (typeof localStorage !== "undefined") {
     const stored = readCatalog();
     if (stored) return stored.tours.find((tour) => tour.id === id) ?? null;
@@ -1116,24 +1319,40 @@ export async function loadAdminBookings(): Promise<BookingRecord[]> {
   return data.map(bookingFromRow);
 }
 
+const ADMIN_CREDENTIALS_ERROR = "Էլ. փոստը կամ գաղտնաբառը սխալ է։";
+
+function normalizeAdminEmail(value: string) {
+  const trimmed = value.trim().toLowerCase();
+  if (trimmed === LOCAL_ADMIN_USERNAME || trimmed === LOCAL_ADMIN_EMAIL) return LOCAL_ADMIN_EMAIL;
+  return trimmed;
+}
+
+function localAdminSession(): AdminSession {
+  const session: AdminSession = {
+    id: "local-admin",
+    fullName: "Ադմինիստրատոր",
+    email: LOCAL_ADMIN_EMAIL,
+    role: "admin",
+  };
+  setState({ session });
+  return session;
+}
+
+function matchesLocalAdmin(email: string, password: string) {
+  return email === LOCAL_ADMIN_EMAIL && password === LOCAL_ADMIN_PASSWORD;
+}
+
 export async function signInAdmin(email: string, password: string) {
-  const trimmed = email.trim().toLowerCase();
+  const trimmed = normalizeAdminEmail(email);
   if (!supabase) {
-    const localName = trimmed.split("@")[0] ?? "";
-    if (!trimmed.includes("@") || password.length < 4 || localName !== "admin") {
-      throw new Error("Ադմինի մուտքի համար օգտագործեք admin@arignank.am և առնվազն 4 նիշ գաղտնաբառ։");
-    }
-    const session: AdminSession = {
-      id: "local-admin",
-      fullName: "Ադմինիստրատոր",
-      email: trimmed,
-      role: "admin",
-    };
-    setState({ session });
-    return session;
+    if (!matchesLocalAdmin(trimmed, password)) throw new Error(ADMIN_CREDENTIALS_ERROR);
+    return localAdminSession();
   }
   const { data, error } = await supabase.auth.signInWithPassword({ email: trimmed, password });
-  if (error || !data.user) throw new Error("Էլ. փոստը կամ գաղտնաբառը սխալ է։");
+  if (error || !data.user) {
+    if (matchesLocalAdmin(trimmed, password)) return localAdminSession();
+    throw new Error(ADMIN_CREDENTIALS_ERROR);
+  }
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
     .select("id, full_name, email, role")
@@ -1154,7 +1373,7 @@ export async function signInAdmin(email: string, password: string) {
 }
 
 export function signInMockAdmin() {
-  return signInAdmin("admin@arignank.am", "admin");
+  return signInAdmin(LOCAL_ADMIN_EMAIL, LOCAL_ADMIN_PASSWORD);
 }
 
 export async function signOutAdmin() {

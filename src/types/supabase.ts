@@ -4,6 +4,9 @@ import type {
   LoyaltyKind,
   PaymentProviderName,
   PaymentState,
+  TourIdeaInput,
+  TourIdeaResult,
+  TourIdeaStatus,
   TourStatus,
   UserRole,
 } from "@/types";
@@ -301,6 +304,39 @@ export type Database = {
           cashback_percent?: number;
         };
         Relationships: [];
+      };
+      tour_ideas: {
+        Row: {
+          id: string;
+          inputs: TourIdeaInput;
+          generated_ideas: TourIdeaResult[];
+          status: TourIdeaStatus;
+          created_by: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          inputs: TourIdeaInput;
+          generated_ideas: TourIdeaResult[];
+          status?: TourIdeaStatus;
+          created_by?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          inputs?: TourIdeaInput;
+          generated_ideas?: TourIdeaResult[];
+          status?: TourIdeaStatus;
+          created_by?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "tour_ideas_created_by_fkey";
+            columns: ["created_by"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       tour_photos: {
         Row: {

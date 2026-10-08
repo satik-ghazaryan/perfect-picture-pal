@@ -3,15 +3,16 @@ import { deliverNotification } from "@/lib/notification-gateway";
 import type { NotificationChannel } from "@/lib/notifications";
 
 function paymentSecret() {
-  if (typeof process === "undefined" || !process.env) return "ari-gnank-demo";
-  return process.env["VITE_PAYMENT_SECRET"]?.trim() || "ari-gnank-demo";
+  if (typeof process === "undefined" || !process.env) return "";
+  return process.env["PAYMENT_SECRET"]?.trim() || "";
 }
 
 export const Route = createFileRoute("/api/notifications/dispatch")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        if (request.headers.get("x-payment-secret") !== paymentSecret()) {
+        const secret = paymentSecret();
+        if (!secret || request.headers.get("x-payment-secret") !== secret) {
           return Response.json({ mode: "failed" }, { status: 401 });
         }
         let payload: { channel?: NotificationChannel; phone?: string; body?: string };

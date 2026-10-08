@@ -116,16 +116,9 @@ export function bookingMessage(details: TicketDetails) {
   ].join("\n");
 }
 
-function browserGatewayConfigured() {
-  const sid = import.meta.env.VITE_TWILIO_ACCOUNT_SID?.trim();
-  const from = import.meta.env.VITE_TWILIO_PHONE_NUMBER?.trim();
-  const smsWebhook = import.meta.env.VITE_SMS_GATEWAY_URL?.trim();
-  const whatsappWebhook = import.meta.env.VITE_WHATSAPP_GATEWAY_URL?.trim();
-  return Boolean(smsWebhook || whatsappWebhook || (sid && from));
-}
-
-function paymentSecret() {
-  return import.meta.env.VITE_PAYMENT_SECRET || "ari-gnank-demo";
+function serverPaymentSecret() {
+  if (typeof process === "undefined" || !process.env) return "";
+  return process.env["PAYMENT_SECRET"]?.trim() || "";
 }
 
 let lastMockToast = 0;
@@ -151,14 +144,15 @@ async function deliver(channel: NotificationChannel, phone: string, body: string
     const gateway = await import("@/lib/notification-gateway");
     return gateway.deliverNotification(channel, phone, body);
   }
-  if (!browserGatewayConfigured()) return "mock";
+  const secret = serverPaymentSecret();
+  if (!secret) return "mock";
   try {
     const response = await fetch("/api/notifications/dispatch", {
       method: "POST",
       headers: {
         "content-type": "application/json",
         accept: "application/json",
-        "x-payment-secret": paymentSecret(),
+        "x-payment-secret": secret,
       },
       body: JSON.stringify({ channel, phone, body }),
     });

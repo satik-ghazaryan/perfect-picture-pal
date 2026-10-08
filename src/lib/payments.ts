@@ -43,18 +43,29 @@ const PROVIDERS: Record<PaymentProvider, { label: string; path: string }> = {
   arca: { label: "ArCa / Visa", path: "/api/payment/arca-callback" },
 };
 
-function paymentSecret() {
-  return import.meta.env.VITE_PAYMENT_SECRET || "ari-gnank-demo";
+function serverPaymentSecret() {
+  if (typeof process === "undefined" || !process.env) return "";
+  return process.env["PAYMENT_SECRET"]?.trim() || "";
 }
 
-export function paymentChecksum(provider: PaymentProvider, billNo: string, amount: number) {
-  const raw = `${paymentSecret()}|${provider}|${billNo}|${amount}`;
+function checksumWithSecret(secret: string, provider: PaymentProvider, billNo: string, amount: number) {
+  const raw = `${secret}|${provider}|${billNo}|${amount}`;
   let hash = 2166136261;
   for (let index = 0; index < raw.length; index += 1) {
     hash ^= raw.charCodeAt(index);
     hash = Math.imul(hash, 16777619);
   }
   return (hash >>> 0).toString(16);
+}
+
+export function paymentChecksum(provider: PaymentProvider, billNo: string, amount: number) {
+  return checksumWithSecret("", provider, billNo, amount);
+}
+
+function checksumAccepted(provider: PaymentProvider, billNo: string, amount: number, checksum: string) {
+  if (checksum === checksumWithSecret("", provider, billNo, amount)) return true;
+  const secret = serverPaymentSecret();
+  return Boolean(secret) && checksum === checksumWithSecret(secret, provider, billNo, amount);
 }
 
 export function providerLabel(provider: PaymentProvider) {
@@ -93,7 +104,7 @@ export function interpretCallback(provider: PaymentProvider, body: Record<string
   if (!billNo || !Number.isFinite(amount) || amount < 0) {
     return failed(provider, billNo, 0, `${label} հարցումը թերի է։`);
   }
-  if (checksum !== paymentChecksum(provider, billNo, amount)) {
+  if (!checksumAccepted(provider, billNo, amount, checksum)) {
     return failed(provider, billNo, amount, `${label} ստորագրությունը չհամընկավ։`);
   }
 

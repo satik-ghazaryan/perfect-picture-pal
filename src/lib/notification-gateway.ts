@@ -19,12 +19,12 @@ function envValue(name: string) {
 
 function gatewayConfig(): GatewayConfig {
   return {
-    sid: envValue("VITE_TWILIO_ACCOUNT_SID"),
-    token: envValue("VITE_TWILIO_AUTH_TOKEN"),
-    from: envValue("VITE_TWILIO_PHONE_NUMBER"),
-    whatsappFrom: envValue("VITE_TWILIO_WHATSAPP_NUMBER"),
-    smsWebhook: envValue("VITE_SMS_GATEWAY_URL"),
-    whatsappWebhook: envValue("VITE_WHATSAPP_GATEWAY_URL"),
+    sid: envValue("TWILIO_ACCOUNT_SID"),
+    token: envValue("TWILIO_AUTH_TOKEN"),
+    from: envValue("TWILIO_PHONE_NUMBER"),
+    whatsappFrom: envValue("TWILIO_WHATSAPP_NUMBER"),
+    smsWebhook: envValue("SMS_GATEWAY_URL"),
+    whatsappWebhook: envValue("WHATSAPP_GATEWAY_URL"),
   };
 }
 

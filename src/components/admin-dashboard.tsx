@@ -4,7 +4,7 @@ import { useSyncExternalStore } from "react";
 import { format, parseISO } from "date-fns";
 import { hy } from "date-fns/locale";
 import { toast } from "sonner";
-import { CalendarDays, ChevronDown, ChevronUp, FileSpreadsheet, LogOut, Plus, Rotate3d, Settings, Ticket, Trash2, UserRound, Users } from "lucide-react";
+import { CalendarDays, ChevronDown, ChevronUp, FileSpreadsheet, Loader2, LogOut, Plus, Rotate3d, Settings, Sparkles, Ticket, Trash2, UserRound, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -47,6 +47,7 @@ import {
   saveTour,
   signOutAdmin,
   subscribeAdmin,
+  defaultSettings,
   type AdminSession,
   type DirectoryUser,
   type ManagedTour,
@@ -64,10 +65,13 @@ import {
 } from "@/lib/loyalty";
 import { downloadPassengerWorkbook } from "@/lib/passenger-export";
 import { isSupabaseConfigured } from "@/lib/supabase";
+import { generateTourIdeas, saveTourIdeaDraft } from "@/lib/tour-ideas";
+import type { TourIdeaInput, TourIdeaResult } from "@/types";
 
 const sections = [
   { id: "tours", label: "Տուրեր", icon: CalendarDays },
   { id: "virtual", label: "360° Վիրտուալ Տուրեր", icon: Rotate3d },
+  { id: "ideas", label: "Նոր տուրերի գաղափարներ", icon: Sparkles },
   { id: "staff", label: "Զբոսավարներ և Վարորդներ", icon: Users },
   { id: "tourists", label: "Զբոսաշրջիկներ", icon: UserRound },
   { id: "bookings", label: "Ամրագրումներ", icon: Ticket },
@@ -259,6 +263,7 @@ export function AdminDashboard({ session }: { session: AdminSession }) {
   const catalog = useSyncExternalStore(subscribeAdmin, getAdminSnapshot, getAdminServerSnapshot);
   const portal = useSyncExternalStore(subscribePortal, getPortalSnapshot, getPortalServerSnapshot);
   const [section, setSection] = useState<SectionId>("tours");
+  const [publishDraft, setPublishDraft] = useState<Draft | null>(null);
   const [remoteUsers, setRemoteUsers] = useState<DirectoryUser[]>([]);
   const [staffError, setStaffError] = useState("");
   const [remoteBookings, setRemoteBookings] = useState(portal.bookings);
@@ -327,8 +332,24 @@ export function AdminDashboard({ session }: { session: AdminSession }) {
             Տեղային նախադիտում. փոփոխությունները պահվում են այս դիտարկիչում։
           </p>
         )}
-        {section === "tours" && <ToursSection tours={catalog.tours} mode="departures" />}
+        {section === "tours" && (
+          <ToursSection
+            tours={catalog.tours}
+            mode="departures"
+            seedDraft={publishDraft}
+            onSeedApplied={() => setPublishDraft(null)}
+          />
+        )}
         {section === "virtual" && <ToursSection tours={catalog.tours} mode="virtual" />}
+        {section === "ideas" && (
+          <IdeasSection
+            createdBy={session.id}
+            onPublish={(draft) => {
+              setPublishDraft(draft);
+              setSection("tours");
+            }}
+          />
+        )}
         {section === "staff" && (
           <StaffSection
             tours={catalog.tours.filter((tour) => tour.is_virtual_only !== true)}
@@ -468,12 +489,29 @@ function missingCopy(draft: Draft, code: LocaleCode) {
   return !draft.title[code].trim() || !draft.summary[code].trim() || !draft.region[code].trim();
 }
 
-function ToursSection({ tours, mode }: { tours: ManagedTour[]; mode: "departures" | "virtual" }) {
+function ToursSection({
+  tours,
+  mode,
+  seedDraft,
+  onSeedApplied,
+}: {
+  tours: ManagedTour[];
+  mode: "departures" | "virtual";
+  seedDraft?: Draft | null;
+  onSeedApplied?: () => void;
+}) {
   const listed = tours.filter((tour) => (mode === "virtual" ? tour.is_virtual_only === true : tour.is_virtual_only !== true));
   const [draft, setDraft] = useState<Draft | null>(null);
   const [formLang, setFormLang] = useState<LocaleCode>("hy");
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!seedDraft || mode !== "departures") return;
+    setFormLang("hy");
+    setDraft(seedDraft);
+    onSeedApplied?.();
+  }, [seedDraft, mode, onSeedApplied]);
 
   const update = (patch: Partial<Draft>) => {
     setDraft((current) => (current ? { ...current, ...patch } : current));
@@ -1582,6 +1620,291 @@ function SettingsSection({ settings }: { settings: SiteSettings }) {
           {saving ? "Պահվում է" : "Պահպանել"}
         </Button>
       </form>
+    </section>
+  );
+}
+
+const ideaSeasons = [
+  { value: "spring", label: "Գարուն" },
+  { value: "summer", label: "Ամառ" },
+  { value: "autumn", label: "Աշուն" },
+  { value: "winter", label: "Ձմեռ" },
+] as const;
+
+const ideaAudiences = [
+  { value: "families", label: "Ընտանիքներ" },
+  { value: "couples", label: "Զույգեր" },
+  { value: "friends", label: "Ընկերներ" },
+  { value: "seniors", label: "Տարեցներ" },
+  { value: "mixed", label: "Խառը խումբ" },
+] as const;
+
+const ideaTourTypes = [
+  { value: "cultural", label: "Մշակութային" },
+  { value: "hiking", label: "Արշավային" },
+  { value: "extreme", label: "Էքստրեմալ" },
+  { value: "mixed", label: "Խառը" },
+] as const;
+
+function catalogTypeFromIdea(tourType: string): Tour["type"] {
+  if (tourType === "hiking") return "Արշավային";
+  if (tourType === "extreme") return "Էքստրեմալ";
+  return "Մշակութային";
+}
+
+function hoursToClock(start: string, hours: number) {
+  const [hourText, minuteText] = start.split(":");
+  const startMinutes = Number(hourText) * 60 + Number(minuteText);
+  if (!Number.isFinite(startMinutes)) return "19:00";
+  const total = Math.min(23 * 60 + 59, startMinutes + Math.round(hours * 60));
+  const hour = Math.floor(total / 60);
+  const minute = total % 60;
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function draftFromIdea(idea: TourIdeaResult, tourType: string): Draft {
+  const itinerary = idea.itinerary
+    .map((stop) => `${stop.time} | ${stop.title} | ${stop.description}`)
+    .join("\n");
+  const highlights = idea.highlights.filter((item) => item.trim());
+  return {
+    ...emptyDraft(false),
+    title: columnsToLocalized(idea.title_hy, idea.title_en, idea.title_ru),
+    summary: columnsToLocalized(idea.description_hy, idea.description_en, idea.description_ru),
+    region: columnsToLocalized(idea.location_hy, idea.location_en, idea.location_ru),
+    price: String(idea.price),
+    type: catalogTypeFromIdea(tourType),
+    returnTime: hoursToClock("08:30", idea.duration_hours || 10),
+    itinerary: itinerary || highlights.map((item, index) => `${String(9 + index).padStart(2, "0")}:00 | ${item} | ${item}`).join("\n"),
+  };
+}
+
+function IdeasSection({
+  createdBy,
+  onPublish,
+}: {
+  createdBy: string;
+  onPublish: (draft: Draft) => void;
+}) {
+  const [form, setForm] = useState<TourIdeaInput>({
+    season: "summer",
+    target_audience: "families",
+    tour_type: "cultural",
+    duration_days: 1,
+    budget_amd: 15000,
+    departure_location: defaultSettings.departurePlace,
+    preferences: "",
+    count: 3,
+  });
+  const [loading, setLoading] = useState(false);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [ideas, setIdeas] = useState<TourIdeaResult[]>([]);
+  const [summary, setSummary] = useState("");
+  const [lastInput, setLastInput] = useState<TourIdeaInput | null>(null);
+
+  const generate = async () => {
+    if (form.budget_amd <= 0) {
+      toast.error("Բյուջեն պետք է դրական թիվ լինի։");
+      return;
+    }
+    setLoading(true);
+    try {
+      const result = await generateTourIdeas(form);
+      setIdeas(result.ideas);
+      setSummary(result.research_summary);
+      setLastInput(form);
+      toast.success("Գաղափարները պատրաստ են");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Գաղափարները չգեներացվեցին։");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const saveDraft = async (idea: TourIdeaResult) => {
+    const payload = lastInput ?? form;
+    setSavingId(idea.id);
+    try {
+      await saveTourIdeaDraft(payload, [idea], createdBy);
+      toast.success("Draft-ը պահվեց");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Draft-ը չպահվեց։");
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  return (
+    <section className="space-y-4">
+      <div>
+        <h1 className="text-2xl font-black tracking-tight">Նոր տուրերի գաղափարներ</h1>
+        <p className="mt-1 text-sm text-muted-foreground">AI գործակալ՝ Արմավիրից մեկօրյա երթուղիների առաջարկների համար</p>
+      </div>
+      <form
+        className="space-y-4 rounded-3xl border border-border bg-card p-4 sm:p-5"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void generate();
+        }}
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Սեզոն" id="idea-season">
+            <Select value={form.season} onValueChange={(season) => setForm({ ...form, season })}>
+              <SelectTrigger id="idea-season" className="rounded-2xl">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ideaSeasons.map((item) => (
+                  <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Թիրախային լսարան" id="idea-audience">
+            <Select value={form.target_audience} onValueChange={(target_audience) => setForm({ ...form, target_audience })}>
+              <SelectTrigger id="idea-audience" className="rounded-2xl">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ideaAudiences.map((item) => (
+                  <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Տուրի տեսակ" id="idea-type">
+            <Select value={form.tour_type} onValueChange={(tour_type) => setForm({ ...form, tour_type })}>
+              <SelectTrigger id="idea-type" className="rounded-2xl">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ideaTourTypes.map((item) => (
+                  <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Տևողություն (օր)" id="idea-days">
+            <Input
+              id="idea-days"
+              inputMode="numeric"
+              value={String(form.duration_days)}
+              onChange={(event) => {
+                const value = Math.round(Number(event.target.value));
+                setForm({ ...form, duration_days: Number.isFinite(value) ? Math.min(3, Math.max(1, value)) : 1 });
+              }}
+              className="rounded-2xl"
+            />
+          </Field>
+          <Field label="Բյուջե (֏)" id="idea-budget">
+            <Input
+              id="idea-budget"
+              inputMode="numeric"
+              value={String(form.budget_amd)}
+              onChange={(event) => {
+                const value = Math.round(Number(event.target.value));
+                setForm({ ...form, budget_amd: Number.isFinite(value) ? Math.max(0, value) : 0 });
+              }}
+              className="rounded-2xl"
+            />
+          </Field>
+          <Field label="Մեկնման վայր" id="idea-from">
+            <Input
+              id="idea-from"
+              value={form.departure_location}
+              onChange={(event) => setForm({ ...form, departure_location: event.target.value })}
+              className="rounded-2xl"
+            />
+          </Field>
+          <Field label="Գաղափարների քանակ" id="idea-count">
+            <Input
+              id="idea-count"
+              inputMode="numeric"
+              value={String(form.count)}
+              onChange={(event) => {
+                const value = Math.round(Number(event.target.value));
+                setForm({ ...form, count: Number.isFinite(value) ? Math.min(8, Math.max(1, value)) : 3 });
+              }}
+              className="rounded-2xl"
+            />
+          </Field>
+        </div>
+        <Field label="Նախընտրություններ" id="idea-pref">
+          <Textarea
+            id="idea-pref"
+            value={form.preferences}
+            onChange={(event) => setForm({ ...form, preferences: event.target.value })}
+            className="min-h-24 rounded-2xl"
+            placeholder="Օրինակ՝ պատմական վայրեր և գինու համտես"
+          />
+        </Field>
+        <Button type="submit" className="rounded-full font-bold" disabled={loading}>
+          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+          {loading ? "Գեներացվում է" : "Գեներացնել"}
+        </Button>
+      </form>
+
+      {summary ? (
+        <p className="rounded-2xl bg-muted px-4 py-3 text-sm text-muted-foreground">{summary}</p>
+      ) : null}
+
+      {ideas.length === 0 && !loading ? (
+        <p className="rounded-2xl bg-muted px-4 py-3 text-sm text-muted-foreground">Դեռ գաղափարներ չկան։ Լրացրեք ձևը և սեղմեք գեներացնել։</p>
+      ) : null}
+
+      <div className="space-y-3">
+        {ideas.map((idea) => (
+          <article key={idea.id} className="rounded-3xl border border-border bg-card p-4">
+            <h2 className="text-base font-bold leading-snug">{idea.title_hy}</h2>
+            <p className="mt-1 text-xs font-semibold text-muted-foreground">
+              {idea.title_en} · {idea.title_ru}
+            </p>
+            <p className="mt-2 text-sm text-foreground">{idea.description_hy}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{idea.description_en}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{idea.description_ru}</p>
+            <p className="mt-3 text-sm font-black">{formatAmd(idea.price)}</p>
+            {idea.highlights.length > 0 ? (
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-foreground">
+                {idea.highlights.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            ) : null}
+            {idea.itinerary.length > 0 ? (
+              <div className="mt-3 space-y-1 text-sm">
+                {idea.itinerary.map((stop) => (
+                  <p key={`${stop.time}-${stop.title}`}>
+                    <span className="font-bold">{stop.time}</span> · {stop.title}
+                  </p>
+                ))}
+              </div>
+            ) : null}
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="rounded-full"
+                disabled={savingId === idea.id}
+                onClick={() => void saveDraft(idea)}
+              >
+                {savingId === idea.id ? "Պահվում է" : "Պահպանել որպես Draft"}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                className="rounded-full font-bold"
+                onClick={() => {
+                  onPublish(draftFromIdea(idea, lastInput?.tour_type ?? form.tour_type));
+                  toast.success("Ձևը լրացված է տուրերի բաժնում");
+                }}
+              >
+                Ավելացնել Տուրերի Ցանկում
+              </Button>
+            </div>
+          </article>
+        ))}
+      </div>
     </section>
   );
 }

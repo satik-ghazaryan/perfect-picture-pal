@@ -35,3 +35,13 @@ supabase/.temp/
 *.njsproj
 *.sln
 *.sw?
+
+.vercel
+.env*
+
+# Python agent service
+venv/
+.venv/
+__pycache__/
+.pytest_cache/
+*.py[cod]

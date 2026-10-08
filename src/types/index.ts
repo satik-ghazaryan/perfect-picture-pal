@@ -66,3 +66,43 @@ export type Booking = {
   status: BookingStatus;
   attendance: AttendanceStatus;
 };
+
+export type TourIdeaStatus = "draft" | "approved" | "rejected";
+
+export type TourIdeaInput = {
+  season: string;
+  target_audience: string;
+  tour_type: string;
+  duration_days: number;
+  budget_amd: number;
+  departure_location: string;
+  preferences: string;
+  count: number;
+};
+
+export type TourIdeaStop = {
+  time: string;
+  title: string;
+  description: string;
+};
+
+export type TourIdeaResult = {
+  id: string;
+  title_hy: string;
+  title_en: string;
+  title_ru: string;
+  description_hy: string;
+  description_en: string;
+  description_ru: string;
+  location_hy: string;
+  location_en: string;
+  location_ru: string;
+  price: number;
+  duration_hours: number;
+  highlights: string[];
+  itinerary: TourIdeaStop[];
+  budget_score?: number;
+  logistics_score?: number;
+  appeal_score?: number;
+  notes?: string;
+};
