@@ -46,6 +46,7 @@ function asBreakdown(value: unknown): TourIdeaBreakdown | undefined {
     entrance_fees_amd: parseAmd(record.entrance_fees_amd ?? record.entrance_fees ?? record.tickets),
     guide_amd: parseAmd(record.guide_amd ?? record.guide),
     other_amd: parseAmd(record.other_amd ?? record.other),
+    yerevan_transfer_amd: parseAmd(record.yerevan_transfer_amd ?? record.yerevan_transfer),
     notes: String(record.notes ?? "Estimated. Needs verification."),
   };
 }
@@ -103,6 +104,7 @@ export function normalizeTourIdea(value: unknown): TourIdeaResult | null {
     logistics_score: typeof record.logistics_score === "number" ? record.logistics_score : undefined,
     appeal_score: typeof record.appeal_score === "number" ? record.appeal_score : undefined,
     quality_score: typeof record.quality_score === "number" ? record.quality_score : undefined,
+    budget_fit: record.budget_fit === "over" ? "over" : record.budget_fit === "within" ? "within" : undefined,
     notes: typeof record.notes === "string" ? record.notes : "",
   };
 }

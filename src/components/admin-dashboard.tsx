@@ -1872,7 +1872,11 @@ function IdeasSection({
             {idea.breakdown && idea.breakdown.transport_amd > 0 ? (
               <p className="mt-1 text-xs text-muted-foreground">
                 Տրանսպորտ (գնահատված) {formatAmd(idea.breakdown.transport_amd)}
+                {idea.breakdown.yerevan_transfer_amd ? ` · Երևան փոխադրում +${formatAmd(idea.breakdown.yerevan_transfer_amd)}` : ""}
               </p>
+            ) : null}
+            {idea.budget_fit === "over" ? (
+              <p className="mt-1 text-xs font-semibold text-muted-foreground">Բյուջեից բարձր տարբերակ (գնահատված)</p>
             ) : null}
             {idea.highlights.length > 0 ? (
               <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-foreground">

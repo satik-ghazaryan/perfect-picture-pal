@@ -92,6 +92,7 @@ export type TourIdeaBreakdown = {
   entrance_fees_amd: number;
   guide_amd: number;
   other_amd: number;
+  yerevan_transfer_amd?: number;
   notes: string;
 };
 
@@ -128,5 +129,6 @@ export type TourIdeaResult = {
   logistics_score?: number;
   appeal_score?: number;
   quality_score?: number;
+  budget_fit?: "within" | "over";
   notes?: string;
 };

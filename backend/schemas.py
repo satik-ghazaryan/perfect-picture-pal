@@ -55,6 +55,7 @@ class CostBreakdown(BaseModel):
     entrance_fees_amd: int = 0
     guide_amd: int = 0
     other_amd: int = 0
+    yerevan_transfer_amd: int = 0
     notes: str = "Estimated. Needs verification."
 
     @model_validator(mode="before")
@@ -68,6 +69,7 @@ class CostBreakdown(BaseModel):
             "entrance_fees_amd": parse_amd(value.get("entrance_fees_amd", value.get("entrance_fees", value.get("tickets")))),
             "guide_amd": parse_amd(value.get("guide_amd", value.get("guide"))),
             "other_amd": parse_amd(value.get("other_amd", value.get("other"))),
+            "yerevan_transfer_amd": parse_amd(value.get("yerevan_transfer_amd", value.get("yerevan_transfer"))),
             "notes": str(value.get("notes") or "Estimated. Needs verification."),
         }
 
@@ -128,6 +130,7 @@ class TourIdea(BaseModel):
     logistics_score: float = Field(default=0, ge=0, le=10)
     appeal_score: float = Field(default=0, ge=0, le=10)
     quality_score: float = Field(default=0, ge=0, le=10)
+    budget_fit: Literal["within", "over"] = "within"
     notes: str = Field(default="", max_length=4000)
 
     @model_validator(mode="before")
