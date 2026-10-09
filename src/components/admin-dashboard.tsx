@@ -65,7 +65,7 @@ import {
 } from "@/lib/loyalty";
 import { downloadPassengerWorkbook } from "@/lib/passenger-export";
 import { isSupabaseConfigured } from "@/lib/supabase";
-import { generateTourIdeas, saveTourIdeaDraft } from "@/lib/tour-ideas";
+import { generateTourIdeas, readCachedIdeaRun, saveTourIdeaDraft } from "@/lib/tour-ideas";
 import type { TourIdeaInput, TourIdeaResult } from "@/types";
 
 const sections = [
@@ -124,6 +124,7 @@ type Draft = {
   isVirtualOnly: boolean;
   itinerary: string;
   chapters: ChapterDraft[];
+  highlights: string[];
 };
 
 const chapterLanguages: { value: AudioLanguage; label: string }[] = [
@@ -151,6 +152,7 @@ function emptyDraft(virtualOnly = false): Draft {
     isVirtualOnly: virtualOnly,
     itinerary: "",
     chapters: [],
+    highlights: [],
   };
 }
 
@@ -172,6 +174,7 @@ function draftFromTour(tour: ManagedTour): Draft {
     virtualTourId: tour.virtual_tour_id ?? "",
     isVirtualOnly: tour.is_virtual_only === true,
     itinerary: tour.itinerary.map((stop) => `${stop.time} | ${stop.title} | ${stop.description}`).join("\n"),
+    highlights: [...tour.highlights],
     chapters: tour.audioChapters.map((chapter) => ({
       id: chapter.id,
       title: chapter.title,
@@ -578,7 +581,7 @@ function ToursSection({
       has360: panoramaUrl.length > 0 || virtualTourUrl.length > 0 || virtualOnly || existing?.has360 === true,
       hasAudioGuide: audio.length > 0,
       day: virtualOnly ? "saturday" : draft.day,
-      highlights: virtualOnly ? [] : existing?.highlights ?? [],
+      highlights: virtualOnly ? [] : (draft.highlights.length > 0 ? draft.highlights : existing?.highlights ?? []),
       itinerary: virtualOnly ? [] : parseItinerary(draft.itinerary),
       included: virtualOnly ? [] : existing?.included ?? ["Հարմարավետ ավտոբուս Արմավիրից և վերադարձ", "Հայախոս ուղեկցորդ"],
       excluded: virtualOnly ? [] : existing?.excluded ?? ["Ճաշ և անձնական ծախսեր"],
@@ -1669,6 +1672,7 @@ function draftFromIdea(idea: TourIdeaResult, tourType: string): Draft {
   const highlights = idea.highlights.filter((item) => item.trim());
   return {
     ...emptyDraft(false),
+    id: idea.id,
     title: columnsToLocalized(idea.title_hy, idea.title_en, idea.title_ru),
     summary: columnsToLocalized(idea.description_hy, idea.description_en, idea.description_ru),
     region: columnsToLocalized(idea.location_hy, idea.location_en, idea.location_ru),
@@ -1676,6 +1680,7 @@ function draftFromIdea(idea: TourIdeaResult, tourType: string): Draft {
     type: catalogTypeFromIdea(tourType),
     returnTime: hoursToClock("08:30", idea.duration_hours || 10),
     itinerary: itinerary || highlights.map((item, index) => `${String(9 + index).padStart(2, "0")}:00 | ${item} | ${item}`).join("\n"),
+    highlights,
   };
 }
 
@@ -1696,10 +1701,11 @@ function IdeasSection({
     preferences: "",
     count: 3,
   });
+  const cachedRun = readCachedIdeaRun();
   const [loading, setLoading] = useState(false);
   const [savingId, setSavingId] = useState<string | null>(null);
-  const [ideas, setIdeas] = useState<TourIdeaResult[]>([]);
-  const [summary, setSummary] = useState("");
+  const [ideas, setIdeas] = useState<TourIdeaResult[]>(cachedRun?.ideas ?? []);
+  const [summary, setSummary] = useState(cachedRun?.summary ?? "");
   const [lastInput, setLastInput] = useState<TourIdeaInput | null>(null);
 
   const generate = async () => {
@@ -1863,6 +1869,11 @@ function IdeasSection({
             <p className="mt-1 text-xs text-muted-foreground">{idea.description_en}</p>
             <p className="mt-1 text-xs text-muted-foreground">{idea.description_ru}</p>
             <p className="mt-3 text-sm font-black">{formatAmd(idea.price)}</p>
+            {idea.breakdown && idea.breakdown.transport_amd > 0 ? (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Տրանսպորտ (գնահատված) {formatAmd(idea.breakdown.transport_amd)}
+              </p>
+            ) : null}
             {idea.highlights.length > 0 ? (
               <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-foreground">
                 {idea.highlights.map((item) => (

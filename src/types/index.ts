@@ -86,6 +86,27 @@ export type TourIdeaStop = {
   description: string;
 };
 
+export type TourIdeaBreakdown = {
+  transport_amd: number;
+  meals_amd: number;
+  entrance_fees_amd: number;
+  guide_amd: number;
+  other_amd: number;
+  notes: string;
+};
+
+export type TourIdeaProfitability = {
+  group_size: number;
+  revenue_per_person_amd: number;
+  expense_per_person_amd: number;
+  profit_per_person_amd: number;
+  revenue_per_group_amd: number;
+  expense_per_group_amd: number;
+  profit_per_group_amd: number;
+  assumptions: string;
+  confidence: "estimated" | "needs_verification";
+};
+
 export type TourIdeaResult = {
   id: string;
   title_hy: string;
@@ -101,8 +122,11 @@ export type TourIdeaResult = {
   duration_hours: number;
   highlights: string[];
   itinerary: TourIdeaStop[];
+  breakdown?: TourIdeaBreakdown;
+  profitability?: TourIdeaProfitability;
   budget_score?: number;
   logistics_score?: number;
   appeal_score?: number;
+  quality_score?: number;
   notes?: string;
 };

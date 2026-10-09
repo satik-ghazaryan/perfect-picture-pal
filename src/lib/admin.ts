@@ -566,7 +566,15 @@ function sanitizeTour(value: unknown): ManagedTour | null {
       : base?.departurePlace ?? defaultSettings.departurePlace,
     departureTime: typeof raw.departureTime === "string" && raw.departureTime ? raw.departureTime : base?.departureTime ?? "08:30",
     returnTime: typeof raw.returnTime === "string" && raw.returnTime ? raw.returnTime : base?.returnTime ?? "19:00",
-    price: typeof raw.price === "number" ? raw.price : base?.price ?? 0,
+    price: (() => {
+      if (typeof raw.price === "number" && Number.isFinite(raw.price)) return raw.price;
+      if (typeof raw.price === "string") {
+        const digits = raw.price.replace(/[^\d]/g, "");
+        const parsed = digits ? Number.parseInt(digits, 10) : Number.NaN;
+        if (Number.isFinite(parsed)) return parsed;
+      }
+      return base?.price ?? 0;
+    })(),
     seatsLeft: typeof raw.seatsLeft === "number" ? raw.seatsLeft : base?.seatsLeft ?? 0,
     rating: typeof raw.rating === "number" ? raw.rating : base?.rating ?? 5,
     reviews: typeof raw.reviews === "number" ? raw.reviews : base?.reviews ?? 0,
