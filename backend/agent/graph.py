@@ -12,7 +12,7 @@ from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 from pydantic import ValidationError
 
-from agent.pricing import ARMAVIR_YEREVAN_TRANSFER_AMD, apply_yerevan_transfer, tag_budget_fit
+from agent.pricing import ARMAVIR_YEREVAN_TRANSFER_AMD, apply_unit_economics, apply_yerevan_transfer, tag_budget_fit
 from agent.quality import attach_review_flag, collect_quality_issues, ensure_armavir_bookends
 from agent.search import run_market_search
 from schemas import GenerateIdeasRequest, TourIdea
@@ -34,10 +34,22 @@ class State(TypedDict):
 
 SYSTEM = (
     "You are the commercial tour desk for «Արի Գնանք» (Ari Gnank). "
-    "You design original one-day group tours that always start and end in Armavir, Armenia. "
+    "ALWAYS prioritize tours that start and end in Armavir, Armenia (Armavir-based departure). "
     "Armenian is the primary language of the business. "
-    "Web snippets are market observations only: never treat listed AMD figures as confirmed "
-    "tariffs, opening hours, or booking conditions. Label money as Estimated or Needs verification. "
+    "MANDATORY itinerary: name 3–4 CONCRETE stops (example for Lori: Dsegh village, Tsover Lake, "
+    "Bardzrakash St. Grigor Monastery, Debed Canyon). Never use vague phrases such as "
+    "'adventure activities'. "
+    "Explicitly state in copy: Meals and entrance fees are not included. "
+    "Travel times must be realistic: Armavir to Lori is at least 2.5–3 hours "
+    "(example: 07:30 departure from Armavir → 10:30 arrival). "
+    "Seasonal market benchmarks: include at least 5 real or similar seasonal offers from existing "
+    "companies with names and prices, prioritizing Armavir departures "
+    "(e.g. Ari Gnank, ArmGeo, One Way Tour). Label observed prices as Estimated / Needs verification. "
+    "Unit economics: 18 participants; guide fee 15,000 AMD for the group; meals and entrance fees excluded; "
+    "Total Fixed Cost = 15,000 + group transport (Armavir–Lori return e.g. ~55,000 AMD); "
+    "Cost per person = Total Fixed Cost / 18; Profit per person = Suggested Price − Cost per person. "
+    "Ensure financial accuracy: if Suggested Price equals Cost per Person, profit MUST be 0 AMD. "
+    "Web snippets are market observations only, not confirmed booking conditions. "
     "Armavir–Yerevan rule: if the product uses Yerevan as a hub, meeting point, or destination "
     f"cluster, add exactly +{ARMAVIR_YEREVAN_TRANSFER_AMD} AMD per person for the ~45 km "
     "Armavir→Yerevan shuttle and show it as base transport + 1,000 AMD transfer. "
@@ -102,14 +114,14 @@ IDEA_JSON_SHAPE = """
         "transport_amd": 0,
         "meals_amd": 0,
         "entrance_fees_amd": 0,
-        "guide_amd": 0,
+        "guide_amd": 15000,
         "other_amd": 0,
         "yerevan_transfer_amd": 0,
-        "notes": "Estimated. Needs verification. If Yerevan is used, include +1000 AMD Armavir transfer in transport_amd and yerevan_transfer_amd=1000."
+        "notes": "Meals and entrance fees are not included. Guide 15,000 AMD for 18 participants. Transport is group return cost (e.g. Armavir–Lori ~55,000 AMD). Estimated."
       },
       "budget_fit": "within",
       "profitability": {
-        "group_size": 12,
+        "group_size": 18,
         "revenue_per_person_amd": 0,
         "expense_per_person_amd": 0,
         "profit_per_person_amd": 0,
@@ -122,14 +134,14 @@ IDEA_JSON_SHAPE = """
         "Հաճախորդի արժեք՝ …",
         "Մրցակցային տարբերակում՝ …",
         "Սեզոնայնություն՝ …",
-        "Արժեքի բաշխում (գնահատված)՝ տրանսպորտ, սնունդ, մուտքեր, զբոսավար, այլ",
+        "Արժեքի բաշխում (գնահատված)՝ տրանսպորտ (խումբ) + զբոսավար 15,000 ֏ / 18 հոգի։ Meals and entrance fees are not included.",
         "Առաջարկվող գին (գնահատված)՝ … ֏ / անձ",
         "Շահութաբերություն (գնահատված)՝ եկամուտ, ծախս, շահույթ մեկ անձի կամ խմբի համար, ենթադրությունները նշված",
         "Ռիսկեր՝ …",
         "Որակ՝ n/10 — …"
       ],
       "itinerary": [
-        {"time": "08:00", "title": "Արմավիր — մեկնում", "description": "Purpose of this stop and estimated drive time. Needs verification."}
+        {"time": "07:30", "title": "Արմավիր — մեկնում", "description": "Armavir departure. Lori-bound legs need 2.5–3 hours (arrive ~10:30). Needs verification."}
       ],
       "budget_score": 0,
       "logistics_score": 0,
@@ -156,8 +168,10 @@ Synthesize a research briefing for Արի Գնանք one-day tours that start an
 Use this live web-search JSON as market observation only (not confirmed bookings):
 {market}
 
-Operator: Արի Գնանք. Typical group assumption: 10–16 guests in a minibus unless noted as Estimated.
+Operator: Արի Գնանք. ALWAYS prioritize Armavir-based departures. Group size is 18.
 If a comparable product is sold from Yerevan, include Armavir→Yerevan ~45 km and +{ARMAVIR_YEREVAN_TRANSFER_AMD} AMD/person.
+Armavir to Lori driving time is at least 2.5–3 hours (07:30 departure → ~10:30 arrival).
+MANDATORY: list at least 5 seasonal market benchmarks with company name and price (prefer Armavir departures: Ari Gnank, ArmGeo, One Way Tour, and similar). Observed AMD only.
 
 Criteria from the admin form:
 - season: {payload.get("season")}
@@ -173,11 +187,11 @@ Return JSON:
 {{
   "summary": "English briefing. State whether live snippets were available. Quote observed AMD ranges as Estimated / Needs verification. Mention the +1000 AMD Yerevan transfer rule.",
   "research_mode": "web_search",
-  "market_observations": [{{"name": "", "observed_price_amd": 0, "depart_from": "Yerevan or Armavir", "notes": "Needs verification"}}],
+  "market_observations": [{{"company": "Ari Gnank", "offer": "", "observed_price_amd": 0, "depart_from": "Armavir preferred", "notes": "Needs verification"}}, {{"company": "ArmGeo", "offer": "", "observed_price_amd": 0, "depart_from": "", "notes": "Needs verification"}}, {{"company": "One Way Tour", "offer": "", "observed_price_amd": 0, "depart_from": "", "notes": "Needs verification"}}, {{"company": "", "offer": "", "observed_price_amd": 0, "depart_from": "", "notes": "Needs verification"}}, {{"company": "", "offer": "", "observed_price_amd": 0, "depart_from": "", "notes": "Needs verification"}}],
   "destinations": [{{"name": "", "why": "", "drive_hours_from_armavir": 0, "confidence": "estimated"}}],
   "seasonal_notes": "",
   "logistics": "Include Armavir–Yerevan shuttle when Yerevan is the hub. Needs verification.",
-  "cost_assumptions": "List assumptions. Always add +1000 AMD/person when Yerevan transfer is required.",
+  "cost_assumptions": "18 participants. Guide 15,000 AMD group. Meals and entrance fees are not included. Transport group e.g. Armavir–Lori return ~55,000 AMD. Cost/person = (15000+transport)/18. Profit/person = price − cost/person (0 if equal).",
   "risks": []
 }}
 """
@@ -206,12 +220,16 @@ Budget mix:
 - Set budget_fit to "within" or "over" accordingly.
 
 Rules:
+- ALWAYS depart from Armavir and return to Armavir.
+- Name 3–4 CONCRETE stops (e.g. Dsegh village, Tsover Lake, Bardzrakash St. Grigor Monastery, Debed Canyon). No vague 'adventure activities'.
+- State explicitly: Meals and entrance fees are not included.
+- Armavir→Lori legs: at least 2.5–3 hours (07:30 depart → 10:30 arrive).
+- Include at least 5 seasonal market benchmarks (company + price), preferring Armavir departures (Ari Gnank, ArmGeo, One Way Tour).
 - Use market observations from research when pricing, still label Estimated / Needs verification.
 - Each idea must differ in core concept, target audience slice, and customer experience.
 - Do not start every Armenian title with "Արմավիր –".
-- Itinerary must be clock-time realistic and return to Armavir the same day.
-- If the day uses Yerevan as hub or destination, price MUST be base + {ARMAVIR_YEREVAN_TRANSFER_AMD} AMD transfer. Set yerevan_transfer_amd={ARMAVIR_YEREVAN_TRANSFER_AMD} and mention "base transport + 1,000 AMD transfer" in highlights and breakdown.notes.
-- price = suggested selling price per participant in AMD including that transfer.
+- Unit economics: 18 participants; guide_amd=15000 (group); meals_amd=0; entrance_fees_amd=0; transport_amd=group vehicle return (e.g. 55000 Armavir–Lori). Cost/person=(15000+transport)/18. Profit/person=price−cost/person. Never report 2000 profit when price equals cost.
+- If the day uses Yerevan as hub or destination, also add +{ARMAVIR_YEREVAN_TRANSFER_AMD} AMD transfer per person (yerevan_transfer_amd).
 - HY / EN / RU must stay consistent.
 
 Return JSON exactly in this shape:
@@ -237,7 +255,8 @@ Check each idea for:
 2) practical Armavir same-day itinerary
 3) completeness of concept, audience, value, differentiation, seasonality, cost breakdown, price, profitability, risks, quality score
 4) language purity and fluent HY/EN/RU
-5) financial arithmetic: Yerevan products include +{ARMAVIR_YEREVAN_TRANSFER_AMD} AMD transfer
+5) financial arithmetic: 18 pax; guide 15,000 group; meals and entrance fees excluded; profit = price − (15000+transport)/18 (0 if equal, never fake 2000); Yerevan products also include +{ARMAVIR_YEREVAN_TRANSFER_AMD} AMD transfer
+5b) 3–4 named stops; Armavir start; Lori drives 2.5–3 hours; at least 5 named market benchmarks
 6) budget mix: all but exactly one idea within budget; exactly one slightly over if count>=2
 7) verified vs assumption labels
 8) actionable remaining uncertainties
@@ -317,7 +336,7 @@ def refinement_node(state: State) -> dict[str, Any]:
     departure = str(payload.get("departure_location") or "Արմավիր")
     budget = int(payload.get("budget_amd") or 0)
     priced = [
-        apply_yerevan_transfer(dict(raw))
+        apply_unit_economics(apply_yerevan_transfer(dict(raw)))
         for raw in (state.get("evaluated_ideas") or state.get("ideas_raw") or [])
         if isinstance(raw, dict)
     ]

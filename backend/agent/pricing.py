@@ -4,6 +4,12 @@ from typing import Any
 
 from schemas import parse_amd
 
+DEFAULT_PARTICIPANTS = 18
+DEFAULT_GUIDE_FEE = 15000  # AMD
+DEFAULT_TRANSPORT_BASELINE = 55000  # AMD (Armavir–Lori group return)
+GROUP_SIZE = DEFAULT_PARTICIPANTS
+GUIDE_FEE_GROUP_AMD = DEFAULT_GUIDE_FEE
+DEFAULT_TRANSPORT_GROUP_AMD = DEFAULT_TRANSPORT_BASELINE
 ARMAVIR_YEREVAN_KM = 45
 ARMAVIR_YEREVAN_TRANSFER_AMD = 1000
 YEREVAN_MARKERS = ("yerevan", "երևան", "ереван")
@@ -76,6 +82,79 @@ def apply_yerevan_transfer(idea: dict[str, Any]) -> dict[str, Any]:
     extra = str(next_idea.get("notes") or "")
     if flag not in extra:
         next_idea["notes"] = f"{extra} {flag}".strip()
+    return next_idea
+
+
+def calculate_unit_economics(
+    suggested_price: float,
+    transport_cost: float = DEFAULT_TRANSPORT_BASELINE,
+    guide_fee: float = DEFAULT_GUIDE_FEE,
+    participants: int = DEFAULT_PARTICIPANTS,
+) -> dict:
+    effective_transport = max(transport_cost, DEFAULT_TRANSPORT_BASELINE)
+    total_fixed_cost = effective_transport + guide_fee
+    cost_per_person = round(total_fixed_cost / participants, 2)
+    profit_per_person = round(suggested_price - cost_per_person, 2)
+    return {
+        "participants": participants,
+        "total_fixed_cost": total_fixed_cost,
+        "cost_per_person": cost_per_person,
+        "suggested_price": suggested_price,
+        "profit_per_person": profit_per_person,
+        "meals_included": False,
+        "entrance_fees_included": False,
+    }
+
+
+def apply_unit_economics(idea: dict[str, Any]) -> dict[str, Any]:
+    next_idea = dict(idea)
+    breakdown = dict(next_idea.get("breakdown") or {})
+    price = parse_amd(next_idea.get("price"))
+    unit = calculate_unit_economics(
+        suggested_price=float(price),
+        transport_cost=float(parse_amd(breakdown.get("transport_amd"))),
+        guide_fee=float(DEFAULT_GUIDE_FEE),
+        participants=DEFAULT_PARTICIPANTS,
+    )
+    transport_group = int(max(parse_amd(breakdown.get("transport_amd")), DEFAULT_TRANSPORT_BASELINE))
+    total_fixed = unit["total_fixed_cost"]
+    cost_per_person = unit["cost_per_person"]
+    profit_per_person = unit["profit_per_person"]
+    breakdown["guide_amd"] = DEFAULT_GUIDE_FEE
+    breakdown["transport_amd"] = transport_group
+    breakdown["meals_amd"] = 0
+    breakdown["entrance_fees_amd"] = 0
+    unit_note = (
+        f"Meals and entrance fees are not included. "
+        f"{DEFAULT_PARTICIPANTS} participants. Total fixed cost = guide {DEFAULT_GUIDE_FEE} AMD + transport {transport_group} AMD "
+        f"(Armavir–Lori return baseline {DEFAULT_TRANSPORT_BASELINE} AMD). "
+        f"Cost per person = {total_fixed}/{DEFAULT_PARTICIPANTS} = {cost_per_person} AMD. "
+        f"Profit per person = suggested price {price} − cost per person {cost_per_person} = {profit_per_person} AMD."
+    )
+    notes = str(breakdown.get("notes") or "").strip()
+    if "Meals and entrance fees are not included" not in notes:
+        breakdown["notes"] = f"{notes} {unit_note}".strip()
+    else:
+        breakdown["notes"] = unit_note
+    next_idea["breakdown"] = breakdown
+    profitability = dict(next_idea.get("profitability") or {})
+    profitability["group_size"] = DEFAULT_PARTICIPANTS
+    profitability["revenue_per_person_amd"] = int(round(price))
+    profitability["expense_per_person_amd"] = int(round(cost_per_person))
+    profitability["profit_per_person_amd"] = int(round(profit_per_person))
+    profitability["revenue_per_group_amd"] = int(round(price * DEFAULT_PARTICIPANTS))
+    profitability["expense_per_group_amd"] = int(round(total_fixed))
+    profitability["profit_per_group_amd"] = int(round(profit_per_person * DEFAULT_PARTICIPANTS))
+    profitability["assumptions"] = unit_note
+    next_idea["profitability"] = profitability
+    extra = str(next_idea.get("notes") or "")
+    if "Meals and entrance fees are not included" not in extra:
+        next_idea["notes"] = f"{extra} {unit_note}".strip()
+    highlights = [str(item) for item in next_idea.get("highlights") or [] if str(item).strip()]
+    exclusion = "Meals and entrance fees are not included."
+    if exclusion not in highlights:
+        highlights.append(exclusion)
+    next_idea["highlights"] = highlights
     return next_idea
 
 
