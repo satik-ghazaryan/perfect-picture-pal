@@ -207,15 +207,20 @@ export async function generateTourIdeas(input: TourIdeaInput): Promise<{ runId: 
   return { runId, ideas, research_summary: summary };
 }
 
-export async function saveTourIdeaDraft(input: TourIdeaInput, ideas: TourIdeaResult[], createdBy: string | null) {
+export async function saveTourIdeaDraft(input: TourIdeaInput, ideas: TourIdeaResult[], _createdBy?: string | null) {
   if (!isSupabaseConfigured || !supabase) {
     throw new Error("Supabase-ը կարգավորված չէ։ Draft-ը չպահվեց։");
+  }
+  const { data: auth, error: authError } = await supabase.auth.getUser();
+  const userId = auth.user?.id ?? null;
+  if (authError || !userId) {
+    throw new Error("Մուտք գործեք ադմինի հաշվով։ Draft-ը չպահվեց։");
   }
   const { error } = await supabase.from("tour_ideas").insert({
     inputs: input,
     generated_ideas: ideas,
     status: "draft",
-    created_by: asUuid(createdBy),
+    created_by: userId,
   });
   if (error) throw new Error("Draft-ը Supabase-ում չպահվեց։");
 }

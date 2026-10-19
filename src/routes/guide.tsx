@@ -160,8 +160,8 @@ function GuideSignIn() {
     >
       <h1 className="text-2xl font-black tracking-tight">Զբոսավարի մուտք</h1>
       <p className="text-sm text-muted-foreground">Մուտք գործեք զբոսավարի հաշվով՝ տեսնելու միայն ձեզ նշանակված մեկնումները։</p>
-      {!isSupabaseConfigured && (
-        <p className="rounded-2xl bg-primary-soft px-3 py-2 text-xs">Տեղային զբոսավար՝ guide@arignank.am / guide1234</p>
+      {import.meta.env.DEV && !isSupabaseConfigured && (
+        <p className="rounded-2xl bg-primary-soft px-3 py-2 text-xs">Տեղային նախադիտում. seed զբոսավարի հաշիվը միայն DEV ռեժիմում է։</p>
       )}
       <div className="space-y-1.5">
         <Label htmlFor="guide-email">Էլ. փոստ</Label>

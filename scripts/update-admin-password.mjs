@@ -1,15 +1,14 @@
 import { createClient } from "@supabase/supabase-js";
 
-const rawEmail = (process.env.ADMIN_EMAIL || "arev@arignank.am").trim().toLowerCase();
-const EMAIL = rawEmail === "arev" ? "arev@arignank.am" : rawEmail;
-const PASSWORD = process.env.ADMIN_PASSWORD || "#arev#";
+const EMAIL = (process.env.ADMIN_EMAIL || "").trim().toLowerCase();
+const PASSWORD = process.env.ADMIN_PASSWORD || "";
 const URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 
-if (!URL || !SERVICE_ROLE_KEY) {
-  console.error("Missing SUPABASE_URL and/or SUPABASE_SERVICE_ROLE_KEY.");
+if (!EMAIL || !PASSWORD || !URL || !SERVICE_ROLE_KEY) {
+  console.error("Missing ADMIN_EMAIL, ADMIN_PASSWORD, SUPABASE_URL, and/or SUPABASE_SERVICE_ROLE_KEY.");
   console.error("Set them in the environment, then run:");
-  console.error('  node --env-file=backend/.env scripts/update-admin-password.mjs');
+  console.error("  node --env-file=.env.local scripts/update-admin-password.mjs");
   process.exit(1);
 }
 

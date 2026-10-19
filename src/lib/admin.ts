@@ -60,11 +60,12 @@ type AdminState = {
   session: AdminSession | null;
 };
 
-export const LOCAL_ADMIN_EMAIL = "arev@arignank.am";
-export const LOCAL_ADMIN_PASSWORD = "#arev#";
-export const LOCAL_ADMIN_USERNAME = "arev";
+function canUseLocalDevSeeds() {
+  return Boolean(import.meta.env.DEV) && !isSupabaseConfigured;
+}
 
 export function seedUsers(): DirectoryUser[] {
+  if (!canUseLocalDevSeeds()) return [];
   return [
     {
       id: LOCAL_STAFF_ID,
@@ -137,8 +138,8 @@ export function seedUsers(): DirectoryUser[] {
       id: "local-admin",
       fullName: "Ադմինիստրատոր",
       phone: "+37410000000",
-      email: LOCAL_ADMIN_EMAIL,
-      password: LOCAL_ADMIN_PASSWORD,
+      email: "dev-admin@localhost",
+      password: "",
       role: "admin",
       birthDate: "",
       avatarUrl: "",
@@ -755,6 +756,7 @@ function openAccountSession(user: DirectoryUser, token: string) {
 }
 
 export function refreshStoredDirectory() {
+  if (!canUseLocalDevSeeds()) return;
   if (typeof localStorage === "undefined") return;
   const stored = readCatalog();
   if (!stored?.users) return;
@@ -800,13 +802,13 @@ export function hydrateAdmin() {
   if (hydrated || typeof window === "undefined") return;
   hydrated = true;
   const stored = readCatalog();
-  const session = isSupabaseConfigured ? null : readSession();
-  const users = stored?.users ?? seedUsers();
+  const session = canUseLocalDevSeeds() ? readSession() : null;
+  const users = canUseLocalDevSeeds() ? (stored?.users ?? seedUsers()) : [];
   if (isSupabaseConfigured) {
     state = {
       tours: seedManaged(),
       settings: stored?.settings ?? state.settings,
-      users,
+      users: [],
       session: null,
     };
     emit();
@@ -1194,10 +1196,52 @@ export async function registerTourist(input: {
 
 export async function signInTourist(identifier: string, password: string) {
   hydrateAdmin();
-  refreshStoredDirectory();
   const raw = identifier.trim();
   const byEmail = raw.includes("@");
   const digits = raw.replace(/\D/g, "");
+  if (isSupabaseConfigured && supabase) {
+    if (!byEmail) throw new Error("Մուտք գործեք էլ. փոստով։");
+    const { data, error } = await supabase.auth.signInWithPassword({ email: raw.toLowerCase(), password });
+    if (error || !data.user || !data.session) throw new Error("Էլ. փոստը, հեռախոսը կամ գաղտնաբառը սխալ է։");
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("id, full_name, phone, email, role")
+      .eq("id", data.user.id)
+      .maybeSingle();
+    if (profileError || !profile) {
+      await supabase.auth.signOut();
+      throw new Error("Էլ. փոստը, հեռախոսը կամ գաղտնաբառը սխալ է։");
+    }
+    if (profile.role !== "tourist" && profile.role !== "guide" && profile.role !== "driver") {
+      await supabase.auth.signOut();
+      throw new Error("Այս հաշիվով մուտքը այստեղ հասանելի չէ։");
+    }
+    const account: DirectoryUser = {
+      id: profile.id,
+      fullName: profile.full_name,
+      phone: profile.phone ?? "",
+      email: profile.email ?? raw.toLowerCase(),
+      password: "",
+      role: profile.role,
+      avatarUrl: "",
+      bio: "",
+      birthDate: "",
+    };
+    if (account.role === "guide") {
+      openGuideSession({
+        id: account.id,
+        fullName: account.fullName,
+        phone: account.phone,
+        email: account.email,
+        role: "guide",
+      });
+    } else {
+      clearGuideProfile();
+    }
+    return openAccountSession(account, data.session.access_token);
+  }
+  if (!canUseLocalDevSeeds()) throw new Error("Supabase-ը կարգավորված չէ։");
+  refreshStoredDirectory();
   const user = state.users.find((item) => {
     if (!item.password || item.password !== password) return false;
     if (byEmail) return item.email.trim().toLowerCase() === raw.toLowerCase();
@@ -1206,12 +1250,6 @@ export async function signInTourist(identifier: string, password: string) {
   if (!user) throw new Error("Էլ. փոստը, հեռախոսը կամ գաղտնաբառը սխալ է։");
   if (user.role !== "tourist" && user.role !== "guide" && user.role !== "driver") {
     throw new Error("Այս հաշիվով մուտքը այստեղ հասանելի չէ։");
-  }
-  let token: string = crypto.randomUUID();
-  if (supabase && byEmail) {
-    const { data, error } = await supabase.auth.signInWithPassword({ email: user.email, password });
-    if (error || !data.session) throw new Error("Էլ. փոստը կամ գաղտնաբառը սխալ է։");
-    token = data.session.access_token;
   }
   if (user.role === "guide") {
     openGuideSession({
@@ -1224,7 +1262,7 @@ export async function signInTourist(identifier: string, password: string) {
   } else {
     clearGuideProfile();
   }
-  return openAccountSession(user, token);
+  return openAccountSession(user, crypto.randomUUID());
 }
 
 export async function createStaffAccount(input: {
@@ -1263,56 +1301,57 @@ export async function createStaffAccount(input: {
 
 export async function signInGuide(email: string, password: string) {
   hydrateAdmin();
-  refreshStoredDirectory();
   const key = email.trim().toLowerCase();
-  if (!supabase) {
-    const user = state.users.find((item) => item.email.trim().toLowerCase() === key);
-    if (!user || user.role !== "guide" || user.password !== password) {
-      throw new Error("Էլ. փոստը կամ գաղտնաբառը սխալ է, կամ հաշիվը զբոսավար չէ։");
+  if (isSupabaseConfigured && supabase) {
+    const { data, error } = await supabase.auth.signInWithPassword({ email: key, password });
+    if (error || !data.user) throw new Error("Էլ. փոստը կամ գաղտնաբառը սխալ է։");
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("id, full_name, phone, email, role")
+      .eq("id", data.user.id)
+      .maybeSingle();
+    if (profileError || !profile || profile.role !== "guide") {
+      await supabase.auth.signOut();
+      throw new Error("Այս հաշիվը զբոսավար չէ։");
     }
     openGuideSession({
-      id: user.id,
-      fullName: user.fullName,
-      phone: user.phone,
-      email: user.email,
-      role: "guide",
-    });
-    openAccountSession(user, crypto.randomUUID());
-    return user;
-  }
-  const { data, error } = await supabase.auth.signInWithPassword({ email: key, password });
-  if (error || !data.user) throw new Error("Էլ. փոստը կամ գաղտնաբառը սխալ է։");
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("id, full_name, phone, email, role")
-    .eq("id", data.user.id)
-    .maybeSingle();
-  if (profileError || !profile || profile.role !== "guide") {
-    await supabase.auth.signOut();
-    throw new Error("Այս հաշիվը զբոսավար չէ։");
-  }
-  openGuideSession({
-    id: profile.id,
-    fullName: profile.full_name,
-    phone: profile.phone ?? "",
-    email: profile.email ?? key,
-    role: "guide",
-  });
-  openAccountSession(
-    {
       id: profile.id,
       fullName: profile.full_name,
       phone: profile.phone ?? "",
       email: profile.email ?? key,
-      password: "",
       role: "guide",
-      avatarUrl: "",
-      bio: "",
-      birthDate: "",
-    },
-    data.session.access_token,
-  );
-  return profile;
+    });
+    openAccountSession(
+      {
+        id: profile.id,
+        fullName: profile.full_name,
+        phone: profile.phone ?? "",
+        email: profile.email ?? key,
+        password: "",
+        role: "guide",
+        avatarUrl: "",
+        bio: "",
+        birthDate: "",
+      },
+      data.session.access_token,
+    );
+    return profile;
+  }
+  if (!canUseLocalDevSeeds()) throw new Error("Supabase-ը կարգավորված չէ։");
+  refreshStoredDirectory();
+  const user = state.users.find((item) => item.email.trim().toLowerCase() === key);
+  if (!user || user.role !== "guide" || user.password !== password) {
+    throw new Error("Էլ. փոստը կամ գաղտնաբառը սխալ է, կամ հաշիվը զբոսավար չէ։");
+  }
+  openGuideSession({
+    id: user.id,
+    fullName: user.fullName,
+    phone: user.phone,
+    email: user.email,
+    role: "guide",
+  });
+  openAccountSession(user, crypto.randomUUID());
+  return user;
 }
 
 export async function loadAdminBookings(): Promise<BookingRecord[]> {
@@ -1328,60 +1367,55 @@ export async function loadAdminBookings(): Promise<BookingRecord[]> {
 }
 
 const ADMIN_CREDENTIALS_ERROR = "Էլ. փոստը կամ գաղտնաբառը սխալ է։";
+const ADMIN_UNAVAILABLE_ERROR = "Supabase-ը կարգավորված չէ։";
 
-function normalizeAdminEmail(value: string) {
-  const trimmed = value.trim().toLowerCase();
-  if (trimmed === LOCAL_ADMIN_USERNAME || trimmed === LOCAL_ADMIN_EMAIL) return LOCAL_ADMIN_EMAIL;
-  return trimmed;
-}
-
-function localAdminSession(): AdminSession {
+function localDevAdminSession(): AdminSession {
   const session: AdminSession = {
     id: "local-admin",
     fullName: "Ադմինիստրատոր",
-    email: LOCAL_ADMIN_EMAIL,
+    email: "dev-admin@localhost",
     role: "admin",
   };
   setState({ session });
   return session;
 }
 
-function matchesLocalAdmin(email: string, password: string) {
-  return email === LOCAL_ADMIN_EMAIL && password === LOCAL_ADMIN_PASSWORD;
+function canUseLocalDevAdmin() {
+  return canUseLocalDevSeeds();
 }
 
 export async function signInAdmin(email: string, password: string) {
-  const trimmed = normalizeAdminEmail(email);
-  if (!supabase) {
-    if (!matchesLocalAdmin(trimmed, password)) throw new Error(ADMIN_CREDENTIALS_ERROR);
-    return localAdminSession();
+  const trimmed = email.trim().toLowerCase();
+  if (isSupabaseConfigured && supabase) {
+    const { data, error } = await supabase.auth.signInWithPassword({ email: trimmed, password });
+    if (error || !data.user) {
+      throw new Error(ADMIN_CREDENTIALS_ERROR);
+    }
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("id, full_name, email, role")
+      .eq("id", data.user.id)
+      .maybeSingle();
+    if (profileError || !profile || profile.role !== "admin") {
+      await supabase.auth.signOut();
+      throw new Error("Այս հաշիվը ադմինիստրատոր չէ։");
+    }
+    const session: AdminSession = {
+      id: profile.id,
+      fullName: profile.full_name,
+      email: profile.email ?? trimmed,
+      role: "admin",
+    };
+    setState({ session });
+    return session;
   }
-  const { data, error } = await supabase.auth.signInWithPassword({ email: trimmed, password });
-  if (error || !data.user) {
-    if (matchesLocalAdmin(trimmed, password)) return localAdminSession();
-    throw new Error(ADMIN_CREDENTIALS_ERROR);
-  }
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("id, full_name, email, role")
-    .eq("id", data.user.id)
-    .maybeSingle();
-  if (profileError || !profile || profile.role !== "admin") {
-    await supabase.auth.signOut();
-    throw new Error("Այս հաշիվը ադմինիստրատոր չէ։");
-  }
-  const session: AdminSession = {
-    id: profile.id,
-    fullName: profile.full_name,
-    email: profile.email ?? trimmed,
-    role: "admin",
-  };
-  setState({ session });
-  return session;
+  if (!canUseLocalDevAdmin()) throw new Error(ADMIN_UNAVAILABLE_ERROR);
+  return localDevAdminSession();
 }
 
 export function signInMockAdmin() {
-  return signInAdmin(LOCAL_ADMIN_EMAIL, LOCAL_ADMIN_PASSWORD);
+  if (!canUseLocalDevAdmin()) throw new Error(ADMIN_UNAVAILABLE_ERROR);
+  return localDevAdminSession();
 }
 
 export async function signOutAdmin() {
@@ -1391,7 +1425,13 @@ export async function signOutAdmin() {
 
 export async function restoreAdminSession() {
   hydrateAdmin();
-  if (!supabase) return state.session;
+  if (!supabase) {
+    if (!canUseLocalDevAdmin()) {
+      setState({ session: null });
+      return null;
+    }
+    return state.session;
+  }
   const { data } = await supabase.auth.getSession();
   const userId = data.session?.user.id;
   if (!userId) {

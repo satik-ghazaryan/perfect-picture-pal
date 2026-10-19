@@ -7,7 +7,7 @@ import { signInAdmin, signInMockAdmin } from "@/lib/admin";
 import { isSupabaseConfigured } from "@/lib/supabase";
 
 export function AdminLogin() {
-  const [email, setEmail] = useState("admin@arignank.am");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -47,7 +47,7 @@ export function AdminLogin() {
         <p className="mt-2 text-sm text-muted-foreground">
           {isSupabaseConfigured
             ? "Մուտք գործեք ադմինի դերով հաշվով։"
-            : "Տեղային նախադիտում. admin@arignank.am և առնվազն 4 նիշ գաղտնաբառ։"}
+            : "Տեղային նախադիտում. Supabase-ը կարգավորված չէ։"}
         </p>
         <form className="mt-6 space-y-4" onSubmit={(event) => void submit(event)}>
           <div className="space-y-1.5">
@@ -77,7 +77,7 @@ export function AdminLogin() {
             {busy ? "Մտնում է" : "Մուտք"}
           </Button>
         </form>
-        {!isSupabaseConfigured && (
+        {import.meta.env.DEV && !isSupabaseConfigured && (
           <Button type="button" variant="outline" className="mt-3 w-full rounded-full" disabled={busy} onClick={() => void mock()}>
             Մտնել որպես ադմին
           </Button>
