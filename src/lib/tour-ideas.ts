@@ -1,13 +1,9 @@
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import type { TourIdeaBreakdown, TourIdeaInput, TourIdeaProfitability, TourIdeaResult, TourIdeaStop } from "@/types";
 
-const DEFAULT_PYTHON_BACKEND_URL = "http://127.0.0.1:8001";
 const LAST_RUN_KEY = "ari-gnank-last-idea-run";
-
-function pythonBackendUrl() {
-  const configured = import.meta.env.VITE_PYTHON_BACKEND_URL?.trim();
-  return (configured || DEFAULT_PYTHON_BACKEND_URL).replace(/\/$/, "");
-}
+const CLIENT_TIMEOUT_MS = 130_000;
+const ADMIN_REQUIRED_ERROR = "Մուտք գործեք admin հաշվով";
 
 function asUuid(value: string | null | undefined) {
   if (!value) return null;
@@ -116,6 +112,28 @@ type GeneratePayload = {
   detail?: unknown;
 };
 
+async function adminAccessToken() {
+  if (!isSupabaseConfigured || !supabase) return null;
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token?.trim();
+  return token || null;
+}
+
+function ideaRequestError(status: number | "timeout") {
+  if (status === "timeout" || status === 504) return "Գեներացիան երկար տևեց։ Փորձեք նորից։";
+  if (status === 401 || status === 403) return "Ադմինի մուտք չկա։ Մտեք նորից։";
+  if (status === 422) return "Մուտքագրված տվյալները սխալ են։";
+  if (status === 429) return "Չափից շատ հարցում։ Փորձեք մի փոքր ուշ։";
+  if (status === 502 || status === 503) return "Ծառայությունը ժամանակավորապես անհասանելի է։";
+  return "Գաղափարները չգեներացվեցին։";
+}
+
+function timedFetch(input: string, init: RequestInit) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CLIENT_TIMEOUT_MS);
+  return fetch(input, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
+
 function cacheRun(runId: string, ideas: TourIdeaResult[], summary: string) {
   if (typeof sessionStorage === "undefined") return;
   sessionStorage.setItem(LAST_RUN_KEY, JSON.stringify({ runId, ideas, summary }));
@@ -139,8 +157,10 @@ export function readCachedIdeaRun(): { runId: string; ideas: TourIdeaResult[]; s
 
 export async function fetchIdeaRun(runId: string): Promise<{ runId: string; ideas: TourIdeaResult[]; summary: string } | null> {
   try {
-    const response = await fetch(`${pythonBackendUrl()}/api/idea-runs/${encodeURIComponent(runId)}`, {
-      headers: { accept: "application/json" },
+    const token = await adminAccessToken();
+    if (!token) return null;
+    const response = await timedFetch(`/api/ideas/runs/${encodeURIComponent(runId)}`, {
+      headers: { accept: "application/json", authorization: `Bearer ${token}` },
     });
     if (!response.ok) return null;
     const payload = (await response.json()) as GeneratePayload;
@@ -151,46 +171,33 @@ export async function fetchIdeaRun(runId: string): Promise<{ runId: string; idea
     const resolved = { runId: payload.run_id || runId, ideas, summary: typeof payload.research_summary === "string" ? payload.research_summary : "" };
     cacheRun(resolved.runId, resolved.ideas, resolved.summary);
     return resolved;
-  } catch (error) {
-    console.warn("[Արի Գնանք] Could not reload stored idea run:", runId, error);
-    return null;
-  }
-}
-
-export async function fetchIdeaById(ideaId: string): Promise<TourIdeaResult | null> {
-  try {
-    const response = await fetch(`${pythonBackendUrl()}/api/ideas/${encodeURIComponent(ideaId)}`, {
-      headers: { accept: "application/json" },
-    });
-    if (!response.ok) return null;
-    return normalizeTourIdea(await response.json());
-  } catch (error) {
-    console.warn("[Արի Գնանք] Could not load idea by id:", ideaId, error);
+  } catch {
     return null;
   }
 }
 
 export async function generateTourIdeas(input: TourIdeaInput): Promise<{ runId: string; ideas: TourIdeaResult[]; research_summary: string }> {
-  const url = `${pythonBackendUrl()}/api/generate-ideas`;
+  const token = await adminAccessToken();
+  if (!token) throw new Error(ADMIN_REQUIRED_ERROR);
   let response: Response;
   try {
-    response = await fetch(url, {
+    response = await timedFetch("/api/ideas/generate", {
       method: "POST",
-      headers: { "content-type": "application/json", accept: "application/json" },
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+        authorization: `Bearer ${token}`,
+      },
       body: JSON.stringify(input),
     });
   } catch (error) {
-    const message = "Python backend-ը հասանելի չէ (http://127.0.0.1:8001)։ Գործարկեք uvicorn --port 8001։";
-    console.warn("[Արի Գնանք] Python backend unreachable:", url, error);
-    throw new Error(message);
+    const timedOut = error instanceof Error && error.name === "AbortError";
+    throw new Error(ideaRequestError(timedOut ? "timeout" : 502));
+  }
+  if (!response.ok) {
+    throw new Error(ideaRequestError(response.status));
   }
   const payload = (await response.json().catch(() => null)) as GeneratePayload | null;
-  if (!response.ok) {
-    const detail = payload && "detail" in payload ? payload.detail : null;
-    const message = typeof detail === "string" ? detail : "Գաղափարները չգեներացվեցին։";
-    console.warn("[Արի Գնանք] Python backend error:", response.status, message);
-    throw new Error(message);
-  }
   let ideas = Array.isArray(payload?.ideas)
     ? payload.ideas.map(normalizeTourIdea).filter((item): item is TourIdeaResult => item !== null)
     : [];

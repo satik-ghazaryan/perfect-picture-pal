@@ -26,14 +26,14 @@ def parse_amd(value: Any) -> int:
 
 
 class GenerateIdeasRequest(BaseModel):
-    season: str = Field(..., min_length=2, max_length=32)
-    target_audience: str = Field(..., min_length=2, max_length=64)
-    tour_type: str = Field(..., min_length=2, max_length=64)
-    duration_days: int = Field(default=1, ge=1, le=3)
+    season: str = Field(..., min_length=2, max_length=500)
+    target_audience: str = Field(..., min_length=2, max_length=500)
+    tour_type: str = Field(..., min_length=2, max_length=500)
+    duration_days: int = Field(default=1, ge=1, le=14)
     budget_amd: int = Field(..., ge=0, le=1_000_000)
-    departure_location: str = Field(default="Armavir", min_length=2, max_length=80)
-    preferences: str = Field(default="", max_length=800)
-    count: int = Field(default=3, ge=1, le=8)
+    departure_location: str = Field(default="Armavir", min_length=2, max_length=500)
+    preferences: str = Field(default="", max_length=500)
+    count: int = Field(default=3, ge=1, le=5)
 
     model_config = {"populate_by_name": True}
 

@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import hmac
 import os
 import sys
+import time
+from collections import defaultdict, deque
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from uuid import UUID
 
 from dotenv import load_dotenv
 
@@ -21,39 +25,62 @@ load_dotenv()
 if not os.getenv("OPENAI_API_KEY", "").strip():
     load_dotenv(_ENV_FILE, override=True)
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import ValidationError
 
 from agent.graph import run_idea_workflow
-from idea_store import get_idea, get_run, save_run
+from idea_store import get_run, save_run
 from schemas import GenerateIdeasRequest, GenerateIdeasResponse, HealthResponse, TourIdea
 
-DEFAULT_ORIGINS = [
-    "https://perfect-picture-pal-beige.vercel.app",
-    "http://localhost:5173",
-    "http://localhost:8080",
-    "http://127.0.0.1:5173",
-    "http://127.0.0.1:8080",
-]
+GENERATE_RATE_LIMIT = 5
+GENERATE_RATE_WINDOW_SEC = 60
+_generate_hits: dict[str, deque[float]] = defaultdict(deque)
+
+
+def _ideas_api_secret() -> str:
+    return os.getenv("IDEAS_API_SECRET", "").strip()
 
 
 def cors_origins() -> list[str]:
     extra = os.getenv("CORS_ORIGINS", "")
-    values = [item.strip() for item in extra.split(",") if item.strip()]
-    return list(dict.fromkeys([*DEFAULT_ORIGINS, *values]))
+    return [item.strip() for item in extra.split(",") if item.strip()]
 
 
 def _log_openai_key_status() -> None:
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        print("❌ WARNING: OPENAI_API_KEY is not found in environment!")
-    else:
-        print(f"✅ OPENAI_API_KEY loaded successfully: {api_key[:5]}...")
+    configured = bool(os.getenv("OPENAI_API_KEY", "").strip())
+    print(f"OPENAI_API_KEY configured: {str(configured).lower()}")
+
+
+def _secret_matches(given: str | None, expected: str) -> bool:
+    incoming = (given or "").encode("utf-8")
+    wanted = expected.encode("utf-8")
+    if len(incoming) != len(wanted):
+        hmac.compare_digest(wanted, wanted)
+        return False
+    return hmac.compare_digest(incoming, wanted)
+
+
+def require_api_secret(x_api_secret: str | None = Header(default=None, alias="x-api-secret")) -> None:
+    expected = _ideas_api_secret()
+    if not expected or not _secret_matches(x_api_secret, expected):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+def _rate_limit_generate(user_id: str) -> None:
+    now = time.monotonic()
+    bucket = _generate_hits[user_id]
+    while bucket and now - bucket[0] > GENERATE_RATE_WINDOW_SEC:
+        bucket.popleft()
+    if len(bucket) >= GENERATE_RATE_LIMIT:
+        raise HTTPException(status_code=429, detail="Too many requests")
+    bucket.append(now)
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    if len(_ideas_api_secret()) < 32:
+        raise RuntimeError("IDEAS_API_SECRET is not configured.")
     _log_openai_key_status()
     yield
 
@@ -62,6 +89,9 @@ app = FastAPI(
     title="Արի Գնանք Idea Agent",
     version="1.0.0",
     lifespan=lifespan,
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
 
 app.add_middleware(
@@ -83,8 +113,16 @@ def health() -> HealthResponse:
     return HealthResponse(status="ok")
 
 
-@app.post("/api/generate-ideas", response_model=GenerateIdeasResponse)
-def generate_ideas(body: GenerateIdeasRequest) -> GenerateIdeasResponse:
+@app.post("/api/generate-ideas", response_model=GenerateIdeasResponse, dependencies=[Depends(require_api_secret)])
+def generate_ideas(
+    body: GenerateIdeasRequest,
+    x_user_id: str | None = Header(default=None, alias="x-user-id"),
+) -> GenerateIdeasResponse:
+    try:
+        user_id = str(UUID((x_user_id or "").strip()))
+    except ValueError:
+        raise HTTPException(status_code=401, detail="Unauthorized") from None
+    _rate_limit_generate(user_id)
     if not os.getenv("OPENAI_API_KEY", "").strip():
         raise HTTPException(status_code=503, detail="OPENAI_API_KEY is not configured.")
     try:
@@ -98,16 +136,20 @@ def generate_ideas(body: GenerateIdeasRequest) -> GenerateIdeasResponse:
         )
     except HTTPException:
         raise
-    except ValidationError as error:
-        raise HTTPException(status_code=502, detail=f"Idea schema failed validation: {error}") from error
-    except RuntimeError as error:
-        raise HTTPException(status_code=502, detail=str(error)) from error
-    except Exception as error:
-        raise HTTPException(status_code=500, detail="Tour idea generation failed.") from error
+    except ValidationError:
+        raise HTTPException(status_code=502, detail="Idea generation failed.") from None
+    except RuntimeError:
+        raise HTTPException(status_code=502, detail="Idea generation failed.") from None
+    except Exception:
+        raise HTTPException(status_code=500, detail="Tour idea generation failed.") from None
 
 
-@app.get("/api/idea-runs/{run_id}", response_model=GenerateIdeasResponse)
+@app.get("/api/idea-runs/{run_id}", response_model=GenerateIdeasResponse, dependencies=[Depends(require_api_secret)])
 def read_idea_run(run_id: str) -> GenerateIdeasResponse:
+    try:
+        UUID(run_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Idea run not found.") from None
     record = get_run(run_id)
     if not record:
         raise HTTPException(status_code=404, detail="Idea run not found.")
@@ -117,11 +159,3 @@ def read_idea_run(run_id: str) -> GenerateIdeasResponse:
         ideas=ideas,
         research_summary=str(record.get("research_summary") or ""),
     )
-
-
-@app.get("/api/ideas/{idea_id}", response_model=TourIdea)
-def read_idea(idea_id: str) -> TourIdea:
-    record = get_idea(idea_id)
-    if not record:
-        raise HTTPException(status_code=404, detail="Idea not found.")
-    return TourIdea.model_validate(record)
