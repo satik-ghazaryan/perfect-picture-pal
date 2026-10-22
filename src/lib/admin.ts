@@ -1165,6 +1165,37 @@ export async function registerTourist(input: {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) throw new Error("Ընտրեք ծննդյան ամսաթիվը։");
   if (!validAccountEmail(email)) throw new Error("Գրեք գործող էլ. փոստ։");
   if (input.password.length < 4) throw new Error("Գաղտնաբառը առնվազն 4 նիշ պետք է լինի։");
+  if (isSupabaseConfigured && supabase) {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password: input.password,
+      options: {
+        data: { full_name: fullName, role: "tourist", phone, birth_date: birthDate },
+      },
+    });
+    if (error) throw new Error(error.message);
+    if (data.user && data.user.identities && data.user.identities.length === 0) {
+      throw new Error("Այս էլ. փոստով հաշիվ արդեն կա։");
+    }
+    if (!data.session?.access_token) {
+      throw new Error("Հաշիվը ստեղծվեց։ Ստուգեք էլ. փոստը՝ գրանցումը հաստատելու համար։");
+    }
+    if (!data.user) throw new Error("Գրանցումը չհաջողվեց։");
+    const account: DirectoryUser = {
+      id: data.user.id,
+      fullName,
+      phone,
+      email,
+      password: "",
+      role: "tourist",
+      avatarUrl: "",
+      bio: "",
+      birthDate,
+      createdAt: new Date().toISOString(),
+    };
+    return openAccountSession(account, data.session.access_token);
+  }
+  if (!canUseLocalDevSeeds()) throw new Error("Supabase-ը կարգավորված չէ։");
   if (emailTaken(email)) throw new Error("Այս էլ. փոստով հաշիվ արդեն կա։");
   const account: DirectoryUser = {
     id: `tourist-${crypto.randomUUID()}`,
@@ -1179,19 +1210,7 @@ export async function registerTourist(input: {
     createdAt: new Date().toISOString(),
   };
   setState({ users: [...state.users, account] });
-  let token: string = crypto.randomUUID();
-  if (supabase) {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password: input.password,
-      options: {
-        data: { full_name: fullName, role: "tourist", phone, birth_date: birthDate },
-      },
-    });
-    if (error) throw new Error("Գրանցումը Supabase-ում չպահվեց։ Տեղային հաշիվը ստեղծված է։");
-    if (data.session?.access_token) token = data.session.access_token;
-  }
-  return openAccountSession(account, token);
+  return openAccountSession(account, crypto.randomUUID());
 }
 
 export async function signInTourist(identifier: string, password: string) {
