@@ -29,6 +29,7 @@ import {
 } from "@/lib/loyalty";
 import { completeCheckout, type CheckoutSuccess } from "@/lib/payments";
 import { DepartureCrew } from "@/components/departure-crew";
+import { TestModeNotice } from "@/components/test-mode-notice";
 import { TouristAuthForm } from "@/components/tourist-auth";
 import {
   getAdminServerSnapshot,
@@ -482,6 +483,7 @@ export function BookingPanel({ tour }: { tour: Tour }) {
                 )}
               </div>
               {error && <p className="text-xs font-medium text-destructive">{error}</p>}
+              <TestModeNotice className="rounded-2xl" />
               <div className="grid grid-cols-2 gap-2 pt-1">
                 <Button type="button" variant="outline" className="rounded-full" onClick={() => setStep(1)}>
                   Հետ
