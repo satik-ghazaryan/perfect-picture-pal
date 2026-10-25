@@ -6,7 +6,10 @@ import type {
   PaymentState,
   TourStatus,
 } from "@/lib/database.types";
+import { loadPublicStaff } from "@/lib/crew";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
+
+export { loadPublicStaff };
 
 export type { TourStatus };
 

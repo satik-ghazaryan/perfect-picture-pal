@@ -34,10 +34,6 @@ function Person({ label, person }: { label: string; person: DirectoryUser | null
       <div className="min-w-0">
         <p className="text-xs font-semibold text-muted-foreground">{label}</p>
         <p className="truncate text-sm font-bold">{person.fullName}</p>
-        <p className="mt-0.5 text-xs">{person.phone || "Հեռախոսը նշված չէ"}</p>
-        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-          {person.bio || "Համառոտ նկարագրություն դեռ չկա։"}
-        </p>
       </div>
     </article>
   );

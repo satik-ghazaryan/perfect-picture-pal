@@ -367,7 +367,19 @@ export type Database = {
         ];
       };
     };
-    Views: Record<string, never>;
+    Views: {
+      public_staff: {
+        Row: {
+          id: string;
+          full_name: string;
+          avatar_url: string | null;
+          role: UserRole;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
+    };
     Functions: {
       create_booking: {
         Args: {

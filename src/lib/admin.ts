@@ -16,6 +16,7 @@ import {
   type BookingRecord,
 } from "@/lib/guide-api";
 import { columnsToLocalized, localized, type LocalizedText } from "@/lib/locale";
+import { loadPublicStaff, type PublicStaffMember } from "@/lib/crew";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 
 export type ManagedTour = Tour & {
@@ -334,11 +335,30 @@ function applyDepartures(
 
 let liveCatalogRequest = 0;
 
+function userFromPublicStaff(staff: PublicStaffMember): StaffMember {
+  return {
+    id: staff.id,
+    fullName: staff.fullName,
+    phone: "",
+    email: "",
+    password: "",
+    role: staff.role,
+    avatarUrl: staff.avatarUrl,
+    bio: "",
+    birthDate: "",
+  };
+}
+
+async function loadCatalogStaff(): Promise<DirectoryUser[]> {
+  const publicStaff = await loadPublicStaff();
+  return publicStaff.map(userFromPublicStaff);
+}
+
 async function refreshLiveCatalog() {
   if (!isSupabaseConfigured || !supabase) return;
   const request = ++liveCatalogRequest;
   try {
-    const [toursResult, virtualResult, departuresResult] = await Promise.all([
+    const [toursResult, virtualResult, departuresResult, staff] = await Promise.all([
       supabase
         .from("tours")
         .select(
@@ -350,10 +370,11 @@ async function refreshLiveCatalog() {
         .select("id, title_hy, title_en, title_ru, description_hy, description_en, description_ru, embed_url, thumbnail_url, created_at")
         .order("id"),
       supabase.from("departures").select("tour_id, available_seats, guide_id, driver_id, departure_date").order("departure_date"),
+      loadCatalogStaff(),
     ]);
     if (request !== liveCatalogRequest) return;
     if (toursResult.error && virtualResult.error) {
-      setState({ tours: seedManaged() });
+      setState({ tours: seedManaged(), users: staff });
       return;
     }
     const physical = (toursResult.data ?? [])
@@ -378,14 +399,14 @@ async function refreshLiveCatalog() {
     }
     let next = [...byId.values()];
     if (next.length === 0) {
-      setState({ tours: seedManaged() });
+      setState({ tours: seedManaged(), users: staff });
       return;
     }
     if (!departuresResult.error && departuresResult.data) {
       next = applyDepartures(next, departuresResult.data);
     }
     next = clearBrokenLinks(next);
-    setState({ tours: next });
+    setState({ tours: next, users: staff });
     next.forEach((tour) => {
       if (tour.is_virtual_only !== true) syncPortal(tour);
     });
@@ -1015,7 +1036,11 @@ export async function loadDirectory(): Promise<DirectoryUser[]> {
 }
 
 export async function loadStaff(): Promise<StaffMember[]> {
-  const users = await loadDirectory();
+  if (state.session?.role === "admin") {
+    const users = await loadDirectory();
+    return users.filter((user): user is StaffMember => user.role === "guide" || user.role === "driver");
+  }
+  const users = await loadCatalogStaff();
   return users.filter((user): user is StaffMember => user.role === "guide" || user.role === "driver");
 }
 

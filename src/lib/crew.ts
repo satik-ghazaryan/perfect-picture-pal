@@ -1,3 +1,41 @@
+import { isSupabaseConfigured, supabase } from "@/lib/supabase";
+
+export type PublicStaffMember = {
+  id: string;
+  fullName: string;
+  avatarUrl: string;
+  role: "guide" | "driver";
+};
+
+export function publicStaffFromRow(row: {
+  id: string;
+  full_name: string;
+  avatar_url: string | null;
+  role: string;
+}): PublicStaffMember | null {
+  if (row.role !== "guide" && row.role !== "driver") return null;
+  return {
+    id: row.id,
+    fullName: row.full_name,
+    avatarUrl: row.avatar_url ?? "",
+    role: row.role,
+  };
+}
+
+/** Safe staff rows for the public catalog (anon and any logged-in non-admin). Never includes phone or email. */
+export async function loadPublicStaff(): Promise<PublicStaffMember[]> {
+  if (!isSupabaseConfigured || !supabase) return [];
+  const { data, error } = await supabase
+    .from("public_staff")
+    .select("id, full_name, avatar_url, role")
+    .order("full_name");
+  if (error || !data) return [];
+  return data.flatMap((row) => {
+    const staff = publicStaffFromRow(row);
+    return staff ? [staff] : [];
+  });
+}
+
 /** Milliseconds until a one-day tour leaves. Negative after departure. */
 export function timeUntilDeparture(date: string, time: string, now = new Date()) {
   const match = /^(\d{1,2}):(\d{2})$/.exec(time.trim());
