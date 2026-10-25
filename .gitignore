@@ -20,6 +20,8 @@ dist-ssr
 .env.local
 !.env.example
 supabase/.temp/
+supabase/backup-*.sql
+supabase/apply-now.sql
 
 # Wrangler / Cloudflare
 .wrangler/
