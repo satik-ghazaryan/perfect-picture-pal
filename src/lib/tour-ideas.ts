@@ -44,7 +44,17 @@ function asStop(value: unknown): TourIdeaStop | null {
   const description = String(record.description ?? "").trim();
   if (!time || !title) return null;
   const titleEn = String(record["title_en"] ?? "").trim();
-  return titleEn ? { time, title, title_en: titleEn, description } : { time, title, description };
+  const titleRu = String(record["title_ru"] ?? "").trim();
+  const descriptionEn = String(record["description_en"] ?? "").trim();
+  const descriptionRu = String(record["description_ru"] ?? "").trim();
+  const sourceUrl = asHttpUrl(record["source_url"]);
+  const stop: TourIdeaStop = { time, title, description };
+  if (titleEn) stop.title_en = titleEn;
+  if (titleRu) stop.title_ru = titleRu;
+  if (descriptionEn) stop.description_en = descriptionEn;
+  if (descriptionRu) stop.description_ru = descriptionRu;
+  if (sourceUrl) stop.source_url = sourceUrl;
+  return stop;
 }
 
 function asBreakdown(value: unknown): TourIdeaBreakdown | undefined {
@@ -101,6 +111,10 @@ function asOffers(value: unknown): TourIdeaMarketOffer[] {
       title: String(record["title"] ?? ""),
       url: asHttpUrl(record["url"]),
       observed_price_amd: parseAmd(record["observed_price_amd"]),
+      observed_amount: typeof record["observed_amount"] === "number" ? record["observed_amount"] : parseAmd(record["observed_amount"]),
+      observed_currency: String(record["observed_currency"] ?? ""),
+      conversion_rate: parseAmd(record["conversion_rate"]),
+      conversion_estimated: Boolean(record["conversion_estimated"]),
       found_on: String(record["found_on"] ?? ""),
       label: String(record["label"] ?? "market_reference"),
       snippet: String(record["snippet"] ?? ""),

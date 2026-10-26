@@ -66,6 +66,66 @@ class SearchResilienceTests(unittest.TestCase):
         self.assertIn(payload["search_status"], {"tavily_timeout", "ddg_timeout", "empty", "too_few_results"})
         self.assertEqual(payload["error"], payload["search_status"])
 
+    def test_texas_hiking_pages_are_not_useful(self) -> None:
+        texas = {
+            "title": "Best Dallas Fort Worth Hiking",
+            "url": "https://www.alltrails.com/us/texas/dallas",
+            "snippet": "hiking trails near Dallas",
+            "query": "hiking",
+            "source": "tavily",
+        }
+        lori = {
+            "title": "Lori province day tour",
+            "url": "https://www.tripadvisor.com/Attraction_Review-g323855-Lori.html",
+            "snippet": "Hiking in Lori, Armenia from Yerevan. From $45 per person.",
+            "query": "Lori",
+            "source": "tavily",
+        }
+        dsegh = {
+            "title": "Dsegh village Armenia",
+            "url": "https://www.tripadvisor.com/dsegh",
+            "snippet": "Dsegh in Lori, Armenia",
+            "query": "Dsegh",
+            "source": "tavily",
+        }
+        keywords = search.place_keywords({"preferences": "Lori hiking", "tour_type": "hiking"})
+        self.assertNotIn("hiking", [item.lower() for item in keywords])
+        self.assertFalse(search.result_is_useful(texas, keywords + ["hiking"]))
+        self.assertTrue(search.result_is_useful(lori, keywords))
+        with patch.object(search, "_tavily_one", lambda *_: [texas, lori, dsegh]), patch.object(
+            search, "_ddg_one", lambda *_: []
+        ):
+            payload = search.run_market_search({"season": "autumn", "tour_type": "hiking", "preferences": "Lori Dsegh"})
+        self.assertTrue(all("dallas" not in row["title"].lower() for row in payload["results"]))
+        self.assertGreaterEqual(payload["useful_result_count"], 2)
+        self.assertEqual(payload["useful_result_count"], len(payload["results"]))
+        self.assertLess(payload["useful_result_count"], 9)
+
+    def test_extracts_usd_and_amd_competitor_prices(self) -> None:
+        usd = search.extract_offer("Lori day tour from $45 per person Armenia")
+        self.assertEqual(usd["observed_currency"], "USD")
+        self.assertEqual(usd["observed_amount"], 45)
+        self.assertGreaterEqual(usd["observed_price_amd"], 45 * 300)
+        self.assertTrue(usd["conversion_estimated"])
+        eur = search.extract_offer("Guided hike €30 including transfer")
+        self.assertEqual(eur["observed_currency"], "EUR")
+        amd = search.extract_offer("Tripadvisor 15,000 AMD per person")
+        self.assertEqual(amd["observed_currency"], "AMD")
+        self.assertEqual(amd["observed_price_amd"], 15000)
+        offers = search.market_offers_from_results(
+            [
+                {
+                    "title": "Lori tour",
+                    "url": "https://www.tripadvisor.com/lori",
+                    "snippet": "from $45 Armenia hiking",
+                }
+            ],
+            "2026-10-26",
+        )
+        self.assertEqual(len(offers), 1)
+        self.assertEqual(offers[0]["url"], "https://www.tripadvisor.com/lori")
+        self.assertGreater(offers[0]["observed_price_amd"], 0)
+
     def test_generic_wikipedia_pages_are_dropped(self) -> None:
         junk = [
             {"title": "Autumn", "url": "https://en.wikipedia.org/wiki/Autumn", "snippet": "season", "query": "q", "source": "tavily"},

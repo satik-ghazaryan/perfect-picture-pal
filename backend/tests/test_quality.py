@@ -5,7 +5,17 @@ from unittest.mock import patch
 
 from agent.distance import one_way_route_km
 from agent.pricing import PRICE_NEEDS_DISTANCE, apply_unit_economics
-from agent.quality import rewrite_copy_from_numbers, sanitize_competitors, strip_money_figures
+from agent.quality import (
+    HY_REVIEW_FLAG,
+    hy_copy_ok,
+    mark_hy_review,
+    rewrite_copy_from_numbers,
+    sanitize_competitors,
+    strip_customer_ops_text,
+    strip_invented_claims,
+    strip_internal_ops,
+    strip_money_figures,
+)
 
 
 def _idea_with_copy() -> dict:
@@ -89,9 +99,12 @@ class QualityFixTests(unittest.TestCase):
         self.assertNotIn("15000 AMD / անձ", blob)
         self.assertNotIn("15,000 ֏", blob)
         self.assertNotIn("15000 ₽", blob)
-        self.assertIn(str(updated["price"]), updated["description_en"])
+        self.assertNotIn("source of truth", blob.lower())
+        self.assertNotIn("Computed figures", blob)
+        self.assertNotIn("will be filled by Python", blob)
         self.assertNotIn("Ari Gnank", updated["description_en"])
-        self.assertIn("No competitor data was found.", updated["description_en"])
+        self.assertIn("No competitor data was found.", " ".join(updated["highlights"]))
+        self.assertIn(str(updated["price"]), updated["breakdown"]["notes"])
 
     def test_own_brand_never_competitor_even_with_offers(self) -> None:
         research = {
@@ -118,6 +131,57 @@ class QualityFixTests(unittest.TestCase):
     def test_strip_money_helper_on_evidence(self) -> None:
         self.assertNotIn("15000", strip_money_figures("price around 15000 AMD"))
         self.assertNotIn("15000", strip_money_figures("Արժեքի բաշխում ... 15000 AMD / անձ"))
+
+    def test_internal_python_prose_is_stripped(self) -> None:
+        blob = strip_internal_ops(
+            "Python-ը կլրացնի տրանսպորտը ըստ կմ։ Transport costs will be filled by Python based on km. "
+            "Computed figures (source of truth): group 17."
+        )
+        self.assertNotIn("Python", blob)
+        self.assertNotIn("source of truth", blob.lower())
+        cleaned = strip_customer_ops_text(
+            "Հայեցակարգ։ Python-ը կլրացնի տրանսպորտը ըստ կմ։ Unique experience with local culture."
+        )
+        self.assertNotIn("կլրացնի", cleaned)
+
+    def test_invented_social_proof_and_quality_score_removed(self) -> None:
+        text = strip_invented_claims("Positive feedback from previous participants. Quality 8/10. Autumn hiking.")
+        self.assertNotIn("previous participants", text.lower())
+        self.assertNotIn("8/10", text)
+
+    def test_hy_english_sentences_are_flagged(self) -> None:
+        idea = {
+            "title_hy": "Lori hiking",
+            "description_hy": "Unique experience with local culture. Autumn is ideal for hiking. Estimated based on transport and guide fees.",
+            "location_hy": "Lori",
+            "itinerary": [{"time": "08:00", "title": "Armavir — departure", "description": "Dsegh Village Visit"}],
+            "verify": [],
+        }
+        self.assertFalse(hy_copy_ok(idea))
+        flagged = mark_hy_review(idea)
+        self.assertIn(HY_REVIEW_FLAG, flagged["verify"])
+
+    def test_thin_itinerary_is_flagged(self) -> None:
+        idea = rewrite_copy_from_numbers(
+            {
+                "description_en": "A walk.",
+                "description_hy": "Զբոսանք Լոռիում։",
+                "description_ru": "Прогулка.",
+                "title_hy": "Լոռի",
+                "title_en": "Lori",
+                "itinerary": [
+                    {"time": "08:00", "title": "Արմավիր — մեկնում", "description": "Մեկնում"},
+                    {"time": "11:00", "title": "Dsegh Village Visit", "description": ""},
+                ],
+                "highlights": [],
+                "verify": [],
+                "price": 9997,
+                "breakdown": {"notes": "GROUP_SIZE=17. Suggested price = 9997 AMD."},
+            },
+            {"live": True, "results": [{"title": "Lori Armenia", "snippet": "province", "url": "https://example.com/lori"}], "market_offers": []},
+        )
+        joined = " ".join(idea["verify"])
+        self.assertIn("too thin", joined)
 
 
 if __name__ == "__main__":

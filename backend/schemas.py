@@ -47,7 +47,11 @@ class ItineraryStop(BaseModel):
     time: str = Field(..., min_length=1, max_length=16)
     title: str = Field(..., min_length=1, max_length=240)
     title_en: str = ""
+    title_ru: str = ""
     description: str = Field(..., min_length=1, max_length=800)
+    description_en: str = ""
+    description_ru: str = ""
+    source_url: str = ""
 
 
 class CostBreakdown(BaseModel):
@@ -123,6 +127,10 @@ class MarketOffer(BaseModel):
     title: str = ""
     url: str = ""
     observed_price_amd: int = 0
+    observed_amount: float = 0
+    observed_currency: str = ""
+    conversion_rate: int = 0
+    conversion_estimated: bool = False
     found_on: str = ""
     label: str = "market_reference"
     snippet: str = ""

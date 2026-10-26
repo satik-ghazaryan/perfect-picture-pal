@@ -6,6 +6,8 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeou
 from datetime import datetime, timezone
 from typing import Any, Callable
 
+import os
+
 from schemas import parse_amd
 
 SEASON_LABELS = {
@@ -18,6 +20,80 @@ SEASON_LABELS = {
 PRICE_RE = re.compile(
     r"(\d[\d\s,]{2,8})\s*(?:amd|dram|֏|amd\.|դրամ)",
     re.IGNORECASE,
+)
+USD_PRICE_RE = re.compile(
+    r"(?:from\s+)?(?:usd|us\$|\$)\s*(\d{2,4}(?:[.,]\d{1,2})?)|from\s+\$(\d{2,4})",
+    re.IGNORECASE,
+)
+EUR_PRICE_RE = re.compile(
+    r"€\s*(\d{2,4}(?:[.,]\d{1,2})?)|(\d{2,4}(?:[.,]\d{1,2})?)\s*(?:eur|euros?)",
+    re.IGNORECASE,
+)
+DEFAULT_USD_TO_AMD = 400
+DEFAULT_EUR_TO_AMD = 430
+TOUR_TYPE_WORDS = {"hiking", "cultural", "extreme", "mixed"}
+ARMENIA_MARKERS = {
+    "armenia",
+    "armenian",
+    "հայաստան",
+    "հայկական",
+    "армения",
+    "армян",
+    "lori",
+    "լոռի",
+    "yerevan",
+    "երևան",
+    "ереван",
+    "armavir",
+    "արմավիր",
+    "армавир",
+    "dilijan",
+    "դիլիջան",
+    "дилижан",
+    "sevan",
+    "սևան",
+    "севан",
+    "tsaghkadzor",
+    "ծաղկաձոր",
+    "цахкадзор",
+    "dsegh",
+    "դսեղ",
+    "tsover",
+    "akhtala",
+    "garni",
+    "geghard",
+    "tatev",
+    "tavush",
+    "syunik",
+    "gegharkunik",
+    "kotayk",
+    "aragatsotn",
+    "shirak",
+}
+FOREIGN_MARKERS = (
+    "texas",
+    "dallas",
+    "fort worth",
+    "fortworth",
+    "florida",
+    "india",
+    "california",
+    "colorado",
+    "utah",
+    "arizona",
+    "nevada",
+    "houston",
+    "austin",
+    "atlanta",
+    "miami",
+    "thailand",
+    "philippines",
+    "nepal",
+    "peru",
+    "patagonia",
+    "scotland",
+    "switzerland",
+    "norway",
 )
 SEARCH_CALL_TIMEOUT_SEC = 18
 REASON_CODES = (
@@ -97,8 +173,6 @@ def _reason_from_exc(exc: BaseException, prefix: str) -> str:
 
 
 def _tavily_one(query: str, max_results: int) -> list[dict[str, str]]:
-    import os
-
     api_key = os.getenv("TAVILY_API_KEY", "").strip()
     if not api_key:
         raise RuntimeError("tavily_no_key")
@@ -118,11 +192,12 @@ def _tavily_one(query: str, max_results: int) -> list[dict[str, str]]:
     for item in payload.get("results") or []:
         if not isinstance(item, dict):
             continue
+        content = item.get("raw_content") or item.get("content") or item.get("snippet") or ""
         rows.append(
             {
                 "title": _clip(item.get("title") or "", 160),
                 "url": str(item.get("url") or ""),
-                "snippet": _clip(item.get("content") or item.get("snippet") or ""),
+                "snippet": _clip(content, 1500),
                 "query": query,
                 "source": "tavily",
             }
@@ -159,19 +234,16 @@ def _ddg_one(query: str, max_results: int) -> list[dict[str, str]]:
 
 def place_keywords(inputs: dict[str, Any]) -> list[str]:
     extra = str(inputs.get("preferences") or "")
-    tour_type = str(inputs.get("tour_type") or "").strip()
     bits = re.split(r"[\s,/|]+", extra)
     found: list[str] = []
     for bit in bits:
         token = re.sub(r"[^A-Za-z\u0531-\u0587-]", "", bit).strip()
         if len(token) < 4:
             continue
-        if token.lower() in QUERY_NOISE:
+        if token.lower() in QUERY_NOISE or token.lower() in TOUR_TYPE_WORDS:
             continue
         found.append(token)
     keywords = list(dict.fromkeys(found))
-    if tour_type and tour_type.lower() not in {item.lower() for item in keywords}:
-        keywords.append(tour_type)
     return keywords[:8]
 
 
@@ -183,8 +255,12 @@ def build_queries(inputs: dict[str, Any]) -> list[str]:
         loc = f"{place} {region}".strip() if region and place.lower() != region.lower() else place
         queries.append(f"{loc} Armenia tour")
         queries.append(f"{place} Lori Armenia" if not region else f"{place} {region} Armenia")
+    tour_type = str(inputs.get("tour_type") or "cultural").strip()
+    if tour_type and tour_type.lower() not in TOUR_TYPE_WORDS:
+        tour_type = "cultural"
     if not queries:
-        tour_type = str(inputs.get("tour_type") or "cultural")
+        queries.append(f"Armenia {tour_type or 'cultural'} day tour from Yerevan price")
+    elif tour_type:
         queries.append(f"Armenia {tour_type} day tour from Yerevan price")
     market = [
         "Akhtala monastery day tour from Yerevan price",
@@ -248,11 +324,82 @@ def _kind_for(row: dict[str, str]) -> str:
     return "place"
 
 
+def _env_rate(name: str, default: int) -> int:
+    raw = os.getenv(name, "").strip()
+    if raw.isdigit():
+        value = int(raw)
+        if value > 0:
+            return value
+    return default
+
+
+def conversion_rate(currency: str) -> tuple[int, bool]:
+    code = currency.upper()
+    if code == "AMD":
+        return 1, False
+    if code == "USD":
+        return _env_rate("USD_TO_AMD", DEFAULT_USD_TO_AMD), True
+    if code == "EUR":
+        return _env_rate("EUR_TO_AMD", DEFAULT_EUR_TO_AMD), True
+    return 0, True
+
+
+def _first_amount(match: re.Match[str] | None) -> float:
+    if not match:
+        return 0.0
+    for group in match.groups():
+        if group:
+            return float(str(group).replace(",", "").replace(" ", ""))
+    return 0.0
+
+
+def extract_offer(text: str) -> dict[str, Any]:
+    blob = text or ""
+    amd_matches = [parse_amd(item) for item in PRICE_RE.findall(blob)]
+    amd_usable = [item for item in amd_matches if 2000 <= item <= 200_000]
+    if amd_usable:
+        return {
+            "observed_amount": amd_usable[0],
+            "observed_currency": "AMD",
+            "observed_price_amd": amd_usable[0],
+            "conversion_rate": 1,
+            "conversion_estimated": False,
+        }
+    usd = _first_amount(USD_PRICE_RE.search(blob))
+    if 15 <= usd <= 500:
+        rate, estimated = conversion_rate("USD")
+        amd = int(round(usd * rate))
+        if 2000 <= amd <= 200_000:
+            return {
+                "observed_amount": usd,
+                "observed_currency": "USD",
+                "observed_price_amd": amd,
+                "conversion_rate": rate,
+                "conversion_estimated": estimated,
+            }
+    eur = _first_amount(EUR_PRICE_RE.search(blob))
+    if 15 <= eur <= 500:
+        rate, estimated = conversion_rate("EUR")
+        amd = int(round(eur * rate))
+        if 2000 <= amd <= 200_000:
+            return {
+                "observed_amount": eur,
+                "observed_currency": "EUR",
+                "observed_price_amd": amd,
+                "conversion_rate": rate,
+                "conversion_estimated": estimated,
+            }
+    return {
+        "observed_amount": 0,
+        "observed_currency": "",
+        "observed_price_amd": 0,
+        "conversion_rate": 0,
+        "conversion_estimated": False,
+    }
+
+
 def extract_offer_price(text: str) -> int:
-    matches = PRICE_RE.findall(text or "")
-    amounts = [parse_amd(item) for item in matches]
-    usable = [item for item in amounts if 2000 <= item <= 200_000]
-    return usable[0] if usable else 0
+    return int(extract_offer(text).get("observed_price_amd") or 0)
 
 
 def market_offers_from_results(results: list[dict[str, str]], found_on: str) -> list[dict[str, Any]]:
@@ -266,11 +413,18 @@ def market_offers_from_results(results: list[dict[str, str]], found_on: str) -> 
             continue
         seen.add(key)
         blob = f"{title} {row.get('snippet') or ''}"
+        parsed = extract_offer(blob)
+        if int(parsed.get("observed_price_amd") or 0) <= 0:
+            continue
         offers.append(
             {
                 "title": title[:240],
                 "url": url,
-                "observed_price_amd": extract_offer_price(blob),
+                "observed_price_amd": int(parsed["observed_price_amd"]),
+                "observed_amount": parsed.get("observed_amount") or 0,
+                "observed_currency": str(parsed.get("observed_currency") or ""),
+                "conversion_rate": int(parsed.get("conversion_rate") or 0),
+                "conversion_estimated": bool(parsed.get("conversion_estimated")),
                 "found_on": found_on,
                 "label": "market_reference",
                 "snippet": str(row.get("snippet") or "")[:240],
@@ -289,19 +443,22 @@ def result_is_useful(row: dict[str, str], keywords: list[str]) -> bool:
         return False
     if title_key in GENERIC_WIKI_TITLES:
         return False
-    has_armenia = "armenia" in blob or "հայաստան" in blob or "armenian" in blob
-    keys = [item.lower() for item in keywords if len(item) >= 4 and item.lower() not in QUERY_NOISE]
-    has_place = any(key in blob for key in keys)
-    if not has_armenia and not has_place:
+    if any(marker in blob for marker in FOREIGN_MARKERS):
         return False
-    if "wikipedia.org" in url and not has_place:
+    places = [
+        item.lower()
+        for item in keywords
+        if len(item) >= 4 and item.lower() not in QUERY_NOISE and item.lower() not in TOUR_TYPE_WORDS
+    ]
+    has_armenia = any(marker in blob for marker in ARMENIA_MARKERS) or any(place in blob for place in places)
+    if not has_armenia:
+        return False
+    if "wikipedia.org" in url and not any(place in blob for place in places) and "armenia" not in title_key and "armenian" not in blob:
         return False
     return True
 
 
 def _tavily_key_present() -> bool:
-    import os
-
     return bool(os.getenv("TAVILY_API_KEY", "").strip())
 
 

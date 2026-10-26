@@ -84,7 +84,11 @@ export type TourIdeaStop = {
   time: string;
   title: string;
   title_en?: string;
+  title_ru?: string;
   description: string;
+  description_en?: string;
+  description_ru?: string;
+  source_url?: string;
 };
 
 export type TourIdeaBreakdown = {
@@ -115,6 +119,10 @@ export type TourIdeaMarketOffer = {
   title: string;
   url: string;
   observed_price_amd: number;
+  observed_amount?: number;
+  observed_currency?: string;
+  conversion_rate?: number;
+  conversion_estimated?: boolean;
   found_on: string;
   label: string;
   snippet?: string;

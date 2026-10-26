@@ -26,6 +26,8 @@ from agent.quality import (
     collect_quality_issues,
     ensure_armavir_bookends,
     ground_idea,
+    hy_copy_ok,
+    mark_hy_review,
     rewrite_copy_from_numbers,
 )
 from agent.search import run_market_search
@@ -59,15 +61,18 @@ SYSTEM = (
     "Name another company only if it appears in SEARCH RESULTS with a URL. "
     "If no competitor offers exist, say that no competitor data was found. "
     "Every uncertain item goes in verify[] (short English strings). Do not silently guess. "
-    "Do not write AMD / ֏ / ₽ selling prices in copy; Python fills numbers. "
+    "Do not write AMD / ֏ / ₽ selling prices, cost breakdowns, or profit in customer copy. "
+    "Leave breakdown numbers at 0 and do not write 'Python will fill' or 'source of truth' anywhere. "
     f"GROUP_SIZE is {GROUP_SIZE} (not 18). Guide fee is {GUIDE_FEE_GROUP_AMD} AMD for the whole group. "
-    "Do not invent transport AMD or profit. Leave breakdown numbers at 0; Python computes "
-    "one-way route_km × AMD/km and cost/person = (transport_group + guide) / group_size. "
+    "Python computes one-way route_km × AMD/km and cost/person = (transport_group + guide) / group_size. "
     f"Minimum price is cost per person × {MIN_MARGIN_PCT}%. "
-    "Itinerary: 3–4 timed stops including Armavir departure. No vague 'adventure activities'. "
+    "Itinerary: at least four timed stops (Armavir start, two or more sourced places, Armavir return). "
+    "Each stop needs a short reason and, when possible, a source_url from SEARCH RESULTS. "
+    "No vague 'adventure activities'. Never claim previous participants, reviews, awards, or Quality n/10 in customer text. "
+    "quality_score is an internal field only. "
     "State: Meals and entrance fees are not included. "
     "Travel times must be realistic (Armavir to Lori at least 2.5–3 hours). "
-    "In this generation step write English and Russian copy; Armenian fields may be brief placeholders. "
+    "In this generation step write English and Russian copy; Armenian fields may be brief HY placeholders. "
     "Each idea must have a distinct concept. Return JSON only when asked for JSON."
 )
 
@@ -115,9 +120,9 @@ IDEA_JSON_SHAPE = """
       "title_hy": "specific memorable Armenian title, not a formula prefix",
       "title_en": "natural English title",
       "title_ru": "natural Russian title",
-      "description_hy": "One flowing Armenian paragraph covering: Հայեցակարգ. … Թիրախային լսարան. … Հաճախորդի արժեք. … Մրցակցային տարբերակում. … Սեզոնայնություն. … Արժեքի բաշխում (գնահատված). … Առաջարկվող գին (գնահատված). … Շահութաբերություն (գնահատված, ենթադրություններով). … Ռիսկեր և սահմանափակումներ. … Որակի գնահատական n/10 — … Ստուգման դրոշներ. …",
-      "description_en": "Fluent English covering the same sections with Estimated / Needs verification labels. No Armenian script.",
-      "description_ru": "Fluent Russian covering the same sections. No Armenian script.",
+      "description_hy": "Հայերեն պարբերություն՝ հայեցակարգ, լսարան, արժեք, տարբերակում, սեզոն, ռիսկեր։ Առանց գների և առանց Python հիշատակման։",
+      "description_en": "Fluent English covering concept, audience, value, differentiation, season, risks. No prices, no Python, no quality n/10, no previous participants.",
+      "description_ru": "Связный русский текст по тем же разделам. Без цен, без Python, без оценок n/10.",
       "location_hy": "",
       "location_en": "",
       "location_ru": "",
@@ -131,7 +136,7 @@ IDEA_JSON_SHAPE = """
         "guide_amd": 15000,
         "other_amd": 0,
         "yerevan_transfer_amd": 0,
-        "notes": "Meals and entrance fees are not included. Python fills transport from one-way km × rate. Estimated."
+        "notes": "Meals and entrance fees are not included. Estimated."
       },
       "budget_fit": "within",
       "profitability": {
@@ -148,21 +153,18 @@ IDEA_JSON_SHAPE = """
         "Հաճախորդի արժեք՝ …",
         "Մրցակցային տարբերակում՝ …",
         "Սեզոնայնություն՝ …",
-        "Արժեքի բաշխում (գնահատված)՝ Python-ը կլրացնի տրանսպորտը ըստ կմ։ Meals and entrance fees are not included.",
-        "Առաջարկվող գին (գնահատված)՝ … ֏ / անձ",
-        "Շահութաբերություն (գնահատված)՝ եկամուտ, ծախս, շահույթ մեկ անձի կամ խմբի համար, ենթադրությունները նշված",
-        "Ռիսկեր՝ …",
-        "Որակ՝ n/10 — …"
+        "Արժեքի բաշխում՝ սնունդը և մուտքի տոմսերը ներառված չեն։",
+        "Ռիսկեր՝ …"
       ],
       "itinerary": [
-        {"time": "07:30", "title": "Armavir — departure", "title_en": "Armavir — departure", "description": "Armavir departure. Lori-bound legs need 2.5–3 hours (arrive ~10:30). Needs verification."}
+        {"time": "07:30", "title": "Armavir — departure", "title_en": "Armavir — departure", "title_ru": "Армавир — отправление", "description": "Why this stop, sourced from SEARCH RESULTS.", "description_en": "Why this stop.", "description_ru": "Зачем эта остановка.", "source_url": ""}
       ],
       "budget_score": 0,
       "logistics_score": 0,
       "appeal_score": 0,
       "verify": [],
       "source_urls": [],
-      "notes": "Quality-score rationale and remaining uncertainties. All figures Estimated unless sourced."
+      "notes": "Remaining uncertainties. All figures Estimated unless sourced. No quality n/10 in customer copy."
     }
   ]
 }
@@ -240,14 +242,14 @@ Budget mix:
 
 Rules:
 - ALWAYS depart from Armavir and return to Armavir.
-- Name 3–4 CONCRETE stops that appear in SEARCH RESULTS. Keep title_en in English (Dsegh village, Tsover Lake). No vague 'adventure activities'.
-- State explicitly: Meals and entrance fees are not included.
+- Name at least four timed stops: Armavir departure, two or more CONCRETE places from SEARCH RESULTS, Armavir return. Each stop needs a reason and source_url when the URL is in SEARCH RESULTS. Keep title_en in English (Dsegh village, Tsover Lake).
+- State explicitly: Meals and entrance fees are not included. Do not mention Python or internal scoring.
 - Armavir→Lori legs: at least 2.5–3 hours (07:30 depart → 10:30 arrive).
 - Competitive differentiation may name a company ONLY if it is in SEARCH RESULTS with a URL. Never name Ari Gnank as a competitor. If there are no competitor offers, write that no competitor data was found.
 - Use market observations from research when discussing the market, still label Estimated / Needs verification.
 - Each idea must differ in core concept, target audience slice, and customer experience.
 - Do not start every Armenian title with "Արմավիր –".
-- Do not invent AMD figures and do not write 15000 AMD or similar in descriptions. Python sets transport from one-way driving km and GROUP_SIZE={GROUP_SIZE}.
+- Do not invent AMD figures or write 15000 AMD in descriptions. Do not write that Python will fill transport.
 - Place names only from SEARCH RESULTS. If useful_result_count is under 2, do not invent monasteries or villages.
 - Write full EN and RU; HY may be a short placeholder for a later translation step. Keep itinerary title_en in English.
 
@@ -377,16 +379,22 @@ def _preserve_stop_english(original: list[dict[str, Any]], adapted: list[dict[st
     return merged
 
 
-def hy_adapt_node(state: State) -> dict[str, Any]:
-    ideas = [item for item in (state.get("evaluated_ideas") or state.get("ideas_raw") or []) if isinstance(item, dict)]
-    originals = {str(item.get("id") or index): item for index, item in enumerate(ideas)}
-    market = state.get("market_research") or "{}"
-    prompt = f"""
-Translate/adapt ONLY title_hy, description_hy, location_hy, and itinerary stop title/description
-into natural Armenian. Do not add places, prices, or facts.
-Keep itinerary title_en in English. If you translate title, put the English name in title_en
-and optionally in parentheses, e.g. Ախթալա (Akhtala).
-Do not change EN/RU fields or numeric values. Do not add itinerary stops.
+def _hy_adapt_prompt(ideas: list[dict[str, Any]], market: str, retry: bool) -> str:
+    extra = (
+        "RETRY: previous output still contained English sentences in HY fields. "
+        "Every title_hy, description_hy, location_hy, and itinerary title/description MUST be Armenian script. "
+        "Latin letters are allowed only inside parentheses for place names, e.g. Ախթալա (Akhtala). "
+        if retry
+        else ""
+    )
+    return f"""
+{extra}
+Translate into natural Armenian: title_hy, description_hy, location_hy, and each itinerary stop title + description.
+Also fill itinerary title_ru and description_ru in Russian.
+Keep itinerary title_en and description_en in English.
+Latin in HY fields only inside parentheses for place names, e.g. Ախթալա (Akhtala).
+Do not add places, prices, Python notes, quality scores, or new facts.
+Do not change numeric values. Do not add itinerary stops.
 
 SEARCH RESULTS:
 {market}
@@ -394,26 +402,51 @@ SEARCH RESULTS:
 IDEAS JSON:
 {json.dumps(ideas, ensure_ascii=False)}
 
-Return JSON: {{ "ideas": [ ... same objects with HY fields filled ] }}
+Return JSON: {{ "ideas": [ ... same objects with HY and RU itinerary fields filled ] }}
 """
+
+
+def _merge_hy_ideas(originals: dict[str, dict[str, Any]], adapted: list[Any]) -> list[dict[str, Any]]:
+    merged_ideas: list[dict[str, Any]] = []
+    for item in adapted:
+        if not isinstance(item, dict):
+            continue
+        original = originals.get(str(item.get("id") or "")) or {}
+        item["itinerary"] = _preserve_stop_english(
+            list(original.get("itinerary") or []),
+            [row for row in (item.get("itinerary") or []) if isinstance(row, dict)],
+        )
+        merged_ideas.append(item)
+    return merged_ideas
+
+
+def hy_adapt_node(state: State) -> dict[str, Any]:
+    ideas = [item for item in (state.get("evaluated_ideas") or state.get("ideas_raw") or []) if isinstance(item, dict)]
+    originals = {str(item.get("id") or index): item for index, item in enumerate(ideas)}
+    market = state.get("market_research") or "{}"
+    merged = ideas
     try:
-        data = _invoke_json(prompt, temperature=0.2)
+        data = _invoke_json(_hy_adapt_prompt(ideas, market, False), temperature=0.2)
         adapted = data.get("ideas") if isinstance(data, dict) else data
         if isinstance(adapted, list) and adapted:
-            merged_ideas: list[dict[str, Any]] = []
-            for item in adapted:
-                if not isinstance(item, dict):
-                    continue
-                original = originals.get(str(item.get("id") or "")) or {}
-                item["itinerary"] = _preserve_stop_english(
-                    list(original.get("itinerary") or []),
-                    [row for row in (item.get("itinerary") or []) if isinstance(row, dict)],
-                )
-                merged_ideas.append(item)
-            return {"evaluated_ideas": merged_ideas}
+            merged = _merge_hy_ideas(originals, adapted)
     except Exception:  # noqa: BLE001
-        pass
-    return {"evaluated_ideas": ideas}
+        merged = ideas
+    if merged and not all(hy_copy_ok(item) for item in merged):
+        try:
+            data = _invoke_json(_hy_adapt_prompt(merged, market, True), temperature=0.15)
+            adapted = data.get("ideas") if isinstance(data, dict) else data
+            if isinstance(adapted, list) and adapted:
+                merged = _merge_hy_ideas(originals, adapted)
+        except Exception:  # noqa: BLE001
+            pass
+    flagged: list[dict[str, Any]] = []
+    for item in merged:
+        if not hy_copy_ok(item):
+            flagged.append(mark_hy_review(item))
+        else:
+            flagged.append(item)
+    return {"evaluated_ideas": flagged}
 
 
 def _research_payload(state: State) -> dict[str, Any]:
@@ -478,8 +511,10 @@ def refinement_node(state: State) -> dict[str, Any]:
         candidate.setdefault("quality_score", candidate.get("appeal_score") or 0)
         if not str(candidate.get("title_hy") or "").strip():
             candidate["title_hy"] = str(candidate.get("title_en") or candidate["id"])
+            candidate = mark_hy_review(candidate)
         if not str(candidate.get("description_hy") or "").strip():
             candidate["description_hy"] = str(candidate.get("description_en") or "")
+            candidate = mark_hy_review(candidate)
         if not str(candidate.get("location_hy") or "").strip():
             candidate["location_hy"] = str(candidate.get("location_en") or "Armavir")
         try:

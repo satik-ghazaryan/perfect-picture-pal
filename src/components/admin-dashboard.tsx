@@ -1968,6 +1968,9 @@ function IdeasSection({
                         <span>{offer.title}</span>
                       )}
                       {offer.observed_price_amd ? ` · ${formatAmd(offer.observed_price_amd)}` : ""}
+                      {offer.observed_currency && offer.observed_currency !== "AMD" && offer.observed_amount
+                        ? ` · ${offer.observed_currency} ${offer.observed_amount}${offer.conversion_estimated ? " (estimated)" : ""}`
+                        : ""}
                       {offer.found_on ? ` · ${offer.found_on}` : ""}
                     </li>
                   );

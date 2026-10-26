@@ -83,8 +83,15 @@ def titles_too_similar(ideas: list[dict[str, Any]]) -> bool:
 def itinerary_issues(idea: dict[str, Any]) -> list[str]:
     issues: list[str] = []
     stops = idea.get("itinerary") if isinstance(idea.get("itinerary"), list) else []
+    dests = [
+        stop
+        for stop in stops
+        if isinstance(stop, dict) and _text(stop.get("title")) and not _is_armavir_title(_text(stop.get("title")))
+    ]
     if len(stops) < 4:
         issues.append("itinerary needs at least four timed stops including departure and return")
+    if len(dests) < 2:
+        issues.append("itinerary is too thin; need at least two sourced stops besides Armavir")
     previous: int | None = None
     joined = " ".join(_text(stop.get("title")) + " " + _text(stop.get("description")) for stop in stops if isinstance(stop, dict)).lower()
     if "armavir" not in joined and "արմավիր" not in joined:
@@ -161,8 +168,12 @@ def ensure_armavir_bookends(idea: dict[str, Any], departure: str) -> dict[str, A
             0,
             {
                 "time": "08:00",
-                "title": f"{place} — մեկնում",
-                "description": "Estimated departure from Armavir; confirm meeting point and vehicle on the operation day. Needs verification.",
+                "title": "Արմավիր — մեկնում",
+                "title_en": "Armavir — departure",
+                "title_ru": "Армавир — отправление",
+                "description": "Արմավիրից մեկնում։ Հաստատել հավաքի կետը գործարկման օրը։",
+                "description_en": "Estimated departure from Armavir; confirm meeting point. Needs verification.",
+                "description_ru": "Отправление из Армавира. Нужна проверка.",
             },
         )
         last_time = _text(stops[-1].get("time")) if stops else "18:30"
@@ -172,8 +183,12 @@ def ensure_armavir_bookends(idea: dict[str, Any], departure: str) -> dict[str, A
         stops.append(
             {
                 "time": f"{hour:02d}:{minute:02d}",
-                "title": f"{place} — վերադարձ",
-                "description": "Estimated return to Armavir. Road time is an assumption and needs verification.",
+                "title": "Արմավիր — վերադարձ",
+                "title_en": "Armavir — return",
+                "title_ru": "Армавир — возвращение",
+                "description": "Վերադարձ Արմավիր։ Ճանապարհի ժամանակը գնահատված է։",
+                "description_en": "Estimated return to Armavir. Road time needs verification.",
+                "description_ru": "Возвращение в Армавир. Нужна проверка.",
             },
         )
     idea["itinerary"] = stops
@@ -250,6 +265,31 @@ def ground_idea(idea: dict[str, Any], research: dict[str, Any]) -> dict[str, Any
     return idea
 
 
+HY_REVIEW_FLAG = "Armenian text needs review"
+INTERNAL_OPS_RE = re.compile(
+    r"Python-ը կլրացնի[^.։]*[։.]?|"
+    r"will be filled by Python[^.]*\.?|"
+    r"Python fills[^.]*\.?|"
+    r"Python-ը կլրացնի տրանսպորտը ըստ կմ\.?|"
+    r"Transport costs will be filled by Python based on km\.?|"
+    r"Computed figures \(source of truth\):[^.]*\.?|"
+    r"source of truth|"
+    r"Հաշվարկված թվեր՝[^։.]*[։.]?|"
+    r"Расчётные цифры:[^.]*\.?",
+    re.IGNORECASE,
+)
+INVENTED_CLAIM_RE = re.compile(
+    r"Positive feedback from previous participants\.?|"
+    r"previous participants|"
+    r"Quality\s+\d+(?:\.\d+)?\s*/\s*10|"
+    r"որակ[`՝:]?\s*\d+(?:\.\d+)?\s*/\s*10|"
+    r"Որակի գնահատական\s*\d+(?:\.\d+)?\s*/\s*10|"
+    r"оценка качества\s*\d+(?:\.\d+)?\s*/\s*10",
+    re.IGNORECASE,
+)
+LATIN_SENTENCE_RE = re.compile(r"\b[A-Z][A-Za-z]+(?:\s+[A-Za-z]{2,}){3,}[.]?")
+PAREN_CHUNK_RE = re.compile(r"\([^)]*\)")
+
 MONEY_FIGURE_RE = re.compile(
     r"(?:price\s+around\s+)?(?:\d{1,3}(?:[.,\s]\d{3})+|\d{3,7})\s*(?:AMD|amd|֏|դրամ|₽|руб(?:\.|лей)?)"
     r"(?:\s*/\s*(?:անձ|чел(?:овек)?|person))?"
@@ -265,6 +305,97 @@ DIFF_MARKERS = ("մրցակցային", "differentiation", "competitor", "кон
 def strip_money_figures(text: str) -> str:
     cleaned = MONEY_FIGURE_RE.sub("", str(text or ""))
     return re.sub(r"\s{2,}", " ", cleaned).strip()
+
+
+def strip_internal_ops(text: str) -> str:
+    cleaned = INTERNAL_OPS_RE.sub("", str(text or ""))
+    return re.sub(r"\s{2,}", " ", cleaned).strip()
+
+
+def strip_invented_claims(text: str) -> str:
+    cleaned = INVENTED_CLAIM_RE.sub("", str(text or ""))
+    return re.sub(r"\s{2,}", " ", cleaned).strip()
+
+
+def strip_customer_ops_text(text: str) -> str:
+    return strip_invented_claims(strip_internal_ops(strip_money_figures(text)))
+
+
+def strip_latin_sentences_from_hy(text: str) -> str:
+    without_paren = text
+    cleaned = LATIN_SENTENCE_RE.sub("", without_paren)
+    return re.sub(r"\s{2,}", " ", cleaned).strip()
+
+
+def hy_text_ok(value: str) -> bool:
+    text = _text(value)
+    if not text:
+        return False
+    if not ARMENIAN_RE.search(text):
+        return False
+    remainder = PAREN_CHUNK_RE.sub(" ", text)
+    remainder = LATIN_SENTENCE_RE.sub(" ", remainder)
+    latin = LATIN_WORD_RE.findall(remainder)
+    return len(latin) <= 3
+
+
+def hy_copy_ok(idea: dict[str, Any]) -> bool:
+    if not hy_text_ok(_text(idea.get("title_hy"))) or not hy_text_ok(_text(idea.get("description_hy"))):
+        return False
+    location = _text(idea.get("location_hy"))
+    if location and not hy_text_ok(location):
+        return False
+    for stop in idea.get("itinerary") or []:
+        if not isinstance(stop, dict):
+            continue
+        title = _text(stop.get("title"))
+        if title and not hy_text_ok(title):
+            return False
+        description = _text(stop.get("description"))
+        if description and ARMENIAN_RE.search(description) is None and LATIN_WORD_RE.search(description):
+            return False
+    return True
+
+
+def mark_hy_review(idea: dict[str, Any]) -> dict[str, Any]:
+    verify = [str(item) for item in (idea.get("verify") or []) if str(item).strip()]
+    if HY_REVIEW_FLAG not in verify:
+        verify.append(HY_REVIEW_FLAG)
+    idea["verify"] = verify
+    idea["needs_verification"] = True
+    return idea
+
+
+def flag_thin_itinerary(idea: dict[str, Any], research: dict[str, Any] | None = None) -> dict[str, Any]:
+    verify = [str(item) for item in (idea.get("verify") or []) if str(item).strip()]
+    for item in itinerary_issues(idea):
+        if item not in verify:
+            verify.append(item)
+    research = research or {}
+    corpus = _search_corpus(research)
+    for stop in idea.get("itinerary") or []:
+        if not isinstance(stop, dict) or _is_armavir_title(_text(stop.get("title"))):
+            continue
+        reason = _text(stop.get("description") or stop.get("why"))
+        if not reason:
+            flag = f"Stop needs a reason: {_text(stop.get('title'))}"
+            if flag not in verify:
+                verify.append(flag)
+        source = _text(stop.get("source_url"))
+        title = _text(stop.get("title_en") or stop.get("title"))
+        tokens = [token for token in re.split(r"[\s,;:/|—.()\-]+", title) if len(token) > 3]
+        if tokens and corpus and not any(token.lower() in corpus for token in tokens):
+            flag = f"Place not in search results: {title}"
+            if flag not in verify:
+                verify.append(flag)
+        if not source and tokens and corpus:
+            # keep existing ground_idea flags; add sourced-fact reminder
+            fact_flag = f"Needs sourced fact URL: {title}"
+            if fact_flag not in verify:
+                verify.append(fact_flag)
+    idea["verify"] = verify
+    idea["needs_verification"] = bool(verify)
+    return idea
 
 
 def _walk_text_fields(idea: dict[str, Any], transform) -> dict[str, Any]:
@@ -314,7 +445,7 @@ def _walk_text_fields(idea: dict[str, Any], transform) -> dict[str, Any]:
 
 
 def strip_idea_money_figures(idea: dict[str, Any]) -> dict[str, Any]:
-    return _walk_text_fields(idea, strip_money_figures)
+    return _walk_text_fields(idea, strip_customer_ops_text)
 
 
 def _search_blob(research: dict[str, Any]) -> str:
@@ -340,7 +471,11 @@ def _named_in_results(name: str, blob: str) -> bool:
 def sanitize_competitors(idea: dict[str, Any], research: dict[str, Any] | None = None) -> dict[str, Any]:
     research = research or {}
     blob = _search_blob(research)
-    offers = [item for item in (research.get("market_offers") or []) if isinstance(item, dict) and str(item.get("url") or "").strip()]
+    offers = [
+        item
+        for item in (research.get("market_offers") or [])
+        if isinstance(item, dict) and str(item.get("url") or "").strip() and int(item.get("observed_price_amd") or 0) > 0
+    ]
     has_offers = bool(offers)
 
     def scrub(text: str) -> str:
@@ -365,10 +500,6 @@ def sanitize_competitors(idea: dict[str, Any], research: dict[str, Any] | None =
         if not replaced:
             highlights.append(NO_COMPETITOR_LINE)
         next_idea["highlights"] = highlights
-        for key in ("description_en", "description_hy", "description_ru", "notes"):
-            value = _text(next_idea.get(key))
-            if NO_COMPETITOR_LINE not in value:
-                next_idea[key] = f"{value} {NO_COMPETITOR_LINE}".strip()
     verify = [str(item) for item in (next_idea.get("verify") or []) if str(item).strip()]
     if not has_offers and "No competitor data was found" not in " ".join(verify):
         verify.append("No competitor data was found")
@@ -380,31 +511,14 @@ def sanitize_competitors(idea: dict[str, Any], research: dict[str, Any] | None =
 def rewrite_copy_from_numbers(idea: dict[str, Any], research: dict[str, Any] | None = None) -> dict[str, Any]:
     next_idea = strip_idea_money_figures(idea)
     next_idea = sanitize_competitors(next_idea, research)
-    cost = int(next_idea.get("cost_per_person_amd") or 0)
+    next_idea = flag_thin_itinerary(next_idea, research)
+    if _text(next_idea.get("description_hy")):
+        next_idea["description_hy"] = strip_latin_sentences_from_hy(_text(next_idea.get("description_hy")))
+    if _text(next_idea.get("title_hy")):
+        next_idea["title_hy"] = strip_latin_sentences_from_hy(_text(next_idea.get("title_hy")))
+    if not hy_copy_ok(next_idea):
+        next_idea = mark_hy_review(next_idea)
     raw_price = next_idea.get("price")
-    profit = int((next_idea.get("profitability") or {}).get("profit_per_person_amd") or 0)
-    group = int((next_idea.get("profitability") or {}).get("group_size") or 17)
-    if raw_price is None:
-        line_en = f"Computed figures (source of truth): group {group}; {PRICE_NEEDS_DISTANCE}. Estimated."
-        line_hy = f"Հաշվարկված թվեր՝ խումբ {group} հոգի. {PRICE_NEEDS_DISTANCE}."
-        line_ru = f"Расчётные цифры: группа {group}; {PRICE_NEEDS_DISTANCE}."
-    else:
-        price = int(raw_price)
-        line_en = (
-            f"Computed figures (source of truth): group {group}; cost per person {cost} AMD; "
-            f"suggested price {price} AMD; profit per person {profit} AMD. Estimated."
-        )
-        line_hy = (
-            f"Հաշվարկված թվեր՝ խումբ {group} հոգի, արժեք/անձ {cost} ֏, "
-            f"առաջարկվող գին {price} ֏, շահույթ/անձ {profit} ֏։ Գնահատված։"
-        )
-        line_ru = (
-            f"Расчётные цифры: группа {group}; себестоимость {cost} AMD/чел; "
-            f"цена {price} AMD; прибыль {profit} AMD/чел. Оценка."
-        )
-    next_idea["description_en"] = (_text(next_idea.get("description_en")) + " " + line_en).strip()
-    next_idea["description_hy"] = (_text(next_idea.get("description_hy")) + " " + line_hy).strip()
-    next_idea["description_ru"] = (_text(next_idea.get("description_ru")) + " " + line_ru).strip()
     breakdown = dict(next_idea.get("breakdown") or {})
     prior_notes = str((idea.get("breakdown") or {}).get("notes") or "")
     if raw_price is None:
@@ -412,13 +526,11 @@ def rewrite_copy_from_numbers(idea: dict[str, Any], research: dict[str, Any] | N
             f"Estimated. Meals and entrance fees are not included. {PRICE_NEEDS_DISTANCE}."
         )
     elif prior_notes:
-        breakdown["notes"] = prior_notes
+        breakdown["notes"] = strip_internal_ops(prior_notes) or prior_notes
     next_idea["breakdown"] = breakdown
     profitability = dict(next_idea.get("profitability") or {})
     if profitability:
         profitability["assumptions"] = breakdown.get("notes") or profitability.get("assumptions") or ""
         next_idea["profitability"] = profitability
-    extra = _text(next_idea.get("notes"))
-    if line_en not in extra:
-        next_idea["notes"] = f"{extra} {line_en}".strip()
+    next_idea["notes"] = strip_customer_ops_text(_text(next_idea.get("notes")))
     return next_idea
