@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 
-export const PYTHON_TIMEOUT_MS = 120_000;
+export const PYTHON_TIMEOUT_MS = 240_000;
 const GENERATE_RATE_LIMIT = 5;
 const GENERATE_RATE_WINDOW_MS = 60_000;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

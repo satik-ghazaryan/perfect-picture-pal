@@ -14,5 +14,16 @@ export default defineConfig({
     // nitro/vite builds from this
     server: { entry: "server" },
   },
-  ...(nitroPreset ? { nitro: { preset: nitroPreset } } : {}),
+  ...(nitroPreset
+    ? {
+        nitro: {
+          preset: nitroPreset,
+          vercel: {
+            functions: {
+              maxDuration: 300,
+            },
+          },
+        },
+      }
+    : {}),
 });

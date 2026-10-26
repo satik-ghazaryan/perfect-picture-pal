@@ -15,7 +15,7 @@ import type {
 const GROUP_SIZE_FALLBACK = 17;
 
 const LAST_RUN_KEY = "ari-gnank-last-idea-run";
-const CLIENT_TIMEOUT_MS = 130_000;
+const CLIENT_TIMEOUT_MS = 250_000;
 const ADMIN_REQUIRED_ERROR = "Մուտք գործեք admin հաշվով";
 
 function asUuid(value: string | null | undefined) {
