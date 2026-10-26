@@ -1676,7 +1676,7 @@ function draftFromIdea(idea: TourIdeaResult, tourType: string): Draft {
     title: columnsToLocalized(idea.title_hy, idea.title_en, idea.title_ru),
     summary: columnsToLocalized(idea.description_hy, idea.description_en, idea.description_ru),
     region: columnsToLocalized(idea.location_hy, idea.location_en, idea.location_ru),
-    price: String(idea.price),
+    price: idea.price == null ? "" : String(idea.price),
     type: catalogTypeFromIdea(tourType),
     returnTime: hoursToClock("08:30", idea.duration_hours || 10),
     itinerary: itinerary || highlights.map((item, index) => `${String(9 + index).padStart(2, "0")}:00 | ${item} | ${item}`).join("\n"),
@@ -1882,6 +1882,12 @@ function IdeasSection({
         <details className="rounded-3xl border border-border bg-card p-4">
           <summary className="cursor-pointer text-sm font-bold">Հետազոտության աղբյուրներ</summary>
           <p className="mt-2 text-xs text-muted-foreground">{research.disclaimer || "Market reference only. Estimated."}</p>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Tavily {research.provider_status?.tavily || "n/a"}
+            {` · key ${research.tavily_key_present || research.provider_status?.tavily_key_present ? "yes" : "no"}`}
+            {` · DDGS ${research.provider_status?.ddg || "n/a"}`}
+            {typeof research.useful_result_count === "number" ? ` · useful ${research.useful_result_count}` : ""}
+          </p>
           {research.queries.length > 0 ? (
             <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
               {research.queries.map((query) => (
@@ -1923,7 +1929,9 @@ function IdeasSection({
             <p className="mt-2 text-sm text-foreground">{idea.description_hy}</p>
             <p className="mt-1 text-xs text-muted-foreground">{idea.description_en}</p>
             <p className="mt-1 text-xs text-muted-foreground">{idea.description_ru}</p>
-            <p className="mt-3 text-sm font-black">Առաջարկվող գին {formatAmd(idea.price)}</p>
+            <p className="mt-3 text-sm font-black">
+              {idea.price == null ? "price needs route distance" : `Առաջարկվող գին ${formatAmd(idea.price)}`}
+            </p>
             <p className="mt-1 text-xs text-muted-foreground">
               Խումբ {idea.profitability?.group_size ?? 17} · արժեք/անձ {formatAmd(idea.cost_per_person_amd ?? idea.profitability?.expense_per_person_amd ?? 0)}
               · նվազագույն գին {formatAmd(idea.min_price_amd ?? 0)}

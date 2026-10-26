@@ -43,7 +43,8 @@ function asStop(value: unknown): TourIdeaStop | null {
   const title = String(record.title ?? "").trim();
   const description = String(record.description ?? "").trim();
   if (!time || !title) return null;
-  return { time, title, description };
+  const titleEn = String(record["title_en"] ?? "").trim();
+  return titleEn ? { time, title, title_en: titleEn, description } : { time, title, description };
 }
 
 function asBreakdown(value: unknown): TourIdeaBreakdown | undefined {
@@ -138,6 +139,9 @@ export function normalizeResearch(value: unknown): TourIdeaResearch {
       market_offers: [],
       error: "",
       search_status: "",
+      tavily_key_present: false,
+      useful_result_count: 0,
+      provider_status: {},
     };
   }
   const record = value as Record<string, unknown>;
@@ -164,6 +168,15 @@ export function normalizeResearch(value: unknown): TourIdeaResearch {
     market_offers: asOffers(record["market_offers"]),
     error: String(record["error"] ?? ""),
     search_status: String(record["search_status"] ?? record["error"] ?? ""),
+    tavily_key_present: Boolean(record["tavily_key_present"]),
+    useful_result_count: Number(record["useful_result_count"] ?? results.length) || 0,
+    provider_status: record["provider_status"] && typeof record["provider_status"] === "object"
+      ? {
+        tavily: String((record["provider_status"] as Record<string, unknown>)["tavily"] ?? ""),
+        ddg: String((record["provider_status"] as Record<string, unknown>)["ddg"] ?? ""),
+        tavily_key_present: Boolean((record["provider_status"] as Record<string, unknown>)["tavily_key_present"]),
+      }
+      : {},
   };
 }
 
@@ -190,7 +203,7 @@ export function normalizeTourIdea(value: unknown): TourIdeaResult | null {
     location_hy: String(record["location_hy"] ?? ""),
     location_en: String(record["location_en"] ?? ""),
     location_ru: String(record["location_ru"] ?? ""),
-    price: parseAmd(record["price"] ?? record["suggested_price"] ?? record["selling_price"]),
+    price: record["price"] === null ? null : parseAmd(record["price"] ?? record["suggested_price"] ?? record["selling_price"]),
     duration_hours: typeof record["duration_hours"] === "number" ? record["duration_hours"] : Number(record["duration_hours"]) || 10,
     highlights,
     itinerary,

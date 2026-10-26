@@ -93,6 +93,9 @@ def choose_suggested_price(cost_pp: int, offers: list[dict[str, Any]]) -> tuple[
     return suggested, position, market
 
 
+PRICE_NEEDS_DISTANCE = "price needs route distance"
+
+
 def apply_unit_economics(
     idea: dict[str, Any],
     *,
@@ -100,36 +103,55 @@ def apply_unit_economics(
     km_sourced: bool = False,
     km_notes: list[str] | None = None,
     offers: list[dict[str, Any]] | None = None,
+    has_away_stop: bool = False,
 ) -> dict[str, Any]:
     next_idea = dict(idea)
     breakdown = dict(next_idea.get("breakdown") or {})
     rate = transport_rate_per_km()
     transport_group = transport_group_amd(route_km)
-    cost_pp = cost_per_person_amd(transport_group)
-    min_price = min_price_amd(cost_pp)
-    suggested, position, market = choose_suggested_price(cost_pp, offers or [])
-    profit_pp = suggested - cost_pp
-    total_fixed = transport_group + GUIDE_FEE_GROUP_AMD
     verify = [str(item) for item in (next_idea.get("verify") or []) if str(item).strip()]
     if km_notes:
         verify.extend(item for item in km_notes if item not in verify)
-    if position == "unknown" and "No usable competitor offers" not in verify:
-        verify.append("No usable competitor offers; price is cost+margin only")
-    if not km_sourced and "Route km is an estimate" not in verify:
-        verify.append("Route km is an estimate; confirm driving distance")
-
-    unit_note = (
-        f"Estimated. Meals and entrance fees are not included. "
-        f"GROUP_SIZE={GROUP_SIZE}. Guide {GUIDE_FEE_GROUP_AMD} AMD for the group. "
-        f"route_km={route_km:.1f} one-way (Armavir to last stop; no return leg; "
-        f"{rate} AMD/km covers the day's vehicle). "
-        f"transport_group={transport_group} AMD. "
-        f"Cost per person = ({transport_group}+{GUIDE_FEE_GROUP_AMD})/{GROUP_SIZE} = {cost_pp} AMD. "
-        f"Minimum price (cost x {MIN_MARGIN_PCT}%) = {min_price} AMD. "
-        f"Suggested price = {suggested} AMD. Profit per person = {profit_pp} AMD."
-    )
+    blocked = has_away_stop and transport_group <= 0
+    if blocked:
+        if PRICE_NEEDS_DISTANCE not in verify:
+            verify.append(PRICE_NEEDS_DISTANCE)
+        cost_pp = 0
+        min_price = 0
+        suggested: int | None = None
+        position: MarketPosition = "unknown"
+        _, _, market = choose_suggested_price(0, [])
+        profit_pp = 0
+        total_fixed = GUIDE_FEE_GROUP_AMD
+        unit_note = (
+            f"Estimated. Meals and entrance fees are not included. "
+            f"GROUP_SIZE={GROUP_SIZE}. Guide {GUIDE_FEE_GROUP_AMD} AMD for the group. "
+            f"{PRICE_NEEDS_DISTANCE}. No selling price until driving km is known."
+        )
+    else:
+        cost_pp = cost_per_person_amd(transport_group)
+        min_price = min_price_amd(cost_pp)
+        suggested, position, market = choose_suggested_price(cost_pp, offers or [])
+        if suggested < min_price:
+            suggested = min_price
+        profit_pp = suggested - cost_pp
+        total_fixed = transport_group + GUIDE_FEE_GROUP_AMD
+        if position == "unknown" and "No usable competitor offers" not in verify:
+            verify.append("No usable competitor offers; price is cost+margin only")
+        if not km_sourced and "Route km is an estimate" not in verify:
+            verify.append("Route km is an estimate; confirm driving distance")
+        unit_note = (
+            f"Estimated. Meals and entrance fees are not included. "
+            f"GROUP_SIZE={GROUP_SIZE}. Guide {GUIDE_FEE_GROUP_AMD} AMD for the group. "
+            f"route_km={route_km:.1f} one-way (Armavir to last stop; no return leg; "
+            f"{rate} AMD/km covers the day's vehicle). "
+            f"transport_group={transport_group} AMD. "
+            f"Cost per person = ({transport_group}+{GUIDE_FEE_GROUP_AMD})/{GROUP_SIZE} = {cost_pp} AMD. "
+            f"Minimum price (cost x {MIN_MARGIN_PCT}%) = {min_price} AMD. "
+            f"Suggested price = {suggested} AMD. Profit per person = {profit_pp} AMD."
+        )
     breakdown["guide_amd"] = GUIDE_FEE_GROUP_AMD
-    breakdown["transport_amd"] = transport_group
+    breakdown["transport_amd"] = transport_group if not blocked else 0
     breakdown["meals_amd"] = 0
     breakdown["entrance_fees_amd"] = 0
     breakdown["yerevan_transfer_amd"] = 0
@@ -146,10 +168,10 @@ def apply_unit_economics(
     next_idea["needs_verification"] = bool(verify)
     profitability = {
         "group_size": GROUP_SIZE,
-        "revenue_per_person_amd": suggested,
+        "revenue_per_person_amd": suggested or 0,
         "expense_per_person_amd": cost_pp,
         "profit_per_person_amd": profit_pp,
-        "revenue_per_group_amd": suggested * GROUP_SIZE,
+        "revenue_per_group_amd": (suggested or 0) * GROUP_SIZE,
         "expense_per_group_amd": total_fixed,
         "profit_per_group_amd": profit_pp * GROUP_SIZE,
         "assumptions": unit_note,

@@ -29,7 +29,57 @@ REASON_CODES = (
     "empty",
     "partial",
     "ok",
+    "too_few_results",
 )
+GENERIC_WIKI_TITLES = {
+    "autumn",
+    "summer",
+    "winter",
+    "spring",
+    "day",
+    "armenia",
+    "tour",
+    "hiking",
+}
+REGION_WORDS = (
+    "lori",
+    "tavush",
+    "syunik",
+    "gegharkunik",
+    "kotayk",
+    "aragatsotn",
+    "shirak",
+    "vayots",
+    "armavir",
+    "yerevan",
+    "dsegh",
+    "tsover",
+    "akhtala",
+    "garni",
+    "geghard",
+    "sevan",
+    "dilijan",
+    "tatev",
+)
+QUERY_NOISE = {
+    "the",
+    "and",
+    "from",
+    "with",
+    "tour",
+    "tours",
+    "day",
+    "one",
+    "price",
+    "amd",
+    "group",
+    "please",
+    "a",
+    "an",
+    "of",
+    "for",
+    "in",
+}
 
 
 def _clip(text: str, limit: int = 420) -> str:
@@ -107,20 +157,42 @@ def _ddg_one(query: str, max_results: int) -> list[dict[str, str]]:
     return rows
 
 
+def place_keywords(inputs: dict[str, Any]) -> list[str]:
+    extra = str(inputs.get("preferences") or "")
+    tour_type = str(inputs.get("tour_type") or "").strip()
+    bits = re.split(r"[\s,/|]+", extra)
+    found: list[str] = []
+    for bit in bits:
+        token = re.sub(r"[^A-Za-z\u0531-\u0587-]", "", bit).strip()
+        if len(token) < 4:
+            continue
+        if token.lower() in QUERY_NOISE:
+            continue
+        found.append(token)
+    keywords = list(dict.fromkeys(found))
+    if tour_type and tour_type.lower() not in {item.lower() for item in keywords}:
+        keywords.append(tour_type)
+    return keywords[:8]
+
+
 def build_queries(inputs: dict[str, Any]) -> list[str]:
-    season = str(inputs.get("season") or "summer")
-    season_words = SEASON_LABELS.get(season, season)
-    tour_type = str(inputs.get("tour_type") or "cultural")
-    extra = str(inputs.get("preferences") or "").strip()
-    queries = [
-        "day tours departing from Armavir Armenia price itinerary",
-        "Armavir Armenia one day tour advertised 2026",
-        f"{season_words} one day group tours Armenia price AMD",
-        f"Armenia {tour_type} day tour from Armavir or Yerevan price dram",
+    places = place_keywords(inputs)
+    region = next((item for item in places if item.lower() in REGION_WORDS), "")
+    queries: list[str] = []
+    for place in places[:4]:
+        loc = f"{place} {region}".strip() if region and place.lower() != region.lower() else place
+        queries.append(f"{loc} Armenia tour")
+        queries.append(f"{place} Lori Armenia" if not region else f"{place} {region} Armenia")
+    if not queries:
+        tour_type = str(inputs.get("tour_type") or "cultural")
+        queries.append(f"Armenia {tour_type} day tour from Yerevan price")
+    market = [
+        "Akhtala monastery day tour from Yerevan price",
+        "Armenia one day tour Lori price AMD tripadvisor",
+        "Armenia one day tour getyourguide viator price",
     ]
-    if extra:
-        queries.append(f"{extra} day tour Armavir Armenia price")
-    return queries[:5]
+    unique = list(dict.fromkeys(queries[:5] + market))
+    return unique[:8]
 
 
 def _call_with_timeout(
@@ -207,6 +279,48 @@ def market_offers_from_results(results: list[dict[str, str]], found_on: str) -> 
     return offers
 
 
+def result_is_useful(row: dict[str, str], keywords: list[str]) -> bool:
+    title = str(row.get("title") or "").strip()
+    url = str(row.get("url") or "").lower()
+    snippet = str(row.get("snippet") or "")
+    blob = f"{title} {snippet} {url}".lower()
+    title_key = re.sub(r"[^a-z]+", " ", title.lower()).strip()
+    if "wikipedia" in url and (title_key in GENERIC_WIKI_TITLES or title_key.split(" ")[0:1] == [title_key] and title_key in GENERIC_WIKI_TITLES):
+        return False
+    if title_key in GENERIC_WIKI_TITLES:
+        return False
+    has_armenia = "armenia" in blob or "հայաստան" in blob or "armenian" in blob
+    keys = [item.lower() for item in keywords if len(item) >= 4 and item.lower() not in QUERY_NOISE]
+    has_place = any(key in blob for key in keys)
+    if not has_armenia and not has_place:
+        return False
+    if "wikipedia.org" in url and not has_place:
+        return False
+    return True
+
+
+def _tavily_key_present() -> bool:
+    import os
+
+    return bool(os.getenv("TAVILY_API_KEY", "").strip())
+
+
+def _provider_flag(rows: list[dict[str, str]], reasons: list[str], prefix: str, ran: bool) -> str:
+    if not ran:
+        return "skipped"
+    if f"{prefix}_no_key" in reasons:
+        return "no_key"
+    if rows and reasons:
+        return "partial"
+    if rows:
+        return "ok"
+    if f"{prefix}_timeout" in reasons:
+        return "timeout"
+    if f"{prefix}_error" in reasons:
+        return "error"
+    return "empty"
+
+
 def _pick_status(results: list[dict[str, str]], reasons: list[str]) -> str:
     unique_reasons = list(dict.fromkeys(item for item in reasons if item in REASON_CODES or item.endswith("_timeout") or item.endswith("_error") or item.endswith("_no_key")))
     if results and unique_reasons:
@@ -218,22 +332,31 @@ def _pick_status(results: list[dict[str, str]], reasons: list[str]) -> str:
     for code in ("tavily_timeout", "ddg_timeout", "tavily_error", "ddg_error", "tavily_no_key"):
         if code in unique_reasons:
             return code
+    if "too_few_results" in unique_reasons:
+        return "too_few_results"
     return "empty"
 
 
 def run_market_search(inputs: dict[str, Any], max_results: int = 5) -> dict[str, Any]:
     queries = build_queries(inputs)
+    keywords = place_keywords(inputs)
     found_on = datetime.now(timezone.utc).date().isoformat()
+    tavily_ran = True
     tavily_rows, tavily_reasons = _search_all(queries, max_results, _tavily_one, "tavily")
+    useful_tavily = [row for row in tavily_rows if result_is_useful(row, keywords)]
     ddg_rows: list[dict[str, str]] = []
     ddg_reasons: list[str] = []
-    if not tavily_rows or tavily_reasons:
+    ddg_ran = False
+    if not useful_tavily or tavily_reasons or len(useful_tavily) < 2:
+        ddg_ran = True
         ddg_rows, ddg_reasons = _search_all(queries, max_results, _ddg_one, "ddg")
     results = tavily_rows + ddg_rows
     reasons = tavily_reasons + ddg_reasons
     unique: list[dict[str, str]] = []
     seen: set[str] = set()
     for row in results:
+        if not result_is_useful(row, keywords):
+            continue
         key = row.get("url") or row.get("title") or json.dumps(row, ensure_ascii=False)
         if key in seen:
             continue
@@ -243,13 +366,24 @@ def run_market_search(inputs: dict[str, Any], max_results: int = 5) -> dict[str,
         unique.append(tagged)
         if len(unique) >= 12:
             break
+    if len(unique) < 2:
+        unique = []
+        if "too_few_results" not in reasons:
+            reasons.append("too_few_results")
     offers = market_offers_from_results(unique, found_on)
-    if tavily_rows and not ddg_rows:
-        provider = "tavily"
-    elif ddg_rows and not tavily_rows:
-        provider = "duckduckgo"
-    elif tavily_rows and ddg_rows:
+    tavily_status = _provider_flag(useful_tavily, tavily_reasons, "tavily", tavily_ran)
+    ddg_status = _provider_flag(
+        [row for row in ddg_rows if result_is_useful(row, keywords)],
+        ddg_reasons,
+        "ddg",
+        ddg_ran,
+    )
+    if useful_tavily and ddg_rows:
         provider = "tavily+duckduckgo"
+    elif useful_tavily:
+        provider = "tavily"
+    elif ddg_rows and unique:
+        provider = "duckduckgo"
     else:
         provider = "none"
     status = _pick_status(unique, reasons)
@@ -266,4 +400,11 @@ def run_market_search(inputs: dict[str, Any], max_results: int = 5) -> dict[str,
         "error": "" if status == "ok" else status,
         "search_status": status,
         "live": bool(unique),
+        "tavily_key_present": _tavily_key_present(),
+        "useful_result_count": len(unique),
+        "provider_status": {
+            "tavily": tavily_status,
+            "ddg": ddg_status,
+            "tavily_key_present": _tavily_key_present(),
+        },
     }

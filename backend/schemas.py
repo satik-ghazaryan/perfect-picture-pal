@@ -46,6 +46,7 @@ class GenerateIdeasRequest(BaseModel):
 class ItineraryStop(BaseModel):
     time: str = Field(..., min_length=1, max_length=16)
     title: str = Field(..., min_length=1, max_length=240)
+    title_en: str = ""
     description: str = Field(..., min_length=1, max_length=800)
 
 
@@ -137,6 +138,9 @@ class ResearchBundle(BaseModel):
     market_offers: list[MarketOffer] = Field(default_factory=list)
     error: str = ""
     search_status: str = ""
+    tavily_key_present: bool = False
+    useful_result_count: int = 0
+    provider_status: dict[str, Any] = Field(default_factory=dict)
 
 
 class IdeaMarket(BaseModel):
@@ -160,7 +164,7 @@ class TourIdea(BaseModel):
     location_hy: str
     location_en: str
     location_ru: str
-    price: int = Field(..., ge=0)
+    price: int | None = Field(default=None, ge=0)
     duration_hours: float = Field(..., gt=0, le=24)
     highlights: list[str] = Field(default_factory=list)
     itinerary: list[ItineraryStop] = Field(default_factory=list)
@@ -188,9 +192,11 @@ class TourIdea(BaseModel):
         if not isinstance(value, dict):
             return value
         data = dict(value)
-        data["price"] = parse_amd(
-            data.get("price", data.get("suggested_price", data.get("selling_price"))),
-        )
+        raw_price = data.get("price", data.get("suggested_price", data.get("selling_price")))
+        if raw_price is None:
+            data["price"] = None
+        else:
+            data["price"] = parse_amd(raw_price)
         if "cost_breakdown" in data and "breakdown" not in data:
             data["breakdown"] = data.get("cost_breakdown")
         if "costs" in data and "breakdown" not in data:

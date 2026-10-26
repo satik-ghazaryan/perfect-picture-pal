@@ -12,7 +12,7 @@ from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 from pydantic import ValidationError
 
-from agent.distance import one_way_route_km
+from agent.distance import has_stop_outside_armavir, one_way_route_km
 from agent.pricing import (
     GROUP_SIZE,
     GUIDE_FEE_GROUP_AMD,
@@ -55,7 +55,11 @@ SYSTEM = (
     "If search results are empty, say so; do not invent destinations; set verify to include "
     "'No live web results; places and prices need human research'. "
     "Competitor prices are MARKET REFERENCE only — never confirmed. "
+    "Never name Ari Gnank / Արի Գնանք as a competitor; that is this operator. "
+    "Name another company only if it appears in SEARCH RESULTS with a URL. "
+    "If no competitor offers exist, say that no competitor data was found. "
     "Every uncertain item goes in verify[] (short English strings). Do not silently guess. "
+    "Do not write AMD / ֏ / ₽ selling prices in copy; Python fills numbers. "
     f"GROUP_SIZE is {GROUP_SIZE} (not 18). Guide fee is {GUIDE_FEE_GROUP_AMD} AMD for the whole group. "
     "Do not invent transport AMD or profit. Leave breakdown numbers at 0; Python computes "
     "one-way route_km × AMD/km and cost/person = (transport_group + guide) / group_size. "
@@ -151,7 +155,7 @@ IDEA_JSON_SHAPE = """
         "Որակ՝ n/10 — …"
       ],
       "itinerary": [
-        {"time": "07:30", "title": "Արմավիր — մեկնում", "description": "Armavir departure. Lori-bound legs need 2.5–3 hours (arrive ~10:30). Needs verification."}
+        {"time": "07:30", "title": "Armavir — departure", "title_en": "Armavir — departure", "description": "Armavir departure. Lori-bound legs need 2.5–3 hours (arrive ~10:30). Needs verification."}
       ],
       "budget_score": 0,
       "logistics_score": 0,
@@ -183,7 +187,7 @@ Use this live web-search JSON as market observation only (not confirmed bookings
 Operator: Արի Գնանք. ALWAYS prioritize Armavir-based departures. Group size is {GROUP_SIZE}.
 If a comparable product is sold from Yerevan, note the extra driving km as market context only; Python prices by one-way route km.
 Armavir to Lori driving time is at least 2.5–3 hours (07:30 departure → ~10:30 arrival).
-MANDATORY: list at least 5 seasonal market benchmarks with company name and price (prefer Armavir departures: Ari Gnank, ArmGeo, One Way Tour, and similar). Observed AMD only.
+List market benchmarks ONLY when the company name and URL appear in the search JSON. Never list Ari Gnank or Արի Գնանք as a competitor. If fewer than 2 useful search hits, say so and do not invent villages, lakes, or companies.
 
 Criteria from the admin form:
 - season: {payload.get("season")}
@@ -199,7 +203,7 @@ Return JSON:
 {{
   "summary": "English briefing. State whether live snippets were available. If search_status is not ok, quote that reason code. Quote observed AMD ranges as Estimated / Needs verification. Transport is one-way km × rate, not a Yerevan add-on.",
   "research_mode": "web_search",
-  "market_observations": [{{"company": "Ari Gnank", "offer": "", "observed_price_amd": 0, "depart_from": "Armavir preferred", "notes": "Needs verification"}}, {{"company": "ArmGeo", "offer": "", "observed_price_amd": 0, "depart_from": "", "notes": "Needs verification"}}, {{"company": "One Way Tour", "offer": "", "observed_price_amd": 0, "depart_from": "", "notes": "Needs verification"}}, {{"company": "", "offer": "", "observed_price_amd": 0, "depart_from": "", "notes": "Needs verification"}}, {{"company": "", "offer": "", "observed_price_amd": 0, "depart_from": "", "notes": "Needs verification"}}],
+  "market_observations": [{{"company": "", "offer": "", "url": "", "observed_price_amd": 0, "depart_from": "", "notes": "Only fill when the company appears in search results with a URL. Never Ari Gnank."}}],
   "destinations": [{{"name": "", "why": "", "drive_hours_from_armavir": 0, "confidence": "estimated"}}],
   "seasonal_notes": "",
   "logistics": "If Yerevan is a stop, its driving km is already in the one-way route. Needs verification.",
@@ -236,16 +240,16 @@ Budget mix:
 
 Rules:
 - ALWAYS depart from Armavir and return to Armavir.
-- Name 3–4 CONCRETE stops (e.g. Dsegh village, Tsover Lake, Bardzrakash St. Grigor Monastery, Debed Canyon). No vague 'adventure activities'.
+- Name 3–4 CONCRETE stops that appear in SEARCH RESULTS. Keep title_en in English (Dsegh village, Tsover Lake). No vague 'adventure activities'.
 - State explicitly: Meals and entrance fees are not included.
 - Armavir→Lori legs: at least 2.5–3 hours (07:30 depart → 10:30 arrive).
-- Include at least 5 seasonal market benchmarks (company + price), preferring Armavir departures (Ari Gnank, ArmGeo, One Way Tour).
-- Use market observations from research when pricing, still label Estimated / Needs verification.
+- Competitive differentiation may name a company ONLY if it is in SEARCH RESULTS with a URL. Never name Ari Gnank as a competitor. If there are no competitor offers, write that no competitor data was found.
+- Use market observations from research when discussing the market, still label Estimated / Needs verification.
 - Each idea must differ in core concept, target audience slice, and customer experience.
 - Do not start every Armenian title with "Արմավիր –".
-- Do not invent AMD figures. Python sets transport from one-way driving km and GROUP_SIZE={GROUP_SIZE}.
-- Place names only from SEARCH RESULTS. If none, do not invent monasteries or villages.
-- Write full EN and RU; HY may be a short placeholder for a later translation step.
+- Do not invent AMD figures and do not write 15000 AMD or similar in descriptions. Python sets transport from one-way driving km and GROUP_SIZE={GROUP_SIZE}.
+- Place names only from SEARCH RESULTS. If useful_result_count is under 2, do not invent monasteries or villages.
+- Write full EN and RU; HY may be a short placeholder for a later translation step. Keep itinerary title_en in English.
 
 Return JSON exactly in this shape:
 {IDEA_JSON_SHAPE}
@@ -345,14 +349,43 @@ def route_after_evaluation(state: State) -> Literal["refine", "hy_adapt"]:
     return "hy_adapt"
 
 
+def _preserve_stop_english(original: list[dict[str, Any]], adapted: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_time = {}
+    for stop in original:
+        if not isinstance(stop, dict):
+            continue
+        key = str(stop.get("time") or "")
+        english = str(stop.get("title_en") or "")
+        title = str(stop.get("title") or "")
+        if not english and re.search(r"[A-Za-z]{3,}", title) and not re.search(r"[\u0531-\u0587]", title):
+            english = title
+        if key:
+            by_time[key] = english
+    merged: list[dict[str, Any]] = []
+    for index, stop in enumerate(adapted):
+        if not isinstance(stop, dict):
+            continue
+        row = dict(stop)
+        key = str(row.get("time") or "")
+        if not row.get("title_en"):
+            row["title_en"] = by_time.get(key) or (
+                str(original[index].get("title_en") or original[index].get("title") or "")
+                if index < len(original) and isinstance(original[index], dict)
+                else ""
+            )
+        merged.append(row)
+    return merged
+
+
 def hy_adapt_node(state: State) -> dict[str, Any]:
     ideas = [item for item in (state.get("evaluated_ideas") or state.get("ideas_raw") or []) if isinstance(item, dict)]
+    originals = {str(item.get("id") or index): item for index, item in enumerate(ideas)}
     market = state.get("market_research") or "{}"
     prompt = f"""
 Translate/adapt ONLY title_hy, description_hy, location_hy, and itinerary stop title/description
 into natural Armenian. Do not add places, prices, or facts.
-Keep every place name exactly as in the SEARCH RESULTS; if the Armenian spelling is uncertain,
-write the Armenian attempt and the original English spelling in parentheses, e.g. Ախթալա (Akhtala).
+Keep itinerary title_en in English. If you translate title, put the English name in title_en
+and optionally in parentheses, e.g. Ախթալա (Akhtala).
 Do not change EN/RU fields or numeric values. Do not add itinerary stops.
 
 SEARCH RESULTS:
@@ -367,7 +400,17 @@ Return JSON: {{ "ideas": [ ... same objects with HY fields filled ] }}
         data = _invoke_json(prompt, temperature=0.2)
         adapted = data.get("ideas") if isinstance(data, dict) else data
         if isinstance(adapted, list) and adapted:
-            return {"evaluated_ideas": [item for item in adapted if isinstance(item, dict)]}
+            merged_ideas: list[dict[str, Any]] = []
+            for item in adapted:
+                if not isinstance(item, dict):
+                    continue
+                original = originals.get(str(item.get("id") or "")) or {}
+                item["itinerary"] = _preserve_stop_english(
+                    list(original.get("itinerary") or []),
+                    [row for row in (item.get("itinerary") or []) if isinstance(row, dict)],
+                )
+                merged_ideas.append(item)
+            return {"evaluated_ideas": merged_ideas}
     except Exception:  # noqa: BLE001
         pass
     return {"evaluated_ideas": ideas}
@@ -393,7 +436,17 @@ def refinement_node(state: State) -> dict[str, Any]:
     for raw in leftover_source:
         candidate = ensure_armavir_bookends(dict(raw), departure)
         candidate = ground_idea(candidate, research)
-        route_km, sourced, km_notes = one_way_route_km(candidate.get("itinerary") or [])
+        extra_names = [str(candidate.get("title_en") or ""), str(candidate.get("location_en") or "")]
+        region = str(candidate.get("location_en") or "")
+        route_km, sourced, km_notes = one_way_route_km(
+            candidate.get("itinerary") or [],
+            extra_names=extra_names,
+            region=region,
+        )
+        away = has_stop_outside_armavir(candidate.get("itinerary") or []) or any(
+            name and "armavir" not in name.lower() and "արմավիր" not in name.lower()
+            for name in extra_names
+        )
         candidate = apply_yerevan_transfer(candidate)
         candidate = apply_unit_economics(
             candidate,
@@ -401,8 +454,9 @@ def refinement_node(state: State) -> dict[str, Any]:
             km_sourced=sourced,
             km_notes=km_notes,
             offers=offers,
+            has_away_stop=away,
         )
-        candidate = rewrite_copy_from_numbers(candidate)
+        candidate = rewrite_copy_from_numbers(candidate, research)
         priced.append(candidate)
     priced = tag_budget_fit(priced, budget)
     leftover_issues = collect_quality_issues(priced)
@@ -498,10 +552,22 @@ def run_idea_workflow(request: GenerateIdeasRequest) -> tuple[list[dict[str, Any
     except json.JSONDecodeError:
         research_summary = ""
     status = str(research.get("search_status") or research.get("error") or "").strip()
+    providers = research.get("provider_status") if isinstance(research.get("provider_status"), dict) else {}
+    tavily_flag = str(providers.get("tavily") or "")
+    ddg_flag = str(providers.get("ddg") or "")
+    key_flag = "yes" if research.get("tavily_key_present") or providers.get("tavily_key_present") else "no"
+    provider_line = f"providers tavily={tavily_flag or 'n/a'} (key={key_flag}) ddg={ddg_flag or 'n/a'}"
+    if provider_line not in research_summary:
+        research_summary = f"{provider_line}. {research_summary}".strip()
     if status and status not in {"ok", ""}:
         flag = f"search failed: {status}"
         if flag not in research_summary:
             research_summary = f"{flag}. {research_summary}".strip()
+    useful = int(research.get("useful_result_count") or len(research.get("results") or []))
+    if useful < 2:
+        few = "Fewer than 2 useful search results after filtering; do not treat snippets as market proof."
+        if few not in research_summary:
+            research_summary = f"{few} {research_summary}".strip()
     if not research.get("live"):
         empty = "No live web results; places and prices need human research."
         if empty not in research_summary:

@@ -4,6 +4,8 @@ import re
 from difflib import SequenceMatcher
 from typing import Any
 
+from agent.pricing import PRICE_NEEDS_DISTANCE
+
 ARMENIAN_RE = re.compile(r"[\u0531-\u0587]")
 CYRILLIC_RE = re.compile(r"[\u0400-\u04FF]")
 LATIN_WORD_RE = re.compile(r"[A-Za-z]{3,}")
@@ -130,7 +132,10 @@ def idea_quality_issues(idea: dict[str, Any], index: int) -> list[str]:
     title_blob = " ".join([_text(idea.get("title_hy")), _text(idea.get("title_en")), _text(idea.get("title_ru"))]).lower()
     if any(fragment in title_blob for fragment in GENERIC_TITLE_FRAGMENTS):
         issues.append(f"{label}: title is too generic")
-    if int(idea.get("price") or 0) <= 0:
+    if idea.get("price") is None:
+        if PRICE_NEEDS_DISTANCE not in " ".join(_text(item) for item in idea.get("verify") or []):
+            issues.append(f"{label}: {PRICE_NEEDS_DISTANCE}")
+    elif int(idea.get("price") or 0) <= 0:
         issues.append(f"{label}: suggested selling price is missing")
     issues.extend(f"{label}: {item}" for item in itinerary_issues(idea))
     issues.extend(f"{label}: {item}" for item in description_completeness_issues(idea))
@@ -200,7 +205,12 @@ def ground_idea(idea: dict[str, Any], research: dict[str, Any]) -> dict[str, Any
     verify = [str(item) for item in (idea.get("verify") or []) if str(item).strip()]
     live = bool(research.get("live"))
     corpus = _search_corpus(research)
-    if not live or not corpus.strip():
+    useful = int(research.get("useful_result_count") or len(research.get("results") or []))
+    if useful < 2:
+        flag = "Fewer than 2 useful search results after filtering"
+        if flag not in verify:
+            verify.append(flag)
+    if not live or not corpus.strip() or useful < 2:
         flag = "No live web results; places and prices need human research"
         if flag not in verify:
             verify.append(flag)
@@ -240,24 +250,175 @@ def ground_idea(idea: dict[str, Any], research: dict[str, Any]) -> dict[str, Any
     return idea
 
 
-def rewrite_copy_from_numbers(idea: dict[str, Any]) -> dict[str, Any]:
-    cost = int(idea.get("cost_per_person_amd") or 0)
-    price = int(idea.get("price") or 0)
-    profit = int((idea.get("profitability") or {}).get("profit_per_person_amd") or 0)
-    group = int((idea.get("profitability") or {}).get("group_size") or 17)
-    line_en = (
-        f"Computed figures (source of truth): group {group}; cost per person {cost} AMD; "
-        f"suggested price {price} AMD; profit per person {profit} AMD. Estimated."
-    )
-    line_hy = (
-        f"Հաշվարկված թվեր՝ խումբ {group} հոգի, արժեք/անձ {cost} ֏, "
-        f"առաջարկվող գին {price} ֏, շահույթ/անձ {profit} ֏։ Գնահատված։"
-    )
-    line_ru = (
-        f"Расчётные цифры: группа {group}; себестоимость {cost} AMD/чел; "
-        f"цена {price} AMD; прибыль {profit} AMD/чел. Оценка."
-    )
-    idea["description_en"] = _text(idea.get("description_en")) + " " + line_en
-    idea["description_hy"] = _text(idea.get("description_hy")) + " " + line_hy
-    idea["description_ru"] = _text(idea.get("description_ru")) + " " + line_ru
-    return idea
+MONEY_FIGURE_RE = re.compile(
+    r"(?:price\s+around\s+)?(?:\d{1,3}(?:[.,\s]\d{3})+|\d{3,7})\s*(?:AMD|amd|֏|դրամ|₽|руб(?:\.|лей)?)"
+    r"(?:\s*/\s*(?:անձ|чел(?:овек)?|person))?"
+    r"|(?:AMD|amd|֏|₽)\s*(?:\d{1,3}(?:[.,\s]\d{3})+|\d{3,7})",
+    re.IGNORECASE,
+)
+
+OWN_BRAND_RE = re.compile(r"ari\s*gnank|արի\s*գնանք|ари\s*гнанк", re.IGNORECASE)
+NO_COMPETITOR_LINE = "No competitor data was found."
+DIFF_MARKERS = ("մրցակցային", "differentiation", "competitor", "конкурент")
+
+
+def strip_money_figures(text: str) -> str:
+    cleaned = MONEY_FIGURE_RE.sub("", str(text or ""))
+    return re.sub(r"\s{2,}", " ", cleaned).strip()
+
+
+def _walk_text_fields(idea: dict[str, Any], transform) -> dict[str, Any]:
+    next_idea = dict(idea)
+    for key in (
+        "description_hy",
+        "description_en",
+        "description_ru",
+        "notes",
+        "location_hy",
+        "location_en",
+        "location_ru",
+        "title_hy",
+        "title_en",
+        "title_ru",
+    ):
+        if key in next_idea and next_idea[key] is not None:
+            next_idea[key] = transform(str(next_idea[key]))
+    highlights = []
+    for item in next_idea.get("highlights") or []:
+        highlights.append(transform(str(item)))
+    if highlights:
+        next_idea["highlights"] = [item for item in highlights if item]
+    stops = []
+    for stop in next_idea.get("itinerary") or []:
+        if not isinstance(stop, dict):
+            continue
+        row = dict(stop)
+        original_title = str(row.get("title") or "")
+        row["title"] = transform(original_title) or original_title
+        original_description = str(row.get("description") or "")
+        row["description"] = transform(original_description) or original_description
+        if row.get("title_en"):
+            row["title_en"] = transform(str(row["title_en"])) or row["title_en"]
+        stops.append(row)
+    if stops:
+        next_idea["itinerary"] = stops
+    breakdown = dict(next_idea.get("breakdown") or {})
+    if breakdown.get("notes"):
+        breakdown["notes"] = transform(str(breakdown["notes"]))
+        next_idea["breakdown"] = breakdown
+    profitability = dict(next_idea.get("profitability") or {})
+    if profitability.get("assumptions"):
+        profitability["assumptions"] = transform(str(profitability["assumptions"]))
+        next_idea["profitability"] = profitability
+    return next_idea
+
+
+def strip_idea_money_figures(idea: dict[str, Any]) -> dict[str, Any]:
+    return _walk_text_fields(idea, strip_money_figures)
+
+
+def _search_blob(research: dict[str, Any]) -> str:
+    parts = [_search_corpus(research)]
+    for row in research.get("results") or []:
+        if isinstance(row, dict):
+            parts.append(str(row.get("url") or ""))
+    for offer in research.get("market_offers") or []:
+        if isinstance(offer, dict):
+            parts.append(str(offer.get("title") or ""))
+            parts.append(str(offer.get("url") or ""))
+            parts.append(str(offer.get("snippet") or ""))
+    return " ".join(parts).lower()
+
+
+def _named_in_results(name: str, blob: str) -> bool:
+    token = name.lower().strip()
+    if len(token) < 4:
+        return False
+    return token in blob
+
+
+def sanitize_competitors(idea: dict[str, Any], research: dict[str, Any] | None = None) -> dict[str, Any]:
+    research = research or {}
+    blob = _search_blob(research)
+    offers = [item for item in (research.get("market_offers") or []) if isinstance(item, dict) and str(item.get("url") or "").strip()]
+    has_offers = bool(offers)
+
+    def scrub(text: str) -> str:
+        out = OWN_BRAND_RE.sub("", text)
+        if not _named_in_results("armgeo", blob):
+            out = re.sub(r"armgeo", "", out, flags=re.IGNORECASE)
+        if not _named_in_results("one way tour", blob):
+            out = re.sub(r"one\s*way\s*tour", "", out, flags=re.IGNORECASE)
+        return re.sub(r"\s{2,}", " ", out).replace(" and .", ".").strip()
+
+    next_idea = _walk_text_fields(idea, scrub)
+    if not has_offers:
+        highlights = []
+        replaced = False
+        for item in next_idea.get("highlights") or []:
+            low = str(item).lower()
+            if any(marker in low for marker in DIFF_MARKERS):
+                highlights.append(NO_COMPETITOR_LINE)
+                replaced = True
+            else:
+                highlights.append(item)
+        if not replaced:
+            highlights.append(NO_COMPETITOR_LINE)
+        next_idea["highlights"] = highlights
+        for key in ("description_en", "description_hy", "description_ru", "notes"):
+            value = _text(next_idea.get(key))
+            if NO_COMPETITOR_LINE not in value:
+                next_idea[key] = f"{value} {NO_COMPETITOR_LINE}".strip()
+    verify = [str(item) for item in (next_idea.get("verify") or []) if str(item).strip()]
+    if not has_offers and "No competitor data was found" not in " ".join(verify):
+        verify.append("No competitor data was found")
+    next_idea["verify"] = verify
+    next_idea["needs_verification"] = bool(verify)
+    return next_idea
+
+
+def rewrite_copy_from_numbers(idea: dict[str, Any], research: dict[str, Any] | None = None) -> dict[str, Any]:
+    next_idea = strip_idea_money_figures(idea)
+    next_idea = sanitize_competitors(next_idea, research)
+    cost = int(next_idea.get("cost_per_person_amd") or 0)
+    raw_price = next_idea.get("price")
+    profit = int((next_idea.get("profitability") or {}).get("profit_per_person_amd") or 0)
+    group = int((next_idea.get("profitability") or {}).get("group_size") or 17)
+    if raw_price is None:
+        line_en = f"Computed figures (source of truth): group {group}; {PRICE_NEEDS_DISTANCE}. Estimated."
+        line_hy = f"Հաշվարկված թվեր՝ խումբ {group} հոգի. {PRICE_NEEDS_DISTANCE}."
+        line_ru = f"Расчётные цифры: группа {group}; {PRICE_NEEDS_DISTANCE}."
+    else:
+        price = int(raw_price)
+        line_en = (
+            f"Computed figures (source of truth): group {group}; cost per person {cost} AMD; "
+            f"suggested price {price} AMD; profit per person {profit} AMD. Estimated."
+        )
+        line_hy = (
+            f"Հաշվարկված թվեր՝ խումբ {group} հոգի, արժեք/անձ {cost} ֏, "
+            f"առաջարկվող գին {price} ֏, շահույթ/անձ {profit} ֏։ Գնահատված։"
+        )
+        line_ru = (
+            f"Расчётные цифры: группа {group}; себестоимость {cost} AMD/чел; "
+            f"цена {price} AMD; прибыль {profit} AMD/чел. Оценка."
+        )
+    next_idea["description_en"] = (_text(next_idea.get("description_en")) + " " + line_en).strip()
+    next_idea["description_hy"] = (_text(next_idea.get("description_hy")) + " " + line_hy).strip()
+    next_idea["description_ru"] = (_text(next_idea.get("description_ru")) + " " + line_ru).strip()
+    breakdown = dict(next_idea.get("breakdown") or {})
+    prior_notes = str((idea.get("breakdown") or {}).get("notes") or "")
+    if raw_price is None:
+        breakdown["notes"] = (
+            f"Estimated. Meals and entrance fees are not included. {PRICE_NEEDS_DISTANCE}."
+        )
+    elif prior_notes:
+        breakdown["notes"] = prior_notes
+    next_idea["breakdown"] = breakdown
+    profitability = dict(next_idea.get("profitability") or {})
+    if profitability:
+        profitability["assumptions"] = breakdown.get("notes") or profitability.get("assumptions") or ""
+        next_idea["profitability"] = profitability
+    extra = _text(next_idea.get("notes"))
+    if line_en not in extra:
+        next_idea["notes"] = f"{extra} {line_en}".strip()
+    return next_idea

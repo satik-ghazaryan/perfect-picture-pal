@@ -83,6 +83,7 @@ export type TourIdeaInput = {
 export type TourIdeaStop = {
   time: string;
   title: string;
+  title_en?: string;
   description: string;
 };
 
@@ -147,6 +148,13 @@ export type TourIdeaResearch = {
   market_offers: TourIdeaMarketOffer[];
   error?: string;
   search_status?: string;
+  tavily_key_present?: boolean;
+  useful_result_count?: number;
+  provider_status?: {
+    tavily?: string;
+    ddg?: string;
+    tavily_key_present?: boolean;
+  };
 };
 
 export type TourIdeaResult = {
@@ -160,7 +168,7 @@ export type TourIdeaResult = {
   location_hy: string;
   location_en: string;
   location_ru: string;
-  price: number;
+  price: number | null;
   duration_hours: number;
   highlights: string[];
   itinerary: TourIdeaStop[];

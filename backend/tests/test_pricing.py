@@ -107,6 +107,24 @@ class PricingTests(unittest.TestCase):
         self.assertEqual(idea["market_position"], "unknown")
         self.assertIn("no return leg", idea["breakdown"]["notes"])
 
+    def test_away_stop_with_zero_km_has_no_price(self) -> None:
+        idea = apply_unit_economics(
+            {
+                "id": "bad-km",
+                "title_en": "Lori",
+                "description_en": "Tour",
+                "itinerary": [{"time": "11:00", "title": "Dsegh", "description": "Visit"}],
+            },
+            route_km=0,
+            km_sourced=False,
+            km_notes=["Could not geocode stop: Dsegh"],
+            has_away_stop=True,
+        )
+        self.assertIsNone(idea["price"])
+        self.assertEqual(idea["market_position"], "unknown")
+        self.assertGreater(idea["breakdown"]["guide_amd"], 0)
+        self.assertEqual(idea["breakdown"]["transport_amd"], 0)
+
     def test_known_akhtala_route_uses_one_way(self) -> None:
         km, _sourced, _notes = one_way_route_km(
             [
