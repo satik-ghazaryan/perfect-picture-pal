@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import json
 import re
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError, as_completed
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Callable
 
 from schemas import parse_amd
 
@@ -19,6 +19,17 @@ PRICE_RE = re.compile(
     r"(\d[\d\s,]{2,8})\s*(?:amd|dram|֏|amd\.|դրամ)",
     re.IGNORECASE,
 )
+SEARCH_CALL_TIMEOUT_SEC = 18
+REASON_CODES = (
+    "tavily_no_key",
+    "tavily_timeout",
+    "tavily_error",
+    "ddg_timeout",
+    "ddg_error",
+    "empty",
+    "partial",
+    "ok",
+)
 
 
 def _clip(text: str, limit: int = 420) -> str:
@@ -28,16 +39,31 @@ def _clip(text: str, limit: int = 420) -> str:
     return compact[: limit - 1].rstrip() + "…"
 
 
+def _reason_from_exc(exc: BaseException, prefix: str) -> str:
+    name = type(exc).__name__.lower()
+    if "timeout" in name or "timedout" in name or "timed out" in str(exc).lower():
+        return f"{prefix}_timeout"
+    return f"{prefix}_error"
+
+
 def _tavily_one(query: str, max_results: int) -> list[dict[str, str]]:
     import os
 
     api_key = os.getenv("TAVILY_API_KEY", "").strip()
     if not api_key:
-        return []
+        raise RuntimeError("tavily_no_key")
     from tavily import TavilyClient
 
     client = TavilyClient(api_key=api_key)
-    payload = client.search(query, max_results=max_results, search_depth="basic")
+    try:
+        payload = client.search(
+            query,
+            max_results=max_results,
+            search_depth="basic",
+            timeout=SEARCH_CALL_TIMEOUT_SEC,
+        )
+    except TypeError:
+        payload = client.search(query, max_results=max_results, search_depth="basic")
     rows: list[dict[str, str]] = []
     for item in payload.get("results") or []:
         if not isinstance(item, dict):
@@ -61,7 +87,11 @@ def _ddg_one(query: str, max_results: int) -> list[dict[str, str]]:
         from duckduckgo_search import DDGS  # type: ignore[no-redef]
 
     rows: list[dict[str, str]] = []
-    with DDGS() as client:
+    try:
+        client_cm = DDGS(timeout=SEARCH_CALL_TIMEOUT_SEC)
+    except TypeError:
+        client_cm = DDGS()
+    with client_cm as client:
         for item in client.text(query, max_results=max_results) or []:
             if not isinstance(item, dict):
                 continue
@@ -93,16 +123,50 @@ def build_queries(inputs: dict[str, Any]) -> list[str]:
     return queries[:5]
 
 
-def _search_all(queries: list[str], max_results: int, fn) -> list[dict[str, str]]:
+def _call_with_timeout(
+    fn: Callable[[str, int], list[dict[str, str]]],
+    query: str,
+    max_results: int,
+    prefix: str,
+) -> tuple[list[dict[str, str]], str | None]:
+    pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"{prefix}-q")
+    future = pool.submit(fn, query, max_results)
+    try:
+        return future.result(timeout=SEARCH_CALL_TIMEOUT_SEC), None
+    except FuturesTimeoutError:
+        future.cancel()
+        return [], f"{prefix}_timeout"
+    except RuntimeError as exc:
+        if str(exc) == "tavily_no_key":
+            return [], "tavily_no_key"
+        return [], _reason_from_exc(exc, prefix)
+    except Exception as exc:  # noqa: BLE001
+        return [], _reason_from_exc(exc, prefix)
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+
+
+def _search_all(
+    queries: list[str],
+    max_results: int,
+    fn: Callable[[str, int], list[dict[str, str]]],
+    prefix: str,
+) -> tuple[list[dict[str, str]], list[str]]:
     rows: list[dict[str, str]] = []
-    with ThreadPoolExecutor(max_workers=min(5, len(queries) or 1)) as pool:
-        futures = [pool.submit(fn, query, max_results) for query in queries]
+    reasons: list[str] = []
+    workers = min(5, len(queries) or 1)
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(_call_with_timeout, fn, query, max_results, prefix) for query in queries]
         for future in as_completed(futures):
             try:
-                rows.extend(future.result())
-            except Exception:  # noqa: BLE001
+                part, reason = future.result(timeout=SEARCH_CALL_TIMEOUT_SEC + 2)
+            except Exception as exc:  # noqa: BLE001
+                reasons.append(_reason_from_exc(exc, prefix))
                 continue
-    return rows
+            rows.extend(part)
+            if reason:
+                reasons.append(reason)
+    return rows, reasons
 
 
 def _kind_for(row: dict[str, str]) -> str:
@@ -143,26 +207,30 @@ def market_offers_from_results(results: list[dict[str, str]], found_on: str) -> 
     return offers
 
 
+def _pick_status(results: list[dict[str, str]], reasons: list[str]) -> str:
+    unique_reasons = list(dict.fromkeys(item for item in reasons if item in REASON_CODES or item.endswith("_timeout") or item.endswith("_error") or item.endswith("_no_key")))
+    if results and unique_reasons:
+        return "partial"
+    if results:
+        return "ok"
+    if "tavily_no_key" in unique_reasons and not any(item.startswith("ddg_") for item in unique_reasons):
+        return "tavily_no_key"
+    for code in ("tavily_timeout", "ddg_timeout", "tavily_error", "ddg_error", "tavily_no_key"):
+        if code in unique_reasons:
+            return code
+    return "empty"
+
+
 def run_market_search(inputs: dict[str, Any], max_results: int = 5) -> dict[str, Any]:
     queries = build_queries(inputs)
     found_on = datetime.now(timezone.utc).date().isoformat()
-    results: list[dict[str, str]] = []
-    provider = "none"
-    error = ""
-    try:
-        results = _search_all(queries, max_results, _tavily_one)
-        if results:
-            provider = "tavily"
-    except Exception as exc:  # noqa: BLE001
-        error = str(exc)
-    if not results:
-        try:
-            results = _search_all(queries, max_results, _ddg_one)
-            if results:
-                provider = "duckduckgo"
-                error = ""
-        except Exception as exc:  # noqa: BLE001
-            error = f"{error}; {exc}".strip("; ")
+    tavily_rows, tavily_reasons = _search_all(queries, max_results, _tavily_one, "tavily")
+    ddg_rows: list[dict[str, str]] = []
+    ddg_reasons: list[str] = []
+    if not tavily_rows or tavily_reasons:
+        ddg_rows, ddg_reasons = _search_all(queries, max_results, _ddg_one, "ddg")
+    results = tavily_rows + ddg_rows
+    reasons = tavily_reasons + ddg_reasons
     unique: list[dict[str, str]] = []
     seen: set[str] = set()
     for row in results:
@@ -170,12 +238,21 @@ def run_market_search(inputs: dict[str, Any], max_results: int = 5) -> dict[str,
         if key in seen:
             continue
         seen.add(key)
-        row = dict(row)
-        row["kind"] = _kind_for(row)
-        unique.append(row)
+        tagged = dict(row)
+        tagged["kind"] = _kind_for(tagged)
+        unique.append(tagged)
         if len(unique) >= 12:
             break
     offers = market_offers_from_results(unique, found_on)
+    if tavily_rows and not ddg_rows:
+        provider = "tavily"
+    elif ddg_rows and not tavily_rows:
+        provider = "duckduckgo"
+    elif tavily_rows and ddg_rows:
+        provider = "tavily+duckduckgo"
+    else:
+        provider = "none"
+    status = _pick_status(unique, reasons)
     return {
         "provider": provider,
         "queries": queries,
@@ -186,6 +263,7 @@ def run_market_search(inputs: dict[str, Any], max_results: int = 5) -> dict[str,
             "Web snippets are market reference only. Prices, dates, and availability "
             "are not verified booking conditions and need verification."
         ),
-        "error": error,
+        "error": "" if status == "ok" else status,
+        "search_status": status,
         "live": bool(unique),
     }

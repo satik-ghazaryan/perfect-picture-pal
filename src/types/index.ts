@@ -145,6 +145,8 @@ export type TourIdeaResearch = {
   queries: string[];
   results: TourIdeaResearchHit[];
   market_offers: TourIdeaMarketOffer[];
+  error?: string;
+  search_status?: string;
 };
 
 export type TourIdeaResult = {

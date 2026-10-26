@@ -1872,8 +1872,13 @@ function IdeasSection({
       {summary ? (
         <p className="rounded-2xl bg-muted px-4 py-3 text-sm text-muted-foreground">{summary}</p>
       ) : null}
+      {research.search_status && research.search_status !== "ok" ? (
+        <p className="rounded-2xl border border-border bg-accent px-4 py-3 text-sm font-semibold" role="status">
+          search failed: {research.search_status}
+        </p>
+      ) : null}
 
-      {(research.queries.length > 0 || research.results.length > 0) ? (
+      {(research.queries.length > 0 || research.results.length > 0 || research.search_status) ? (
         <details className="rounded-3xl border border-border bg-card p-4">
           <summary className="cursor-pointer text-sm font-bold">Հետազոտության աղբյուրներ</summary>
           <p className="mt-2 text-xs text-muted-foreground">{research.disclaimer || "Market reference only. Estimated."}</p>

@@ -136,6 +136,7 @@ class ResearchBundle(BaseModel):
     results: list[ResearchHit] = Field(default_factory=list)
     market_offers: list[MarketOffer] = Field(default_factory=list)
     error: str = ""
+    search_status: str = ""
 
 
 class IdeaMarket(BaseModel):

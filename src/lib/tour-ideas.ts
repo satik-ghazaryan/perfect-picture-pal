@@ -128,7 +128,17 @@ function asPosition(value: unknown): TourIdeaMarketPosition | undefined {
 
 export function normalizeResearch(value: unknown): TourIdeaResearch {
   if (!value || typeof value !== "object") {
-    return { live: false, provider: "none", retrieved_at: "", disclaimer: "", queries: [], results: [], market_offers: [] };
+    return {
+      live: false,
+      provider: "none",
+      retrieved_at: "",
+      disclaimer: "",
+      queries: [],
+      results: [],
+      market_offers: [],
+      error: "",
+      search_status: "",
+    };
   }
   const record = value as Record<string, unknown>;
   const results: TourIdeaResearchHit[] = Array.isArray(record["results"])
@@ -152,6 +162,8 @@ export function normalizeResearch(value: unknown): TourIdeaResearch {
     queries: Array.isArray(record["queries"]) ? record["queries"].map((item) => String(item)) : [],
     results,
     market_offers: asOffers(record["market_offers"]),
+    error: String(record["error"] ?? ""),
+    search_status: String(record["search_status"] ?? record["error"] ?? ""),
   };
 }
 

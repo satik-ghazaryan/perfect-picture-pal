@@ -190,19 +190,19 @@ Criteria from the admin form:
 - audience: {payload.get("target_audience")}
 - tour type: {payload.get("tour_type")}
 - duration_days: {payload.get("duration_days")}
-- budget_amd per person (ceiling, includes transfer): {payload.get("budget_amd")}
+- budget_amd per person (ceiling, includes transport): {payload.get("budget_amd")}
 - preferences: {payload.get("preferences") or "none"}
 
 Prefer distinct Armavir-realistic arcs. Reject overnight or Yerevan-nightlife products.
 
 Return JSON:
 {{
-  "summary": "English briefing. State whether live snippets were available. Quote observed AMD ranges as Estimated / Needs verification. Mention the +1000 AMD Yerevan transfer rule.",
+  "summary": "English briefing. State whether live snippets were available. If search_status is not ok, quote that reason code. Quote observed AMD ranges as Estimated / Needs verification. Transport is one-way km × rate, not a Yerevan add-on.",
   "research_mode": "web_search",
   "market_observations": [{{"company": "Ari Gnank", "offer": "", "observed_price_amd": 0, "depart_from": "Armavir preferred", "notes": "Needs verification"}}, {{"company": "ArmGeo", "offer": "", "observed_price_amd": 0, "depart_from": "", "notes": "Needs verification"}}, {{"company": "One Way Tour", "offer": "", "observed_price_amd": 0, "depart_from": "", "notes": "Needs verification"}}, {{"company": "", "offer": "", "observed_price_amd": 0, "depart_from": "", "notes": "Needs verification"}}, {{"company": "", "offer": "", "observed_price_amd": 0, "depart_from": "", "notes": "Needs verification"}}],
   "destinations": [{{"name": "", "why": "", "drive_hours_from_armavir": 0, "confidence": "estimated"}}],
   "seasonal_notes": "",
-  "logistics": "Include Armavir–Yerevan shuttle when Yerevan is the hub. Needs verification.",
+  "logistics": "If Yerevan is a stop, its driving km is already in the one-way route. Needs verification.",
   "cost_assumptions": "{GROUP_SIZE} participants. Guide {GUIDE_FEE_GROUP_AMD} AMD group. Meals and entrance fees are not included. Transport is one-way km × rate (Python). Cost/person = (transport+guide)/{GROUP_SIZE}.",
   "risks": []
 }}
@@ -227,10 +227,10 @@ Research briefing (not live-verified):
 Generate exactly {count} ORIGINAL one-day tour products departing from {payload.get("departure_location") or "Armavir"}.
 Season={payload.get("season")}; audience={payload.get("target_audience")};
 type={payload.get("tour_type")}; duration_days={payload.get("duration_days")};
-budget_amd ceiling per person (MUST include transfer)={payload.get("budget_amd")}; preferences={payload.get("preferences")}.
+budget_amd ceiling per person (includes transport)={payload.get("budget_amd")}; preferences={payload.get("preferences")}.
 
 Budget mix:
-- If {count} == 1: keep that idea within budget after transfer.
+- If {count} == 1: keep that idea within budget after transport.
 - If {count} >= 2: ALL ideas except one must strictly fit the budget after transport; include EXACTLY ONE premium idea whose final price is slightly over budget (about 5–15%).
 - Set budget_fit to "within" or "over" accordingly.
 
@@ -263,7 +263,7 @@ def evaluation_node(state: State) -> dict[str, Any]:
     prompt = f"""
 Quality-control these tour ideas for Արի Գնանք.
 
-Admin constraints: budget ceiling {payload.get("budget_amd")} AMD/person including Armavir–Yerevan transfer; audience {payload.get("target_audience")}; season {payload.get("season")}.
+Admin constraints: budget ceiling {payload.get("budget_amd")} AMD/person including transport; audience {payload.get("target_audience")}; season {payload.get("season")}.
 
 Check each idea for:
 1) originality and specificity
@@ -497,6 +497,11 @@ def run_idea_workflow(request: GenerateIdeasRequest) -> tuple[list[dict[str, Any
             research_summary = str(briefing.get("summary") or "")
     except json.JSONDecodeError:
         research_summary = ""
+    status = str(research.get("search_status") or research.get("error") or "").strip()
+    if status and status not in {"ok", ""}:
+        flag = f"search failed: {status}"
+        if flag not in research_summary:
+            research_summary = f"{flag}. {research_summary}".strip()
     if not research.get("live"):
         empty = "No live web results; places and prices need human research."
         if empty not in research_summary:
