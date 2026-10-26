@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import math
 import re
+import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -25,8 +27,12 @@ KNOWN_COORDS: dict[str, tuple[float, float]] = {
 OSRM_URL = "https://router.project-osrm.org/route/v1/driving/{lon1},{lat1};{lon2},{lat2}?overview=false"
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search?{qs}"
 HAVERSINE_FACTOR = 1.6
+NOMINATIM_MIN_INTERVAL_SEC = 1.1
+NOMINATIM_TIMEOUT_SEC = 8
 _CACHE: dict[str, float] = {}
 _GEO_CACHE: dict[str, tuple[float, float] | None] = {}
+_NOMINATIM_LOCK = threading.Lock()
+_NOMINATIM_LAST_CALL = 0.0
 LATIN_RE = re.compile(r"[A-Za-z]{3,}")
 ARMENIAN_RE = re.compile(r"[\u0531-\u0587]")
 PAREN_EN_RE = re.compile(r"\(([A-Za-z][A-Za-z0-9 .,'-]{1,80})\)")
@@ -144,29 +150,45 @@ def _osrm_km(a: tuple[float, float], b: tuple[float, float]) -> float | None:
     return km
 
 
+def _wait_nominatim_slot() -> None:
+    """Hold the Nominatim lock when calling. Cache hits never enter here."""
+    global _NOMINATIM_LAST_CALL
+    now = time.monotonic()
+    wait = NOMINATIM_MIN_INTERVAL_SEC - (now - _NOMINATIM_LAST_CALL)
+    if wait > 0:
+        time.sleep(wait)
+    _NOMINATIM_LAST_CALL = time.monotonic()
+
+
 def nominatim_coord(name: str, region: str = "") -> tuple[float, float] | None:
     query = ", ".join(part for part in (name.strip(), region.strip(), "Armenia") if part)
-    if not query or query in _GEO_CACHE:
+    if not query:
+        return None
+    if query in _GEO_CACHE:
         return _GEO_CACHE.get(query)
-    qs = urllib.parse.urlencode({"q": query, "format": "json", "limit": "1"})
-    url = NOMINATIM_URL.format(qs=qs)
-    try:
-        request = urllib.request.Request(url, headers={"user-agent": "ari-gnank-distance/1.0"})
-        with urllib.request.urlopen(request, timeout=8) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError, OSError):
-        _GEO_CACHE[query] = None
-        return None
-    if not isinstance(payload, list) or not payload or not isinstance(payload[0], dict):
-        _GEO_CACHE[query] = None
-        return None
-    try:
-        coord = (float(payload[0]["lat"]), float(payload[0]["lon"]))
-    except (KeyError, TypeError, ValueError):
-        _GEO_CACHE[query] = None
-        return None
-    _GEO_CACHE[query] = coord
-    return coord
+    with _NOMINATIM_LOCK:
+        if query in _GEO_CACHE:
+            return _GEO_CACHE.get(query)
+        _wait_nominatim_slot()
+        qs = urllib.parse.urlencode({"q": query, "format": "json", "limit": "1"})
+        url = NOMINATIM_URL.format(qs=qs)
+        try:
+            request = urllib.request.Request(url, headers={"user-agent": "ari-gnank-distance/1.0"})
+            with urllib.request.urlopen(request, timeout=NOMINATIM_TIMEOUT_SEC) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError, OSError):
+            _GEO_CACHE[query] = None
+            return None
+        if not isinstance(payload, list) or not payload or not isinstance(payload[0], dict):
+            _GEO_CACHE[query] = None
+            return None
+        try:
+            coord = (float(payload[0]["lat"]), float(payload[0]["lon"]))
+        except (KeyError, TypeError, ValueError):
+            _GEO_CACHE[query] = None
+            return None
+        _GEO_CACHE[query] = coord
+        return coord
 
 
 def resolve_coord(name: str, region: str = "") -> tuple[tuple[float, float] | None, str]:

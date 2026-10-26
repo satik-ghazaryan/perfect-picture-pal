@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
 import unittest
+from unittest.mock import patch
 
+from agent import distance
 from agent.distance import destination_titles, one_way_route_km
 from agent.pricing import (
     GROUP_SIZE,
@@ -135,6 +138,75 @@ class PricingTests(unittest.TestCase):
         )
         self.assertGreater(km, 100)
         self.assertLess(km, 280)
+
+
+class FakeClock:
+    def __init__(self, start: float = 1000.0) -> None:
+        self.now = start
+        self.sleeps: list[float] = []
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+
+class FakeNominatimResponse:
+    def __init__(self, lat: str, lon: str) -> None:
+        self._body = json.dumps([{"lat": lat, "lon": lon}]).encode("utf-8")
+
+    def read(self) -> bytes:
+        return self._body
+
+    def __enter__(self) -> FakeNominatimResponse:
+        return self
+
+    def __exit__(self, *_exc: object) -> bool:
+        return False
+
+
+class NominatimRateTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._geo = dict(distance._GEO_CACHE)
+        self._last = distance._NOMINATIM_LAST_CALL
+        distance._GEO_CACHE.clear()
+        distance._NOMINATIM_LAST_CALL = 0.0
+
+    def tearDown(self) -> None:
+        distance._GEO_CACHE.clear()
+        distance._GEO_CACHE.update(self._geo)
+        distance._NOMINATIM_LAST_CALL = self._last
+
+    def test_cache_misses_are_spaced_and_hits_skip_wait(self) -> None:
+        clock = FakeClock()
+        http_calls: list[str] = []
+
+        def fake_urlopen(request, timeout=None):
+            http_calls.append(str(getattr(request, "full_url", request)))
+            self.assertEqual(timeout, 8)
+            return FakeNominatimResponse("40.9000", "44.6000")
+
+        with patch.object(distance.time, "monotonic", clock.monotonic), patch.object(
+            distance.time, "sleep", clock.sleep
+        ), patch.object(distance.urllib.request, "urlopen", fake_urlopen):
+            first = distance.nominatim_coord("RateLimit PlaceA")
+            after_first = list(clock.sleeps)
+            second = distance.nominatim_coord("RateLimit PlaceB")
+            sleeps_after_misses = list(clock.sleeps)
+            hit = distance.nominatim_coord("RateLimit PlaceA")
+            sleeps_after_hit = list(clock.sleeps)
+
+        self.assertEqual(first, (40.9, 44.6))
+        self.assertEqual(second, (40.9, 44.6))
+        self.assertEqual(hit, (40.9, 44.6))
+        self.assertEqual(len(http_calls), 2)
+        self.assertEqual(after_first, [])
+        self.assertEqual(len(sleeps_after_misses), 1)
+        self.assertGreaterEqual(sleeps_after_misses[0], 1.0)
+        self.assertGreaterEqual(sleeps_after_misses[0], distance.NOMINATIM_MIN_INTERVAL_SEC - 0.0001)
+        self.assertEqual(sleeps_after_hit, sleeps_after_misses)
 
 
 if __name__ == "__main__":
