@@ -1,5 +1,18 @@
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
-import type { TourIdeaBreakdown, TourIdeaInput, TourIdeaProfitability, TourIdeaResult, TourIdeaStop } from "@/types";
+import type {
+  TourIdeaBreakdown,
+  TourIdeaInput,
+  TourIdeaMarket,
+  TourIdeaMarketOffer,
+  TourIdeaMarketPosition,
+  TourIdeaProfitability,
+  TourIdeaResearch,
+  TourIdeaResearchHit,
+  TourIdeaResult,
+  TourIdeaStop,
+} from "@/types";
+
+const GROUP_SIZE_FALLBACK = 17;
 
 const LAST_RUN_KEY = "ari-gnank-last-idea-run";
 const CLIENT_TIMEOUT_MS = 130_000;
@@ -50,7 +63,7 @@ function asBreakdown(value: unknown): TourIdeaBreakdown | undefined {
 function asProfitability(value: unknown): TourIdeaProfitability | undefined {
   if (!value || typeof value !== "object") return undefined;
   const record = value as Record<string, unknown>;
-  const groupSize = parseAmd(record.group_size) || 12;
+  const groupSize = parseAmd(record.group_size) || GROUP_SIZE_FALLBACK;
   const revenue = parseAmd(record.revenue_per_person_amd ?? record.revenue_per_person);
   const expense = parseAmd(record.expense_per_person_amd ?? record.expense_per_person);
   const profit = parseAmd(record.profit_per_person_amd ?? record.profit_per_person) || Math.max(0, revenue - expense);
@@ -63,7 +76,82 @@ function asProfitability(value: unknown): TourIdeaProfitability | undefined {
     expense_per_group_amd: parseAmd(record.expense_per_group_amd) || expense * groupSize,
     profit_per_group_amd: parseAmd(record.profit_per_group_amd) || profit * groupSize,
     assumptions: String(record.assumptions ?? "Estimated. Needs verification."),
-    confidence: record.confidence === "needs_verification" ? "needs_verification" : "estimated",
+    confidence: record["confidence"] === "needs_verification" ? "needs_verification" : "estimated",
+  };
+}
+
+function asHttpUrl(value: unknown): string {
+  const raw = String(value ?? "").trim();
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") return parsed.toString();
+  } catch {
+    return "";
+  }
+  return "";
+}
+
+function asOffers(value: unknown): TourIdeaMarketOffer[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const record = item as Record<string, unknown>;
+    return [{
+      title: String(record["title"] ?? ""),
+      url: asHttpUrl(record["url"]),
+      observed_price_amd: parseAmd(record["observed_price_amd"]),
+      found_on: String(record["found_on"] ?? ""),
+      label: String(record["label"] ?? "market_reference"),
+      snippet: String(record["snippet"] ?? ""),
+    }];
+  });
+}
+
+function asMarket(value: unknown): TourIdeaMarket | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  return {
+    label: String(record["label"] ?? "market_reference"),
+    offer_count: parseAmd(record["offer_count"]),
+    price_min_amd: record["price_min_amd"] == null ? null : parseAmd(record["price_min_amd"]),
+    price_median_amd: record["price_median_amd"] == null ? null : parseAmd(record["price_median_amd"]),
+    price_max_amd: record["price_max_amd"] == null ? null : parseAmd(record["price_max_amd"]),
+    difference_amd: parseAmd(record["difference_amd"]),
+    offers: asOffers(record["offers"]),
+  };
+}
+
+function asPosition(value: unknown): TourIdeaMarketPosition | undefined {
+  if (value === "below_market" || value === "in_range" || value === "above_market" || value === "unknown") return value;
+  return undefined;
+}
+
+export function normalizeResearch(value: unknown): TourIdeaResearch {
+  if (!value || typeof value !== "object") {
+    return { live: false, provider: "none", retrieved_at: "", disclaimer: "", queries: [], results: [], market_offers: [] };
+  }
+  const record = value as Record<string, unknown>;
+  const results: TourIdeaResearchHit[] = Array.isArray(record["results"])
+    ? record["results"].flatMap((item) => {
+      if (!item || typeof item !== "object") return [];
+      const row = item as Record<string, unknown>;
+      return [{
+        title: String(row["title"] ?? ""),
+        url: asHttpUrl(row["url"]),
+        snippet: String(row["snippet"] ?? ""),
+        query: String(row["query"] ?? ""),
+        kind: String(row["kind"] ?? ""),
+      }];
+    })
+    : [];
+  return {
+    live: Boolean(record["live"]),
+    provider: String(record["provider"] ?? "none"),
+    retrieved_at: String(record["retrieved_at"] ?? ""),
+    disclaimer: String(record["disclaimer"] ?? ""),
+    queries: Array.isArray(record["queries"]) ? record["queries"].map((item) => String(item)) : [],
+    results,
+    market_offers: asOffers(record["market_offers"]),
   };
 }
 
@@ -79,36 +167,53 @@ export function normalizeTourIdea(value: unknown): TourIdeaResult | null {
   const highlights = Array.isArray(record.highlights)
     ? record.highlights.map((item) => String(item).trim()).filter(Boolean)
     : [];
-  return {
+  const result: TourIdeaResult = {
     id,
     title_hy: titleHy,
-    title_en: String(record.title_en ?? ""),
-    title_ru: String(record.title_ru ?? ""),
-    description_hy: String(record.description_hy ?? ""),
-    description_en: String(record.description_en ?? ""),
-    description_ru: String(record.description_ru ?? ""),
-    location_hy: String(record.location_hy ?? ""),
-    location_en: String(record.location_en ?? ""),
-    location_ru: String(record.location_ru ?? ""),
-    price: parseAmd(record.price ?? record.suggested_price ?? record.selling_price),
-    duration_hours: typeof record.duration_hours === "number" ? record.duration_hours : Number(record.duration_hours) || 10,
+    title_en: String(record["title_en"] ?? ""),
+    title_ru: String(record["title_ru"] ?? ""),
+    description_hy: String(record["description_hy"] ?? ""),
+    description_en: String(record["description_en"] ?? ""),
+    description_ru: String(record["description_ru"] ?? ""),
+    location_hy: String(record["location_hy"] ?? ""),
+    location_en: String(record["location_en"] ?? ""),
+    location_ru: String(record["location_ru"] ?? ""),
+    price: parseAmd(record["price"] ?? record["suggested_price"] ?? record["selling_price"]),
+    duration_hours: typeof record["duration_hours"] === "number" ? record["duration_hours"] : Number(record["duration_hours"]) || 10,
     highlights,
     itinerary,
-    breakdown: asBreakdown(record.breakdown ?? record.cost_breakdown ?? record.costs),
-    profitability: asProfitability(record.profitability),
-    budget_score: typeof record.budget_score === "number" ? record.budget_score : undefined,
-    logistics_score: typeof record.logistics_score === "number" ? record.logistics_score : undefined,
-    appeal_score: typeof record.appeal_score === "number" ? record.appeal_score : undefined,
-    quality_score: typeof record.quality_score === "number" ? record.quality_score : undefined,
-    budget_fit: record.budget_fit === "over" ? "over" : record.budget_fit === "within" ? "within" : undefined,
-    notes: typeof record.notes === "string" ? record.notes : "",
+    notes: typeof record["notes"] === "string" ? record["notes"] : "",
+    verify: Array.isArray(record["verify"]) ? record["verify"].map((item) => String(item)).filter(Boolean) : [],
+    needs_verification: Boolean(record["needs_verification"]),
+    source_urls: Array.isArray(record["source_urls"])
+      ? record["source_urls"].map(asHttpUrl).filter(Boolean)
+      : [],
+    route_km: typeof record["route_km"] === "number" ? record["route_km"] : Number(record["route_km"]) || 0,
+    transport_rate_per_km_amd: parseAmd(record["transport_rate_per_km_amd"]) || 600,
+    cost_per_person_amd: parseAmd(record["cost_per_person_amd"]),
+    min_price_amd: parseAmd(record["min_price_amd"]),
   };
+  const breakdown = asBreakdown(record["breakdown"] ?? record["cost_breakdown"] ?? record["costs"]);
+  if (breakdown) result.breakdown = breakdown;
+  const profitability = asProfitability(record["profitability"]);
+  if (profitability) result.profitability = profitability;
+  if (typeof record["budget_score"] === "number") result.budget_score = record["budget_score"];
+  if (typeof record["logistics_score"] === "number") result.logistics_score = record["logistics_score"];
+  if (typeof record["appeal_score"] === "number") result.appeal_score = record["appeal_score"];
+  if (typeof record["quality_score"] === "number") result.quality_score = record["quality_score"];
+  if (record["budget_fit"] === "over" || record["budget_fit"] === "within") result.budget_fit = record["budget_fit"];
+  const position = asPosition(record["market_position"]);
+  if (position) result.market_position = position;
+  const market = asMarket(record["market"]);
+  if (market) result.market = market;
+  return result;
 }
 
 type GeneratePayload = {
   run_id?: string;
   ideas?: unknown[];
   research_summary?: string;
+  research?: unknown;
   detail?: unknown;
 };
 
@@ -134,28 +239,43 @@ function timedFetch(input: string, init: RequestInit) {
   return fetch(input, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
 }
 
-function cacheRun(runId: string, ideas: TourIdeaResult[], summary: string) {
+function cacheRun(runId: string, ideas: TourIdeaResult[], summary: string, research: TourIdeaResearch) {
   if (typeof sessionStorage === "undefined") return;
-  sessionStorage.setItem(LAST_RUN_KEY, JSON.stringify({ runId, ideas, summary }));
+  sessionStorage.setItem(LAST_RUN_KEY, JSON.stringify({ runId, ideas, summary, research }));
 }
 
-export function readCachedIdeaRun(): { runId: string; ideas: TourIdeaResult[]; summary: string } | null {
+export function readCachedIdeaRun(): {
+  runId: string;
+  ideas: TourIdeaResult[];
+  summary: string;
+  research: TourIdeaResearch;
+} | null {
   if (typeof sessionStorage === "undefined") return null;
   try {
     const raw = sessionStorage.getItem(LAST_RUN_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as { runId?: string; ideas?: unknown[]; summary?: string };
+    const parsed = JSON.parse(raw) as { runId?: string; ideas?: unknown[]; summary?: string; research?: unknown };
     const ideas = Array.isArray(parsed.ideas)
       ? parsed.ideas.map(normalizeTourIdea).filter((item): item is TourIdeaResult => item !== null)
       : [];
     if (!parsed.runId || ideas.length === 0) return null;
-    return { runId: parsed.runId, ideas, summary: typeof parsed.summary === "string" ? parsed.summary : "" };
+    return {
+      runId: parsed.runId,
+      ideas,
+      summary: typeof parsed.summary === "string" ? parsed.summary : "",
+      research: normalizeResearch(parsed.research),
+    };
   } catch {
     return null;
   }
 }
 
-export async function fetchIdeaRun(runId: string): Promise<{ runId: string; ideas: TourIdeaResult[]; summary: string } | null> {
+export async function fetchIdeaRun(runId: string): Promise<{
+  runId: string;
+  ideas: TourIdeaResult[];
+  summary: string;
+  research: TourIdeaResearch;
+} | null> {
   try {
     const token = await adminAccessToken();
     if (!token) return null;
@@ -168,15 +288,25 @@ export async function fetchIdeaRun(runId: string): Promise<{ runId: string; idea
       ? payload.ideas.map(normalizeTourIdea).filter((item): item is TourIdeaResult => item !== null)
       : [];
     if (ideas.length === 0) return null;
-    const resolved = { runId: payload.run_id || runId, ideas, summary: typeof payload.research_summary === "string" ? payload.research_summary : "" };
-    cacheRun(resolved.runId, resolved.ideas, resolved.summary);
+    const resolved = {
+      runId: payload.run_id || runId,
+      ideas,
+      summary: typeof payload.research_summary === "string" ? payload.research_summary : "",
+      research: normalizeResearch(payload.research),
+    };
+    cacheRun(resolved.runId, resolved.ideas, resolved.summary, resolved.research);
     return resolved;
   } catch {
     return null;
   }
 }
 
-export async function generateTourIdeas(input: TourIdeaInput): Promise<{ runId: string; ideas: TourIdeaResult[]; research_summary: string }> {
+export async function generateTourIdeas(input: TourIdeaInput): Promise<{
+  runId: string;
+  ideas: TourIdeaResult[];
+  research_summary: string;
+  research: TourIdeaResearch;
+}> {
   const token = await adminAccessToken();
   if (!token) throw new Error(ADMIN_REQUIRED_ERROR);
   let response: Response;
@@ -201,17 +331,23 @@ export async function generateTourIdeas(input: TourIdeaInput): Promise<{ runId: 
   let ideas = Array.isArray(payload?.ideas)
     ? payload.ideas.map(normalizeTourIdea).filter((item): item is TourIdeaResult => item !== null)
     : [];
-  let summary = typeof payload?.research_summary === "string" ? payload.research_summary : "";
+  const summary = typeof payload?.research_summary === "string" ? payload.research_summary : "";
+  const research = normalizeResearch(payload?.research);
   const runId = typeof payload?.run_id === "string" ? payload.run_id : "";
   if (runId) {
     const stored = await fetchIdeaRun(runId);
     if (stored) {
-      return { runId: stored.runId, ideas: stored.ideas, research_summary: stored.summary };
+      return {
+        runId: stored.runId,
+        ideas: stored.ideas,
+        research_summary: stored.summary,
+        research: stored.research,
+      };
     }
   }
   if (ideas.length === 0) throw new Error("Գործակալը գաղափարներ չվերադարձրեց։");
-  if (runId) cacheRun(runId, ideas, summary);
-  return { runId, ideas, research_summary: summary };
+  if (runId) cacheRun(runId, ideas, summary, research);
+  return { runId, ideas, research_summary: summary, research };
 }
 
 export async function saveTourIdeaDraft(input: TourIdeaInput, ideas: TourIdeaResult[], _createdBy?: string | null) {

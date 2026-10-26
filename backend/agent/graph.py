@@ -12,8 +12,22 @@ from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 from pydantic import ValidationError
 
-from agent.pricing import ARMAVIR_YEREVAN_TRANSFER_AMD, apply_unit_economics, apply_yerevan_transfer, tag_budget_fit
-from agent.quality import attach_review_flag, collect_quality_issues, ensure_armavir_bookends
+from agent.distance import one_way_route_km
+from agent.pricing import (
+    GROUP_SIZE,
+    GUIDE_FEE_GROUP_AMD,
+    MIN_MARGIN_PCT,
+    apply_unit_economics,
+    apply_yerevan_transfer,
+    tag_budget_fit,
+)
+from agent.quality import (
+    attach_review_flag,
+    collect_quality_issues,
+    ensure_armavir_bookends,
+    ground_idea,
+    rewrite_copy_from_numbers,
+)
 from agent.search import run_market_search
 from schemas import GenerateIdeasRequest, TourIdea
 
@@ -34,27 +48,23 @@ class State(TypedDict):
 
 SYSTEM = (
     "You are the commercial tour desk for «Արի Գնանք» (Ari Gnank). "
-    "ALWAYS prioritize tours that start and end in Armavir, Armenia (Armavir-based departure). "
-    "Armenian is the primary language of the business. "
-    "MANDATORY itinerary: name 3–4 CONCRETE stops (example for Lori: Dsegh village, Tsover Lake, "
-    "Bardzrakash St. Grigor Monastery, Debed Canyon). Never use vague phrases such as "
-    "'adventure activities'. "
-    "Explicitly state in copy: Meals and entrance fees are not included. "
-    "Travel times must be realistic: Armavir to Lori is at least 2.5–3 hours "
-    "(example: 07:30 departure from Armavir → 10:30 arrival). "
-    "Seasonal market benchmarks: include at least 5 real or similar seasonal offers from existing "
-    "companies with names and prices, prioritizing Armavir departures "
-    "(e.g. Ari Gnank, ArmGeo, One Way Tour). Label observed prices as Estimated / Needs verification. "
-    "Unit economics: 18 participants; guide fee 15,000 AMD for the group; meals and entrance fees excluded; "
-    "Total Fixed Cost = 15,000 + group transport (Armavir–Lori return e.g. ~55,000 AMD); "
-    "Cost per person = Total Fixed Cost / 18; Profit per person = Suggested Price − Cost per person. "
-    "Ensure financial accuracy: if Suggested Price equals Cost per Person, profit MUST be 0 AMD. "
-    "Web snippets are market observations only, not confirmed booking conditions. "
-    "Armavir–Yerevan rule: if the product uses Yerevan as a hub, meeting point, or destination "
-    f"cluster, add exactly +{ARMAVIR_YEREVAN_TRANSFER_AMD} AMD per person for the ~45 km "
-    "Armavir→Yerevan shuttle and show it as base transport + 1,000 AMD transfer. "
-    "Keep HY, EN, and RU fields language-pure. Each idea must have a distinct concept. "
-    "Return JSON only when asked for JSON."
+    "ALWAYS prioritize tours that start and end in Armavir, Armenia. "
+    "Place names, attractions, roads, and factual claims MUST appear in the provided "
+    "SEARCH RESULTS JSON (title, snippet, or URL). If a name is not in that JSON, do not use it. "
+    "Armavir as departure is always allowed. "
+    "If search results are empty, say so; do not invent destinations; set verify to include "
+    "'No live web results; places and prices need human research'. "
+    "Competitor prices are MARKET REFERENCE only — never confirmed. "
+    "Every uncertain item goes in verify[] (short English strings). Do not silently guess. "
+    f"GROUP_SIZE is {GROUP_SIZE} (not 18). Guide fee is {GUIDE_FEE_GROUP_AMD} AMD for the whole group. "
+    "Do not invent transport AMD or profit. Leave breakdown numbers at 0; Python computes "
+    "one-way route_km × AMD/km and cost/person = (transport_group + guide) / group_size. "
+    f"Minimum price is cost per person × {MIN_MARGIN_PCT}%. "
+    "Itinerary: 3–4 timed stops including Armavir departure. No vague 'adventure activities'. "
+    "State: Meals and entrance fees are not included. "
+    "Travel times must be realistic (Armavir to Lori at least 2.5–3 hours). "
+    "In this generation step write English and Russian copy; Armenian fields may be brief placeholders. "
+    "Each idea must have a distinct concept. Return JSON only when asked for JSON."
 )
 
 
@@ -117,11 +127,11 @@ IDEA_JSON_SHAPE = """
         "guide_amd": 15000,
         "other_amd": 0,
         "yerevan_transfer_amd": 0,
-        "notes": "Meals and entrance fees are not included. Guide 15,000 AMD for 18 participants. Transport is group return cost (e.g. Armavir–Lori ~55,000 AMD). Estimated."
+        "notes": "Meals and entrance fees are not included. Python fills transport from one-way km × rate. Estimated."
       },
       "budget_fit": "within",
       "profitability": {
-        "group_size": 18,
+        "group_size": 17,
         "revenue_per_person_amd": 0,
         "expense_per_person_amd": 0,
         "profit_per_person_amd": 0,
@@ -134,7 +144,7 @@ IDEA_JSON_SHAPE = """
         "Հաճախորդի արժեք՝ …",
         "Մրցակցային տարբերակում՝ …",
         "Սեզոնայնություն՝ …",
-        "Արժեքի բաշխում (գնահատված)՝ տրանսպորտ (խումբ) + զբոսավար 15,000 ֏ / 18 հոգի։ Meals and entrance fees are not included.",
+        "Արժեքի բաշխում (գնահատված)՝ Python-ը կլրացնի տրանսպորտը ըստ կմ։ Meals and entrance fees are not included.",
         "Առաջարկվող գին (գնահատված)՝ … ֏ / անձ",
         "Շահութաբերություն (գնահատված)՝ եկամուտ, ծախս, շահույթ մեկ անձի կամ խմբի համար, ենթադրությունները նշված",
         "Ռիսկեր՝ …",
@@ -146,7 +156,9 @@ IDEA_JSON_SHAPE = """
       "budget_score": 0,
       "logistics_score": 0,
       "appeal_score": 0,
-      "notes": "Quality-score rationale, remaining uncertainties, and translation-review flags. All figures Estimated unless verified."
+      "verify": [],
+      "source_urls": [],
+      "notes": "Quality-score rationale and remaining uncertainties. All figures Estimated unless sourced."
     }
   ]
 }
@@ -168,8 +180,8 @@ Synthesize a research briefing for Արի Գնանք one-day tours that start an
 Use this live web-search JSON as market observation only (not confirmed bookings):
 {market}
 
-Operator: Արի Գնանք. ALWAYS prioritize Armavir-based departures. Group size is 18.
-If a comparable product is sold from Yerevan, include Armavir→Yerevan ~45 km and +{ARMAVIR_YEREVAN_TRANSFER_AMD} AMD/person.
+Operator: Արի Գնանք. ALWAYS prioritize Armavir-based departures. Group size is {GROUP_SIZE}.
+If a comparable product is sold from Yerevan, note the extra driving km as market context only; Python prices by one-way route km.
 Armavir to Lori driving time is at least 2.5–3 hours (07:30 departure → ~10:30 arrival).
 MANDATORY: list at least 5 seasonal market benchmarks with company name and price (prefer Armavir departures: Ari Gnank, ArmGeo, One Way Tour, and similar). Observed AMD only.
 
@@ -191,7 +203,7 @@ Return JSON:
   "destinations": [{{"name": "", "why": "", "drive_hours_from_armavir": 0, "confidence": "estimated"}}],
   "seasonal_notes": "",
   "logistics": "Include Armavir–Yerevan shuttle when Yerevan is the hub. Needs verification.",
-  "cost_assumptions": "18 participants. Guide 15,000 AMD group. Meals and entrance fees are not included. Transport group e.g. Armavir–Lori return ~55,000 AMD. Cost/person = (15000+transport)/18. Profit/person = price − cost/person (0 if equal).",
+  "cost_assumptions": "{GROUP_SIZE} participants. Guide {GUIDE_FEE_GROUP_AMD} AMD group. Meals and entrance fees are not included. Transport is one-way km × rate (Python). Cost/person = (transport+guide)/{GROUP_SIZE}.",
   "risks": []
 }}
 """
@@ -206,7 +218,10 @@ def generation_node(state: State) -> dict[str, Any]:
     payload = state["inputs"]
     count = int(payload.get("count") or 3)
     prompt = f"""
-Using this research JSON (not live-verified):
+SEARCH RESULTS (only allowed place names and competitor prices):
+{state.get("market_research") or "{}"}
+
+Research briefing (not live-verified):
 {state.get("research_data") or "{}"}
 
 Generate exactly {count} ORIGINAL one-day tour products departing from {payload.get("departure_location") or "Armavir"}.
@@ -228,9 +243,9 @@ Rules:
 - Use market observations from research when pricing, still label Estimated / Needs verification.
 - Each idea must differ in core concept, target audience slice, and customer experience.
 - Do not start every Armenian title with "Արմավիր –".
-- Unit economics: 18 participants; guide_amd=15000 (group); meals_amd=0; entrance_fees_amd=0; transport_amd=group vehicle return (e.g. 55000 Armavir–Lori). Cost/person=(15000+transport)/18. Profit/person=price−cost/person. Never report 2000 profit when price equals cost.
-- If the day uses Yerevan as hub or destination, also add +{ARMAVIR_YEREVAN_TRANSFER_AMD} AMD transfer per person (yerevan_transfer_amd).
-- HY / EN / RU must stay consistent.
+- Do not invent AMD figures. Python sets transport from one-way driving km and GROUP_SIZE={GROUP_SIZE}.
+- Place names only from SEARCH RESULTS. If none, do not invent monasteries or villages.
+- Write full EN and RU; HY may be a short placeholder for a later translation step.
 
 Return JSON exactly in this shape:
 {IDEA_JSON_SHAPE}
@@ -255,8 +270,8 @@ Check each idea for:
 2) practical Armavir same-day itinerary
 3) completeness of concept, audience, value, differentiation, seasonality, cost breakdown, price, profitability, risks, quality score
 4) language purity and fluent HY/EN/RU
-5) financial arithmetic: 18 pax; guide 15,000 group; meals and entrance fees excluded; profit = price − (15000+transport)/18 (0 if equal, never fake 2000); Yerevan products also include +{ARMAVIR_YEREVAN_TRANSFER_AMD} AMD transfer
-5b) 3–4 named stops; Armavir start; Lori drives 2.5–3 hours; at least 5 named market benchmarks
+5) financial arithmetic is computed later in Python; flag invented AMD numbers
+5b) 3–4 named stops from SEARCH RESULTS only; Armavir start; Lori drives 2.5–3 hours if Lori is in the results
 6) budget mix: all but exactly one idea within budget; exactly one slightly over if count>=2
 7) verified vs assumption labels
 8) actionable remaining uncertainties
@@ -324,10 +339,46 @@ Return JSON in this shape:
     }
 
 
-def route_after_evaluation(state: State) -> Literal["refine", "finalize"]:
+def route_after_evaluation(state: State) -> Literal["refine", "hy_adapt"]:
     if (state.get("quality_issues") or []) and int(state.get("refine_pass") or 0) == 0:
         return "refine"
-    return "finalize"
+    return "hy_adapt"
+
+
+def hy_adapt_node(state: State) -> dict[str, Any]:
+    ideas = [item for item in (state.get("evaluated_ideas") or state.get("ideas_raw") or []) if isinstance(item, dict)]
+    market = state.get("market_research") or "{}"
+    prompt = f"""
+Translate/adapt ONLY title_hy, description_hy, location_hy, and itinerary stop title/description
+into natural Armenian. Do not add places, prices, or facts.
+Keep every place name exactly as in the SEARCH RESULTS; if the Armenian spelling is uncertain,
+write the Armenian attempt and the original English spelling in parentheses, e.g. Ախթալա (Akhtala).
+Do not change EN/RU fields or numeric values. Do not add itinerary stops.
+
+SEARCH RESULTS:
+{market}
+
+IDEAS JSON:
+{json.dumps(ideas, ensure_ascii=False)}
+
+Return JSON: {{ "ideas": [ ... same objects with HY fields filled ] }}
+"""
+    try:
+        data = _invoke_json(prompt, temperature=0.2)
+        adapted = data.get("ideas") if isinstance(data, dict) else data
+        if isinstance(adapted, list) and adapted:
+            return {"evaluated_ideas": [item for item in adapted if isinstance(item, dict)]}
+    except Exception:  # noqa: BLE001
+        pass
+    return {"evaluated_ideas": ideas}
+
+
+def _research_payload(state: State) -> dict[str, Any]:
+    try:
+        payload = json.loads(state.get("market_research") or "{}")
+    except json.JSONDecodeError:
+        payload = {}
+    return payload if isinstance(payload, dict) else {}
 
 
 def refinement_node(state: State) -> dict[str, Any]:
@@ -335,16 +386,29 @@ def refinement_node(state: State) -> dict[str, Any]:
     wanted = int(payload.get("count") or 3)
     departure = str(payload.get("departure_location") or "Արմավիր")
     budget = int(payload.get("budget_amd") or 0)
-    priced = [
-        apply_unit_economics(apply_yerevan_transfer(dict(raw)))
-        for raw in (state.get("evaluated_ideas") or state.get("ideas_raw") or [])
-        if isinstance(raw, dict)
-    ]
+    research = _research_payload(state)
+    offers = [item for item in (research.get("market_offers") or []) if isinstance(item, dict)]
+    priced: list[dict[str, Any]] = []
+    leftover_source = [item for item in (state.get("evaluated_ideas") or state.get("ideas_raw") or []) if isinstance(item, dict)]
+    for raw in leftover_source:
+        candidate = ensure_armavir_bookends(dict(raw), departure)
+        candidate = ground_idea(candidate, research)
+        route_km, sourced, km_notes = one_way_route_km(candidate.get("itinerary") or [])
+        candidate = apply_yerevan_transfer(candidate)
+        candidate = apply_unit_economics(
+            candidate,
+            route_km=route_km,
+            km_sourced=sourced,
+            km_notes=km_notes,
+            offers=offers,
+        )
+        candidate = rewrite_copy_from_numbers(candidate)
+        priced.append(candidate)
     priced = tag_budget_fit(priced, budget)
     leftover_issues = collect_quality_issues(priced)
     cleaned: list[dict[str, Any]] = []
     for index, raw in enumerate(priced):
-        candidate = ensure_armavir_bookends(dict(raw), departure)
+        candidate = dict(raw)
         candidate.setdefault("id", f"idea-{index + 1}")
         candidate["id"] = re.sub(r"[^a-z0-9-]+", "-", str(candidate["id"]).lower()).strip("-") or f"idea-{index + 1}"
         for score_key in ("budget_score", "logistics_score", "appeal_score", "quality_score"):
@@ -352,15 +416,18 @@ def refinement_node(state: State) -> dict[str, Any]:
             if isinstance(raw_score, str):
                 match = re.search(r"(\d+(?:\.\d+)?)", raw_score)
                 candidate[score_key] = float(match.group(1)) if match else 0
-        if isinstance(candidate.get("price"), str):
-            digits = re.sub(r"[^\d]", "", str(candidate["price"]))
-            candidate["price"] = int(digits) if digits else 0
         if leftover_issues:
             candidate = attach_review_flag(
                 candidate,
                 "Needs verification. Remaining QC notes: " + "; ".join(leftover_issues[:6]),
             )
         candidate.setdefault("quality_score", candidate.get("appeal_score") or 0)
+        if not str(candidate.get("title_hy") or "").strip():
+            candidate["title_hy"] = str(candidate.get("title_en") or candidate["id"])
+        if not str(candidate.get("description_hy") or "").strip():
+            candidate["description_hy"] = str(candidate.get("description_en") or "")
+        if not str(candidate.get("location_hy") or "").strip():
+            candidate["location_hy"] = str(candidate.get("location_en") or "Armavir")
         try:
             idea = TourIdea.model_validate(candidate)
         except ValidationError:
@@ -380,6 +447,7 @@ def build_graph():
     graph.add_node("generation_node", generation_node)
     graph.add_node("evaluation_node", evaluation_node)
     graph.add_node("refine_llm_node", refine_llm_node)
+    graph.add_node("hy_adapt_node", hy_adapt_node)
     graph.add_node("refinement_node", refinement_node)
     graph.add_edge(START, "search_node")
     graph.add_edge("search_node", "research_node")
@@ -388,9 +456,10 @@ def build_graph():
     graph.add_conditional_edges(
         "evaluation_node",
         route_after_evaluation,
-        {"refine": "refine_llm_node", "finalize": "refinement_node"},
+        {"refine": "refine_llm_node", "hy_adapt": "hy_adapt_node"},
     )
-    graph.add_edge("refine_llm_node", "refinement_node")
+    graph.add_edge("refine_llm_node", "hy_adapt_node")
+    graph.add_edge("hy_adapt_node", "refinement_node")
     graph.add_edge("refinement_node", END)
     return graph.compile()
 
@@ -405,7 +474,7 @@ def get_graph():
     return _GRAPH
 
 
-def run_idea_workflow(request: GenerateIdeasRequest) -> tuple[list[dict[str, Any]], str]:
+def run_idea_workflow(request: GenerateIdeasRequest) -> tuple[list[dict[str, Any]], str, dict[str, Any]]:
     initial: State = {
         "inputs": request.model_dump(),
         "market_research": "",
@@ -420,6 +489,7 @@ def run_idea_workflow(request: GenerateIdeasRequest) -> tuple[list[dict[str, Any
     ideas = result.get("final_report") or []
     if not ideas:
         raise RuntimeError("The agent finished without a final report.")
+    research = _research_payload(result)
     research_summary = ""
     try:
         briefing = json.loads(result.get("research_data") or "{}")
@@ -427,4 +497,8 @@ def run_idea_workflow(request: GenerateIdeasRequest) -> tuple[list[dict[str, Any
             research_summary = str(briefing.get("summary") or "")
     except json.JSONDecodeError:
         research_summary = ""
-    return ideas, research_summary
+    if not research.get("live"):
+        empty = "No live web results; places and prices need human research."
+        if empty not in research_summary:
+            research_summary = f"{empty} {research_summary}".strip()
+    return ideas, research_summary, research

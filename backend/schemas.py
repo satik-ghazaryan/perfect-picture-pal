@@ -75,7 +75,7 @@ class CostBreakdown(BaseModel):
 
 
 class Profitability(BaseModel):
-    group_size: int = 12
+    group_size: int = 17
     revenue_per_person_amd: int = 0
     expense_per_person_amd: int = 0
     profit_per_person_amd: int = 0
@@ -90,7 +90,7 @@ class Profitability(BaseModel):
     def coerce(cls, value: Any) -> Any:
         if not isinstance(value, dict):
             return value
-        group_size = parse_amd(value.get("group_size") or 12) or 12
+        group_size = parse_amd(value.get("group_size") or 17) or 17
         revenue_pp = parse_amd(value.get("revenue_per_person_amd", value.get("revenue_per_person")))
         expense_pp = parse_amd(value.get("expense_per_person_amd", value.get("expense_per_person")))
         profit_pp = parse_amd(value.get("profit_per_person_amd", value.get("profit_per_person")))
@@ -107,6 +107,45 @@ class Profitability(BaseModel):
             "assumptions": str(value.get("assumptions") or "Estimated. Needs verification."),
             "confidence": "needs_verification" if value.get("confidence") == "needs_verification" else "estimated",
         }
+
+
+class ResearchHit(BaseModel):
+    title: str = ""
+    url: str = ""
+    snippet: str = ""
+    query: str = ""
+    kind: str = "place"
+    source: str = ""
+
+
+class MarketOffer(BaseModel):
+    title: str = ""
+    url: str = ""
+    observed_price_amd: int = 0
+    found_on: str = ""
+    label: str = "market_reference"
+    snippet: str = ""
+
+
+class ResearchBundle(BaseModel):
+    live: bool = False
+    provider: str = "none"
+    retrieved_at: str = ""
+    disclaimer: str = ""
+    queries: list[str] = Field(default_factory=list)
+    results: list[ResearchHit] = Field(default_factory=list)
+    market_offers: list[MarketOffer] = Field(default_factory=list)
+    error: str = ""
+
+
+class IdeaMarket(BaseModel):
+    label: str = "market_reference"
+    offer_count: int = 0
+    price_min_amd: int | None = None
+    price_median_amd: int | None = None
+    price_max_amd: int | None = None
+    difference_amd: int = 0
+    offers: list[MarketOffer] = Field(default_factory=list)
 
 
 class TourIdea(BaseModel):
@@ -131,7 +170,16 @@ class TourIdea(BaseModel):
     appeal_score: float = Field(default=0, ge=0, le=10)
     quality_score: float = Field(default=0, ge=0, le=10)
     budget_fit: Literal["within", "over"] = "within"
-    notes: str = Field(default="", max_length=4000)
+    notes: str = Field(default="", max_length=8000)
+    verify: list[str] = Field(default_factory=list)
+    needs_verification: bool = False
+    source_urls: list[str] = Field(default_factory=list)
+    route_km: float = 0
+    transport_rate_per_km_amd: int = 600
+    cost_per_person_amd: int = 0
+    min_price_amd: int = 0
+    market_position: Literal["below_market", "in_range", "above_market", "unknown"] = "unknown"
+    market: IdeaMarket = Field(default_factory=IdeaMarket)
 
     @model_validator(mode="before")
     @classmethod
@@ -153,6 +201,7 @@ class GenerateIdeasResponse(BaseModel):
     run_id: str = ""
     ideas: list[TourIdea]
     research_summary: str = ""
+    research: ResearchBundle = Field(default_factory=ResearchBundle)
 
 
 class HealthResponse(BaseModel):

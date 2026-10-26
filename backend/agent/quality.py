@@ -180,3 +180,84 @@ def attach_review_flag(idea: dict[str, Any], flag: str) -> dict[str, Any]:
     if flag.lower() not in notes.lower():
         idea["notes"] = f"{notes} {flag}".strip()
     return idea
+
+
+def _search_corpus(research: dict[str, Any]) -> str:
+    parts: list[str] = []
+    for row in research.get("results") or []:
+        if isinstance(row, dict):
+            parts.append(str(row.get("title") or ""))
+            parts.append(str(row.get("snippet") or ""))
+    return " ".join(parts).lower()
+
+
+def _is_armavir_title(title: str) -> bool:
+    text = title.lower()
+    return "armavir" in text or "արմավիր" in text
+
+
+def ground_idea(idea: dict[str, Any], research: dict[str, Any]) -> dict[str, Any]:
+    verify = [str(item) for item in (idea.get("verify") or []) if str(item).strip()]
+    live = bool(research.get("live"))
+    corpus = _search_corpus(research)
+    if not live or not corpus.strip():
+        flag = "No live web results; places and prices need human research"
+        if flag not in verify:
+            verify.append(flag)
+        idea["verify"] = verify
+        idea["needs_verification"] = True
+        idea["source_urls"] = []
+        return idea
+    for stop in idea.get("itinerary") or []:
+        if not isinstance(stop, dict):
+            continue
+        title = _text(stop.get("title"))
+        if not title or _is_armavir_title(title):
+            continue
+        tokens = [token for token in re.split(r"[\s,;:/|—.()\-]+", title) if len(token) > 3]
+        if tokens and not any(token.lower() in corpus for token in tokens):
+            flag = f"Place not in search results: {title}"
+            if flag not in verify:
+                verify.append(flag)
+    urls: list[str] = []
+    blob = " ".join(
+        [
+            _text(idea.get("title_en")),
+            _text(idea.get("location_en")),
+            " ".join(_text(stop.get("title")) for stop in idea.get("itinerary") or [] if isinstance(stop, dict)),
+        ]
+    ).lower()
+    for row in research.get("results") or []:
+        if not isinstance(row, dict):
+            continue
+        url = str(row.get("url") or "").strip()
+        hay = f"{row.get('title') or ''} {row.get('snippet') or ''}".lower()
+        if url and any(token in hay for token in blob.split() if len(token) > 4):
+            urls.append(url)
+    idea["source_urls"] = list(dict.fromkeys(urls))[:8]
+    idea["verify"] = verify
+    idea["needs_verification"] = bool(verify)
+    return idea
+
+
+def rewrite_copy_from_numbers(idea: dict[str, Any]) -> dict[str, Any]:
+    cost = int(idea.get("cost_per_person_amd") or 0)
+    price = int(idea.get("price") or 0)
+    profit = int((idea.get("profitability") or {}).get("profit_per_person_amd") or 0)
+    group = int((idea.get("profitability") or {}).get("group_size") or 17)
+    line_en = (
+        f"Computed figures (source of truth): group {group}; cost per person {cost} AMD; "
+        f"suggested price {price} AMD; profit per person {profit} AMD. Estimated."
+    )
+    line_hy = (
+        f"Հաշվարկված թվեր՝ խումբ {group} հոգի, արժեք/անձ {cost} ֏, "
+        f"առաջարկվող գին {price} ֏, շահույթ/անձ {profit} ֏։ Գնահատված։"
+    )
+    line_ru = (
+        f"Расчётные цифры: группа {group}; себестоимость {cost} AMD/чел; "
+        f"цена {price} AMD; прибыль {profit} AMD/чел. Оценка."
+    )
+    idea["description_en"] = _text(idea.get("description_en")) + " " + line_en
+    idea["description_hy"] = _text(idea.get("description_hy")) + " " + line_hy
+    idea["description_ru"] = _text(idea.get("description_ru")) + " " + line_ru
+    return idea

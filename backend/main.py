@@ -31,7 +31,7 @@ from pydantic import ValidationError
 
 from agent.graph import run_idea_workflow
 from idea_store import get_run, save_run
-from schemas import GenerateIdeasRequest, GenerateIdeasResponse, HealthResponse, TourIdea
+from schemas import GenerateIdeasRequest, GenerateIdeasResponse, HealthResponse, ResearchBundle, TourIdea
 
 GENERATE_RATE_LIMIT = 5
 GENERATE_RATE_WINDOW_SEC = 60
@@ -126,13 +126,19 @@ def generate_ideas(
     if not os.getenv("OPENAI_API_KEY", "").strip():
         raise HTTPException(status_code=503, detail="OPENAI_API_KEY is not configured.")
     try:
-        ideas, summary = run_idea_workflow(body)
+        ideas, summary, research = run_idea_workflow(body)
         parsed = [TourIdea.model_validate(item) for item in ideas]
-        stored = save_run(body.model_dump(), [item.model_dump() for item in parsed], summary)
+        stored = save_run(
+            body.model_dump(),
+            [item.model_dump() for item in parsed],
+            summary,
+            research,
+        )
         return GenerateIdeasResponse(
             run_id=str(stored["id"]),
             ideas=parsed,
             research_summary=summary,
+            research=ResearchBundle.model_validate(research or {}),
         )
     except HTTPException:
         raise
@@ -158,4 +164,5 @@ def read_idea_run(run_id: str) -> GenerateIdeasResponse:
         run_id=str(record.get("id") or run_id),
         ideas=ideas,
         research_summary=str(record.get("research_summary") or ""),
+        research=ResearchBundle.model_validate(record.get("research") or {}),
     )

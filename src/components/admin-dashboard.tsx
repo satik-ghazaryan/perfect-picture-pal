@@ -65,8 +65,8 @@ import {
 } from "@/lib/loyalty";
 import { downloadPassengerWorkbook } from "@/lib/passenger-export";
 import { isSupabaseConfigured } from "@/lib/supabase";
-import { generateTourIdeas, readCachedIdeaRun, saveTourIdeaDraft } from "@/lib/tour-ideas";
-import type { TourIdeaInput, TourIdeaResult } from "@/types";
+import { generateTourIdeas, normalizeResearch, readCachedIdeaRun, saveTourIdeaDraft } from "@/lib/tour-ideas";
+import type { TourIdeaInput, TourIdeaResearch, TourIdeaResult } from "@/types";
 
 const sections = [
   { id: "tours", label: "Տուրեր", icon: CalendarDays },
@@ -1684,6 +1684,23 @@ function draftFromIdea(idea: TourIdeaResult, tourType: string): Draft {
   };
 }
 
+function safeHttpUrl(url: string) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") return parsed.toString();
+  } catch {
+    return "";
+  }
+  return "";
+}
+
+function marketPositionLabel(position: TourIdeaResult["market_position"]) {
+  if (position === "in_range") return "շուկայի միջակայքում";
+  if (position === "above_market") return "շուկայից բարձր";
+  if (position === "below_market") return "շուկայից ցածր";
+  return "շուկան անհայտ է";
+}
+
 function IdeasSection({
   createdBy,
   onPublish,
@@ -1706,6 +1723,7 @@ function IdeasSection({
   const [savingId, setSavingId] = useState<string | null>(null);
   const [ideas, setIdeas] = useState<TourIdeaResult[]>(cachedRun?.ideas ?? []);
   const [summary, setSummary] = useState(cachedRun?.summary ?? "");
+  const [research, setResearch] = useState<TourIdeaResearch>(cachedRun?.research ?? normalizeResearch(null));
   const [lastInput, setLastInput] = useState<TourIdeaInput | null>(null);
 
   const generate = async () => {
@@ -1718,6 +1736,7 @@ function IdeasSection({
       const result = await generateTourIdeas(form);
       setIdeas(result.ideas);
       setSummary(result.research_summary);
+      setResearch(result.research);
       setLastInput(form);
       toast.success("Գաղափարները պատրաստ են");
     } catch (error) {
@@ -1854,6 +1873,37 @@ function IdeasSection({
         <p className="rounded-2xl bg-muted px-4 py-3 text-sm text-muted-foreground">{summary}</p>
       ) : null}
 
+      {(research.queries.length > 0 || research.results.length > 0) ? (
+        <details className="rounded-3xl border border-border bg-card p-4">
+          <summary className="cursor-pointer text-sm font-bold">Հետազոտության աղբյուրներ</summary>
+          <p className="mt-2 text-xs text-muted-foreground">{research.disclaimer || "Market reference only. Estimated."}</p>
+          {research.queries.length > 0 ? (
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
+              {research.queries.map((query) => (
+                <li key={query}>{query}</li>
+              ))}
+            </ul>
+          ) : null}
+          <div className="mt-3 space-y-2">
+            {research.results.map((hit) => {
+              const href = safeHttpUrl(hit.url);
+              return (
+                <p key={`${hit.url}-${hit.title}`} className="text-sm">
+                  {href ? (
+                    <a href={href} target="_blank" rel="noopener noreferrer" className="font-semibold underline">
+                      {hit.title || href}
+                    </a>
+                  ) : (
+                    <span className="font-semibold">{hit.title}</span>
+                  )}
+                  {hit.snippet ? <span className="mt-0.5 block text-xs text-muted-foreground">{hit.snippet}</span> : null}
+                </p>
+              );
+            })}
+          </div>
+        </details>
+      ) : null}
+
       {ideas.length === 0 && !loading ? (
         <p className="rounded-2xl bg-muted px-4 py-3 text-sm text-muted-foreground">Դեռ գաղափարներ չկան։ Լրացրեք ձևը և սեղմեք գեներացնել։</p>
       ) : null}
@@ -1868,12 +1918,55 @@ function IdeasSection({
             <p className="mt-2 text-sm text-foreground">{idea.description_hy}</p>
             <p className="mt-1 text-xs text-muted-foreground">{idea.description_en}</p>
             <p className="mt-1 text-xs text-muted-foreground">{idea.description_ru}</p>
-            <p className="mt-3 text-sm font-black">{formatAmd(idea.price)}</p>
-            {idea.breakdown && idea.breakdown.transport_amd > 0 ? (
+            <p className="mt-3 text-sm font-black">Առաջարկվող գին {formatAmd(idea.price)}</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Խումբ {idea.profitability?.group_size ?? 17} · արժեք/անձ {formatAmd(idea.cost_per_person_amd ?? idea.profitability?.expense_per_person_amd ?? 0)}
+              · նվազագույն գին {formatAmd(idea.min_price_amd ?? 0)}
+              · շահույթ/անձ {formatAmd(idea.profitability?.profit_per_person_amd ?? 0)}
+            </p>
+            {idea.route_km ? (
               <p className="mt-1 text-xs text-muted-foreground">
-                Տրանսպորտ (գնահատված) {formatAmd(idea.breakdown.transport_amd)}
-                {idea.breakdown.yerevan_transfer_amd ? ` · Երևան փոխադրում +${formatAmd(idea.breakdown.yerevan_transfer_amd)}` : ""}
+                Երթուղի {idea.route_km} կմ (մեկ ուղղությամբ) · {formatAmd(idea.breakdown?.transport_amd ?? 0)} տրանսպորտ
               </p>
+            ) : null}
+            <p className="mt-1 text-xs font-semibold text-muted-foreground">
+              {marketPositionLabel(idea.market_position)}
+              {idea.market?.difference_amd ? ` · տարբերություն ${formatAmd(Math.abs(idea.market.difference_amd))}` : ""}
+            </p>
+            {idea.market && idea.market.offer_count > 0 ? (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Շուկա (market reference) {idea.market.offer_count} առաջարկ · {formatAmd(idea.market.price_min_amd ?? 0)}–{formatAmd(idea.market.price_max_amd ?? 0)}
+                {idea.market.price_median_amd ? ` · մեդիան ${formatAmd(idea.market.price_median_amd)}` : ""}
+              </p>
+            ) : (
+              <p className="mt-1 text-xs text-muted-foreground">Մրցակցային գներ չկան · գինը cost×1.25 է (verify)</p>
+            )}
+            {idea.market?.offers?.length ? (
+              <ul className="mt-2 space-y-1 text-xs">
+                {idea.market.offers.map((offer) => {
+                  const href = safeHttpUrl(offer.url);
+                  return (
+                    <li key={`${offer.url}-${offer.title}`}>
+                      {href ? (
+                        <a href={href} target="_blank" rel="noopener noreferrer" className="underline">
+                          {offer.title || href}
+                        </a>
+                      ) : (
+                        <span>{offer.title}</span>
+                      )}
+                      {offer.observed_price_amd ? ` · ${formatAmd(offer.observed_price_amd)}` : ""}
+                      {offer.found_on ? ` · ${offer.found_on}` : ""}
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : null}
+            {idea.verify && idea.verify.length > 0 ? (
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
+                {idea.verify.map((item) => (
+                  <li key={item}>verify: {item}</li>
+                ))}
+              </ul>
             ) : null}
             {idea.budget_fit === "over" ? (
               <p className="mt-1 text-xs font-semibold text-muted-foreground">Բյուջեից բարձր տարբերակ (գնահատված)</p>

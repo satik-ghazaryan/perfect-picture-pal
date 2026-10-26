@@ -36,13 +36,19 @@ def _write(payload: dict[str, Any]) -> None:
     tmp.replace(_STORE_PATH)
 
 
-def save_run(inputs: dict[str, Any], ideas: list[dict[str, Any]], research_summary: str) -> dict[str, Any]:
+def save_run(
+    inputs: dict[str, Any],
+    ideas: list[dict[str, Any]],
+    research_summary: str,
+    research: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     run_id = str(uuid4())
     record = {
         "id": run_id,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "inputs": inputs,
         "research_summary": research_summary,
+        "research": research or {},
         "ideas": ideas,
     }
     with _LOCK:

@@ -108,6 +108,45 @@ export type TourIdeaProfitability = {
   confidence: "estimated" | "needs_verification";
 };
 
+export type TourIdeaMarketPosition = "below_market" | "in_range" | "above_market" | "unknown";
+
+export type TourIdeaMarketOffer = {
+  title: string;
+  url: string;
+  observed_price_amd: number;
+  found_on: string;
+  label: string;
+  snippet?: string;
+};
+
+export type TourIdeaMarket = {
+  label: string;
+  offer_count: number;
+  price_min_amd: number | null;
+  price_median_amd: number | null;
+  price_max_amd: number | null;
+  difference_amd: number;
+  offers: TourIdeaMarketOffer[];
+};
+
+export type TourIdeaResearchHit = {
+  title: string;
+  url: string;
+  snippet: string;
+  query?: string;
+  kind?: string;
+};
+
+export type TourIdeaResearch = {
+  live: boolean;
+  provider: string;
+  retrieved_at: string;
+  disclaimer: string;
+  queries: string[];
+  results: TourIdeaResearchHit[];
+  market_offers: TourIdeaMarketOffer[];
+};
+
 export type TourIdeaResult = {
   id: string;
   title_hy: string;
@@ -131,4 +170,13 @@ export type TourIdeaResult = {
   quality_score?: number;
   budget_fit?: "within" | "over";
   notes?: string;
+  verify?: string[];
+  needs_verification?: boolean;
+  source_urls?: string[];
+  route_km?: number;
+  transport_rate_per_km_amd?: number;
+  cost_per_person_amd?: number;
+  min_price_amd?: number;
+  market_position?: TourIdeaMarketPosition;
+  market?: TourIdeaMarket;
 };
