@@ -10,7 +10,13 @@ from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
-from agent.osm_places import PLACE_DATA_UNAVAILABLE, collect_structured_candidates, merge_candidates
+from agent.osm_places import (
+    CANDIDATE_CAP,
+    PLACE_DATA_UNAVAILABLE,
+    REGION_CANDIDATE_CAP,
+    collect_structured_bundle,
+    merge_candidates,
+)
 from agent.search import discovery_queries, run_place_attraction_search
 
 LOGGER = logging.getLogger("ari.gnank.place_discovery")
@@ -383,10 +389,13 @@ def discover_place(preferences: str) -> dict[str, Any]:
         }
     search_payload = run_place_attraction_search(place_en)
     results = [row for row in (search_payload.get("results") or []) if isinstance(row, dict)]
-    structured, sources_ok = collect_structured_candidates(str(place_en), str(region_en or ""))
+    bundle = collect_structured_bundle(str(place_en), str(region_en or ""))
+    structured = [item for item in (bundle.get("candidates") or []) if isinstance(item, dict)]
+    sources_ok = bool(bundle.get("ok"))
     pages = fetch_attraction_pages(results, place_en)
     page_candidates = extract_place_candidates(place_en, pages)
-    candidates = merge_candidates(structured, page_candidates)
+    cap = REGION_CANDIDATE_CAP if bundle.get("is_region") else CANDIDATE_CAP
+    candidates = merge_candidates(structured, page_candidates, cap=cap)
     log_discovery(str(place_en), len(pages), len(candidates))
     return {
         "place_en": place_en,
@@ -398,5 +407,7 @@ def discover_place(preferences: str) -> dict[str, Any]:
         "pages_fetched": len(pages),
         "place_data_unavailable": (not sources_ok) and not candidates,
         "place_data_note": "" if sources_ok or candidates else PLACE_DATA_UNAVAILABLE,
+        "is_region": bool(bundle.get("is_region")),
+        "bbox": bundle.get("bbox"),
         "skipped": "",
     }

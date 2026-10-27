@@ -89,6 +89,8 @@ export type TourIdeaStop = {
   description_en?: string;
   description_ru?: string;
   source_url?: string;
+  place_name?: string | null;
+  activity?: string;
 };
 
 export type TourIdeaBreakdown = {
@@ -156,6 +158,7 @@ export type TourIdeaPlaceCandidate = {
   lat?: number | null;
   lon?: number | null;
   coord_source?: string;
+  distance_from_armavir_km?: number | null;
 };
 
 export type TourIdeaResearch = {

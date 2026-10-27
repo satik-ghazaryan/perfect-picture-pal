@@ -235,6 +235,46 @@ class QualityFixTests(unittest.TestCase):
         joined = " ".join(idea["verify"])
         self.assertIn("too thin", joined)
 
+    def test_activity_suffix_does_not_reject_named_sights(self) -> None:
+        self.assertFalse(is_generic_stop_title("Odzun Church — arrival"))
+        self.assertFalse(is_generic_stop_title("Haghpat Monastery — cultural exploration"))
+        idea = {
+            "itinerary": [
+                {"title": "Armavir — departure", "title_en": "Armavir — departure", "place_name": "Armavir", "activity": "departure"},
+                {
+                    "title": "Odzun Church — arrival",
+                    "title_en": "Odzun Church — arrival",
+                    "place_name": "Odzun Church",
+                    "activity": "arrival",
+                },
+                {
+                    "title": "Haghpat Monastery — cultural exploration",
+                    "title_en": "Haghpat Monastery — cultural exploration",
+                    "place_name": "Haghpat",
+                    "activity": "cultural exploration",
+                },
+                {"title": "Lunch", "title_en": "Lunch", "place_name": None, "activity": "lunch"},
+            ],
+            "verify": [],
+        }
+        research = {
+            "place_en": "Lori",
+            "place_candidates": [
+                {"name_en": "Odzun Church", "type": "church", "lat": 41.05, "lon": 44.61, "source_url": "https://example.com/o"},
+                {"name_en": "Haghpat Monastery", "type": "monastery", "lat": 41.09, "lon": 44.71, "source_url": "https://example.com/h"},
+            ],
+        }
+        classified = classify_itinerary_stops(idea, research)
+        self.assertEqual(
+            [stop["place_name"] for stop in classified["accepted"]],
+            ["Odzun Church", "Haghpat Monastery"],
+        )
+        self.assertEqual(classified["dropped"], [])
+        self.assertEqual(classified["accepted"][1]["lat"], 41.09)
+        with patch("agent.distance._osrm_km", return_value=90.0):
+            km, _sourced, _notes = one_way_route_km(classified["accepted"], extra_names=[], region="Lori")
+        self.assertGreater(km, 0)
+
     def test_generic_stops_are_detected_and_skipped_for_geocode(self) -> None:
         self.assertTrue(is_generic_stop_title("Arrive in Lori"))
         self.assertTrue(is_generic_stop_title("Cultural Sites"))

@@ -10,7 +10,7 @@ from typing import Any
 
 import httpx
 
-from agent.distance import nominatim_coord
+from agent.distance import armavir_distance_km, is_nominatim_region, nominatim_coord, nominatim_lookup
 
 USER_AGENT = "AriGnank/1.0 (tour planner; https://arignank.example)"
 OVERPASS_ENDPOINTS = (
@@ -26,6 +26,8 @@ OVERPASS_BACKOFF_SEC = 1.5
 WIKI_TIMEOUT_SEC = 12.0
 WIKI_API = "https://en.wikipedia.org/w/api.php"
 CANDIDATE_CAP = 15
+REGION_CANDIDATE_CAP = 20
+WIKI_GEO_RADIUS_M = 10_000
 CACHE_TTL_SEC = 24 * 60 * 60
 PLACE_DATA_UNAVAILABLE = "Place data sources unavailable"
 SIGHT_WORDS = (
@@ -176,6 +178,32 @@ def overpass_query(lat: float, lon: float, radius_m: int) -> str:
     )
 
 
+def overpass_bbox_query(south: float, west: float, north: float, east: float) -> str:
+    box = f"{south:.6f},{west:.6f},{north:.6f},{east:.6f}"
+    return (
+        f"[out:json][timeout:{OVERPASS_QUERY_TIMEOUT_SEC}];\n"
+        "(\n"
+        f'  nwr({box})["tourism"~"attraction|museum|viewpoint"];\n'
+        f'  nwr({box})["historic"~"monastery|church|castle|fort|ruins|monument|archaeological_site"];\n'
+        f'  nwr({box})["amenity"="place_of_worship"]["name"];\n'
+        ");\n"
+        "out center 40;\n"
+    )
+
+
+def region_sample_points(bbox: tuple[float, float, float, float] | list[float]) -> list[tuple[float, float]]:
+    south, north, west, east = (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]))
+    lat_c = (south + north) / 2.0
+    lon_c = (west + east) / 2.0
+    return [
+        (lat_c, lon_c),
+        (north, lon_c),
+        (south, lon_c),
+        (lat_c, west),
+        (lat_c, east),
+    ]
+
+
 def _overpass_post(endpoint: str, query: str, timeout: float) -> list[dict[str, Any]] | None:
     with httpx.Client(timeout=timeout, headers={"user-agent": USER_AGENT}) as client:
         response = client.post(endpoint, data={"data": query})
@@ -190,6 +218,38 @@ def fetch_overpass(lat: float, lon: float, radius_m: int = 10_000, *, budget_sec
     if cached is not None:
         return list(cached), True
     query = overpass_query(lat, lon, radius_m)
+    deadline = time.monotonic() + (OVERPASS_BUDGET_SEC if budget_sec is None else budget_sec)
+    last_error = False
+    for endpoint in OVERPASS_ENDPOINTS:
+        for attempt in range(OVERPASS_ATTEMPTS):
+            remaining = deadline - time.monotonic()
+            if remaining < 2:
+                return [], False
+            timeout = max(2.0, min(8.0, remaining - 0.4))
+            try:
+                parsed = _overpass_post(endpoint, query, timeout)
+            except Exception:  # noqa: BLE001
+                parsed = None
+                last_error = True
+            else:
+                if parsed is not None:
+                    _cache_set(cache_key, parsed)
+                    return parsed, True
+                last_error = True
+            remaining = deadline - time.monotonic()
+            if attempt + 1 < OVERPASS_ATTEMPTS and remaining > OVERPASS_BACKOFF_SEC + 2:
+                time.sleep(min(OVERPASS_BACKOFF_SEC, remaining / 3))
+    return [], not last_error
+
+
+def fetch_overpass_bbox(
+    south: float, west: float, north: float, east: float, *, budget_sec: float | None = None
+) -> tuple[list[dict[str, Any]], bool]:
+    cache_key = f"overpass-bbox:{south:.3f}:{west:.3f}:{north:.3f}:{east:.3f}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return list(cached), True
+    query = overpass_bbox_query(south, west, north, east)
     deadline = time.monotonic() + (OVERPASS_BUDGET_SEC if budget_sec is None else budget_sec)
     last_error = False
     for endpoint in OVERPASS_ENDPOINTS:
@@ -291,6 +351,8 @@ def _wiki_title_hard_drop(title: str) -> bool:
         return True
     if "disambiguation" in lowered:
         return True
+    if lowered.endswith(" province") or lowered.endswith(" region"):
+        return True
     return False
 
 
@@ -310,7 +372,14 @@ def filter_visitable_heuristic(rows: list[dict[str, Any]]) -> list[dict[str, Any
             if not item.get("type"):
                 item["type"] = next((word for word in SIGHT_WORDS if word in f"{title} {item.get('description')}".lower()), "attraction")
             kept.append(item)
-    return kept[:CANDIDATE_CAP]
+    def rank(item: dict[str, Any]) -> int:
+        blob = str(item.get("name_en") or "").lower()
+        if any(word in blob for word in ("monastery", "church", "fortress", "castle", "museum", "cathedral")):
+            return 0
+        return 1
+
+    kept.sort(key=rank)
+    return kept[:REGION_CANDIDATE_CAP]
 
 
 def parse_visitable_llm_json(data: Any, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -444,6 +513,184 @@ def fetch_wikipedia_geosearch(lat: float, lon: float, radius_m: int = 10_000) ->
         return [], False
 
 
+def fetch_wikipedia_geosearch_multi(points: list[tuple[float, float]]) -> tuple[list[dict[str, Any]], bool]:
+    if not points:
+        return [], False
+    rows: list[dict[str, Any]] = []
+    any_ok = False
+    with ThreadPoolExecutor(max_workers=min(5, len(points)), thread_name_prefix="wiki-geo") as pool:
+        futures = [pool.submit(fetch_wikipedia_geosearch, lat, lon, WIKI_GEO_RADIUS_M) for lat, lon in points]
+        for future in futures:
+            try:
+                chunk, ok = future.result()
+            except Exception:  # noqa: BLE001
+                continue
+            any_ok = any_ok or ok
+            rows.extend(chunk)
+    return merge_candidates(rows, cap=40), any_ok
+
+
+def parse_wikipedia_coordinate_pages(payload: Any) -> list[dict[str, Any]]:
+    pages = {}
+    if isinstance(payload, dict):
+        query = payload.get("query") if isinstance(payload.get("query"), dict) else {}
+        raw_pages = query.get("pages") or {}
+        if isinstance(raw_pages, dict):
+            pages = raw_pages
+        elif isinstance(raw_pages, list):
+            pages = {str(index): item for index, item in enumerate(raw_pages)}
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for page in pages.values():
+        if not isinstance(page, dict):
+            continue
+        title = str(page.get("title") or "").strip()
+        if not title or _wiki_title_hard_drop(title):
+            continue
+        coords = page.get("coordinates") or []
+        if not isinstance(coords, list) or not coords or not isinstance(coords[0], dict):
+            continue
+        try:
+            lat = float(coords[0].get("lat"))
+            lon = float(coords[0].get("lon"))
+        except (TypeError, ValueError):
+            continue
+        key = _norm_name(title)
+        if key in seen:
+            continue
+        wiki_url = str(page.get("fullurl") or page.get("canonicalurl") or "").strip()
+        if not wiki_url:
+            wiki_url = "https://en.wikipedia.org/wiki/" + urllib.parse.quote(title.replace(" ", "_"))
+        extract = str(page.get("extract") or "").strip()
+        seen.add(key)
+        out.append(
+            {
+                "name_en": title,
+                "type": "",
+                "lat": round(lat, 6),
+                "lon": round(lon, 6),
+                "source_url": wiki_url,
+                "osm_url": "",
+                "wiki_url": wiki_url,
+                "description": extract,
+                "coord_source": "Wikipedia",
+                "source": "wikipedia",
+            }
+        )
+    return out
+
+
+def fetch_wikipedia_text_search(place_en: str) -> tuple[list[dict[str, Any]], bool]:
+    name = " ".join(str(place_en or "").split())
+    if not name:
+        return [], False
+    cache_key = f"wiki-search:{_norm_name(name)}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return list(cached), True
+    queries = [
+        f"{name} province monastery church fortress",
+        f"{name} Armenia attractions",
+        f"{name} monastery",
+        f"{name} church",
+        f"{name} fortress",
+    ]
+    titles: list[str] = []
+    seen: set[str] = set()
+    ok = False
+    try:
+        with httpx.Client(timeout=WIKI_TIMEOUT_SEC, headers={"user-agent": USER_AGENT, "accept": "application/json"}) as client:
+            for query in queries:
+                response = client.get(
+                    WIKI_API,
+                    params={
+                        "action": "query",
+                        "list": "search",
+                        "srsearch": query,
+                        "srlimit": "20",
+                        "format": "json",
+                    },
+                )
+                if response.status_code >= 400:
+                    continue
+                ok = True
+                payload = response.json()
+                hits = ((payload.get("query") or {}).get("search") or []) if isinstance(payload, dict) else []
+                for hit in hits:
+                    if not isinstance(hit, dict):
+                        continue
+                    title = str(hit.get("title") or "").strip()
+                    key = _norm_name(title)
+                    if not title or key in seen or _wiki_title_hard_drop(title):
+                        continue
+                    seen.add(key)
+                    titles.append(title)
+            if not titles:
+                _cache_set(cache_key, [])
+                return [], ok
+            chosen = titles[:30]
+            coords = client.get(
+                WIKI_API,
+                params={
+                    "action": "query",
+                    "titles": "|".join(chosen),
+                    "prop": "coordinates",
+                    "colimit": "max",
+                    "format": "json",
+                    "redirects": "1",
+                },
+            )
+            if coords.status_code >= 400:
+                return [], ok
+            parsed = parse_wikipedia_coordinate_pages(coords.json())
+            with_coords = [row["name_en"] for row in parsed]
+            if with_coords:
+                extracts = fetch_wikipedia_extracts_by_title(with_coords, client)
+                by_title = {str(item.get("title") or ""): item for item in extracts.values() if isinstance(item, dict)}
+                for row in parsed:
+                    extra = by_title.get(row["name_en"]) or {}
+                    extract = str(extra.get("extract") or "").strip()
+                    wiki_url = str(extra.get("fullurl") or extra.get("canonicalurl") or row.get("wiki_url") or "")
+                    if extract:
+                        row["description"] = extract
+                    if wiki_url:
+                        row["wiki_url"] = wiki_url
+                        row["source_url"] = wiki_url
+            _cache_set(cache_key, parsed)
+            return parsed, True
+    except Exception:  # noqa: BLE001
+        return [], False
+
+
+def fetch_wikipedia_extracts_by_title(titles: list[str], client: httpx.Client | None = None) -> dict[str, Any]:
+    if not titles:
+        return {}
+    params = {
+        "action": "query",
+        "titles": "|".join(titles[:30]),
+        "prop": "extracts|info",
+        "exintro": "1",
+        "explaintext": "1",
+        "exlimit": "max",
+        "inprop": "url",
+        "format": "json",
+        "redirects": "1",
+    }
+    try:
+        if client is None:
+            with httpx.Client(timeout=WIKI_TIMEOUT_SEC, headers={"user-agent": USER_AGENT, "accept": "application/json"}) as owned:
+                response = owned.get(WIKI_API, params=params)
+        else:
+            response = client.get(WIKI_API, params=params)
+        if response.status_code >= 400:
+            return {}
+        payload = response.json()
+        pages = ((payload.get("query") or {}).get("pages") or {}) if isinstance(payload, dict) else {}
+        return pages if isinstance(pages, dict) else {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
 def wikipedia_summary(title: str) -> dict[str, str] | None:
     name = " ".join(str(title or "").split())
     if not name:
@@ -471,7 +718,7 @@ def wikipedia_summary(title: str) -> dict[str, str] | None:
     return {"description": extract, "wiki_url": wiki_url}
 
 
-def merge_candidates(*groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def merge_candidates(*groups: list[dict[str, Any]], cap: int | None = None) -> list[dict[str, Any]]:
     by_key: dict[str, dict[str, Any]] = {}
     order: list[str] = []
     for group in groups:
@@ -500,7 +747,63 @@ def merge_candidates(*groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
             elif row.get("osm_url") and not existing.get("osm_url"):
                 existing["osm_url"] = row.get("osm_url")
     out = [by_key[key] for key in order]
-    return out[:CANDIDATE_CAP]
+    limit = CANDIDATE_CAP if cap is None else cap
+    return out[:limit]
+
+
+def filter_rows_to_bbox(
+    rows: list[dict[str, Any]], bbox: tuple[float, float, float, float] | list[float] | None, pad: float = 0.12
+) -> list[dict[str, Any]]:
+    if not bbox or len(bbox) != 4:
+        return rows
+    south, north, west, east = (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]))
+    kept: list[dict[str, Any]] = []
+    for row in rows:
+        try:
+            lat = float(row.get("lat"))
+            lon = float(row.get("lon"))
+        except (TypeError, ValueError):
+            continue
+        if south - pad <= lat <= north + pad and west - pad <= lon <= east + pad:
+            kept.append(row)
+    return kept
+
+
+def _attach_armavir_km(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        try:
+            lat = float(item.get("lat"))
+            lon = float(item.get("lon"))
+        except (TypeError, ValueError):
+            out.append(item)
+            continue
+        item["distance_from_armavir_km"] = armavir_distance_km(lat, lon)
+        out.append(item)
+    return out
+
+
+def _place_lookup(name: str, region_en: str) -> dict[str, Any] | None:
+    try:
+        lookup = nominatim_lookup(name, region_en, require_meta=True)
+    except Exception:  # noqa: BLE001
+        lookup = None
+    if lookup:
+        return lookup
+    try:
+        coord = nominatim_coord(name, region_en)
+    except Exception:  # noqa: BLE001
+        return None
+    if coord is None:
+        return None
+    return {
+        "lat": coord[0],
+        "lon": coord[1],
+        "osm_class": "",
+        "place_type": "",
+        "boundingbox": None,
+    }
 
 
 def collect_structured_bundle(place_en: str, region_en: str = "") -> dict[str, Any]:
@@ -509,6 +812,11 @@ def collect_structured_bundle(place_en: str, region_en: str = "") -> dict[str, A
         "candidates": [],
         "ok": False,
         "coord": None,
+        "is_region": False,
+        "bbox": None,
+        "osm_class": "",
+        "place_type": "",
+        "sample_points": 0,
         "wikipedia_count": 0,
         "overpass_count": 0,
         "wikipedia_ok": False,
@@ -516,28 +824,65 @@ def collect_structured_bundle(place_en: str, region_en: str = "") -> dict[str, A
     }
     if not name:
         return {**empty, "ok": True}
-    cache_key = f"merged:{_norm_name(name)}:{_norm_name(region_en)}:10000"
+    cache_key = f"merged:{_norm_name(name)}:{_norm_name(region_en)}:region"
     cached = _cache_get(cache_key)
     if isinstance(cached, dict) and cached.get("candidates") is not None:
         return cached
-    try:
-        coord = nominatim_coord(name, region_en)
-    except Exception:  # noqa: BLE001
+    lookup = _place_lookup(name, region_en)
+    if lookup is None:
         return empty
-    if coord is None:
-        return empty
-    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="place-src") as pool:
-        wiki_future = pool.submit(fetch_wikipedia_geosearch, coord[0], coord[1], 10_000)
-        osm_future = pool.submit(fetch_overpass_resilient, coord[0], coord[1])
-        wiki_rows, wiki_ok = wiki_future.result()
-        osm_rows, osm_ok = osm_future.result()
-    wiki_rows = classify_visitable(wiki_rows) if wiki_rows else []
-    merged = merge_candidates(wiki_rows, osm_rows)
+    coord = (float(lookup["lat"]), float(lookup["lon"]))
+    bbox = lookup.get("boundingbox")
+    region = is_nominatim_region(lookup)
+    cap = REGION_CANDIDATE_CAP if region else CANDIDATE_CAP
+    if region and isinstance(bbox, (list, tuple)) and len(bbox) == 4:
+        south, north, west, east = (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]))
+        points = region_sample_points((south, north, west, east))
+        with ThreadPoolExecutor(max_workers=7, thread_name_prefix="place-src") as pool:
+            geo_futures = [pool.submit(fetch_wikipedia_geosearch, lat, lon, WIKI_GEO_RADIUS_M) for lat, lon in points]
+            wiki_text_f = pool.submit(fetch_wikipedia_text_search, name)
+            osm_f = pool.submit(fetch_overpass_bbox, south, west, north, east)
+            wiki_geo_chunks: list[dict[str, Any]] = []
+            wiki_geo_ok = False
+            for future in geo_futures:
+                try:
+                    chunk, ok = future.result()
+                except Exception:  # noqa: BLE001
+                    continue
+                wiki_geo_ok = wiki_geo_ok or ok
+                wiki_geo_chunks.extend(chunk)
+            wiki_geo = merge_candidates(wiki_geo_chunks, cap=40)
+            try:
+                wiki_text, wiki_text_ok = wiki_text_f.result()
+            except Exception:  # noqa: BLE001
+                wiki_text, wiki_text_ok = [], False
+            try:
+                osm_rows, osm_ok = osm_f.result()
+            except Exception:  # noqa: BLE001
+                osm_rows, osm_ok = [], False
+        wiki_raw = filter_rows_to_bbox(merge_candidates(wiki_text, wiki_geo, cap=40), (south, north, west, east))
+        osm_rows = filter_rows_to_bbox(osm_rows, (south, north, west, east))
+        wiki_ok = wiki_geo_ok or wiki_text_ok
+        sample_points = len(points)
+    else:
+        with ThreadPoolExecutor(max_workers=2, thread_name_prefix="place-src") as pool:
+            wiki_future = pool.submit(fetch_wikipedia_geosearch, coord[0], coord[1], WIKI_GEO_RADIUS_M)
+            osm_future = pool.submit(fetch_overpass_resilient, coord[0], coord[1])
+            wiki_raw, wiki_ok = wiki_future.result()
+            osm_rows, osm_ok = osm_future.result()
+        sample_points = 1
+    wiki_rows = classify_visitable(wiki_raw) if wiki_raw else []
+    merged = _attach_armavir_km(merge_candidates(wiki_rows, osm_rows, cap=cap))
     ok = bool(merged)
     bundle = {
         "candidates": merged,
         "ok": ok,
         "coord": coord,
+        "is_region": region,
+        "bbox": tuple(bbox) if isinstance(bbox, (list, tuple)) and len(bbox) == 4 else None,
+        "osm_class": str(lookup.get("osm_class") or ""),
+        "place_type": str(lookup.get("place_type") or ""),
+        "sample_points": sample_points,
         "wikipedia_count": len(wiki_rows),
         "overpass_count": len(osm_rows),
         "wikipedia_ok": wiki_ok,

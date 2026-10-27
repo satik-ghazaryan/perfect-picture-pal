@@ -32,6 +32,8 @@ const VERIFY_NOTE_HY_EXACT: Record<string, string> = {
   "Not enough concrete places found; needs human research":
     "Բավարար կոնկրետ վայրեր չեն գտնվել. հարկավոր է ձեռքով ստուգում",
   "Place data sources unavailable": "Վայրերի տվյալների աղբյուրները անհասանելի են",
+  "No destination stops after Armavir; route km is 0": "Արմավիրից հետո նշանակման կանգառներ չկան. երթուղու կմ-ը 0 է",
+  "Armenian text needs review": "Հայերեն տեքստը հարկավոր է վերանայել",
 };
 const VERIFY_NOTE_HY_PREFIXES: Array<[string, string]> = [
   ["Place not in search results:", "Վայրը որոնման արդյունքներում չկա:"],
@@ -84,10 +86,19 @@ function asStop(value: unknown): TourIdeaStop | null {
   if (!value || typeof value !== "object") return null;
   const record = value as Record<string, unknown>;
   const time = String(record.time ?? "").trim();
-  const title = String(record.title ?? "").trim();
   const description = String(record.description ?? "").trim();
+  const hasPlaceName = "place_name" in record;
+  const placeRaw = record["place_name"];
+  const placeName =
+    placeRaw == null || String(placeRaw).trim() === "" ? null : String(placeRaw).trim();
+  const activity = String(record["activity"] ?? "").trim();
+  let title = String(record.title ?? "").trim();
+  if (!title && placeName) {
+    title = activity ? `${placeName} — ${activity}` : placeName;
+  }
+  if (!title && activity) title = activity;
   if (!time || !title) return null;
-  const titleEn = String(record["title_en"] ?? "").trim();
+  const titleEn = String(record["title_en"] ?? "").trim() || (placeName && activity ? `${placeName} — ${activity}` : "");
   const titleRu = String(record["title_ru"] ?? "").trim();
   const descriptionEn = String(record["description_en"] ?? "").trim();
   const descriptionRu = String(record["description_ru"] ?? "").trim();
@@ -98,6 +109,8 @@ function asStop(value: unknown): TourIdeaStop | null {
   if (descriptionEn) stop.description_en = descriptionEn;
   if (descriptionRu) stop.description_ru = descriptionRu;
   if (sourceUrl) stop.source_url = sourceUrl;
+  if (hasPlaceName) stop.place_name = placeName;
+  if (activity) stop.activity = activity;
   return stop;
 }
 
@@ -256,6 +269,10 @@ export function normalizeResearch(value: unknown): TourIdeaResearch {
           lat: typeof row["lat"] === "number" ? row["lat"] : Number(row["lat"]) || null,
           lon: typeof row["lon"] === "number" ? row["lon"] : Number(row["lon"]) || null,
           coord_source: String(row["coord_source"] ?? ""),
+          distance_from_armavir_km:
+            typeof row["distance_from_armavir_km"] === "number"
+              ? row["distance_from_armavir_km"]
+              : Number(row["distance_from_armavir_km"]) || null,
         }];
       })
       : [],

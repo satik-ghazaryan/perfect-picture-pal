@@ -161,7 +161,9 @@ IDEA_JSON_SHAPE = """
         "Ռիսկեր՝ …"
       ],
       "itinerary": [
-        {"time": "07:30", "title": "Armavir — departure", "title_en": "Armavir — departure", "title_ru": "Армавир — отправление", "description": "Why this stop, sourced from SEARCH RESULTS.", "description_en": "Why this stop.", "description_ru": "Зачем эта остановка.", "source_url": ""}
+        {"time": "07:30", "place_name": "Armavir", "activity": "departure", "title": "Armavir — departure", "title_en": "Armavir — departure", "title_ru": "Армавир — отправление", "description": "Why this stop, sourced from SEARCH RESULTS.", "description_en": "Why this stop.", "description_ru": "Зачем эта остановка.", "source_url": ""},
+        {"time": "11:00", "place_name": "Haghpat Monastery", "activity": "visit", "title": "Haghpat Monastery — visit", "title_en": "Haghpat Monastery — visit", "title_ru": "Монастырь Ахпат — посещение", "description": "Sourced stop.", "description_en": "Sourced stop.", "description_ru": "Остановка.", "source_url": ""},
+        {"time": "13:00", "place_name": null, "activity": "lunch", "title": "Lunch", "title_en": "Lunch", "title_ru": "Обед", "description": "Meal stop; not a place.", "description_en": "Meal stop; not a place.", "description_ru": "Обед.", "source_url": ""}
       ],
       "budget_score": 0,
       "logistics_score": 0,
@@ -273,12 +275,38 @@ Return JSON:
     return {"research_data": json.dumps(data, ensure_ascii=False)}
 
 
+def _candidate_brief(market_json: str) -> str:
+    try:
+        payload = json.loads(market_json or "{}")
+    except json.JSONDecodeError:
+        payload = {}
+    rows = payload.get("place_candidates") if isinstance(payload, dict) else None
+    if not isinstance(rows, list) or not rows:
+        return "(none)"
+    lines: list[str] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("name_en") or "").strip()
+        if not name:
+            continue
+        kind = str(row.get("type") or "sight").strip() or "sight"
+        dist = row.get("distance_from_armavir_km")
+        extra = f", {dist} km from Armavir" if isinstance(dist, (int, float)) else ""
+        lines.append(f"- {name} ({kind}{extra})")
+    return "\n".join(lines) or "(none)"
+
+
 def generation_node(state: State) -> dict[str, Any]:
     payload = state["inputs"]
     count = int(payload.get("count") or 3)
+    market = state.get("market_research") or "{}"
     prompt = f"""
-SEARCH RESULTS (place_candidates is the only allowed list of visitable stop names; snippets are market context):
-{state.get("market_research") or "{}"}
+SEARCH RESULTS (snippets are market context only):
+{market}
+
+PLACE CANDIDATES (the only allowed visitable stop names; choose from this list):
+{_candidate_brief(market)}
 
 Research briefing (not live-verified):
 {state.get("research_data") or "{}"}
@@ -295,9 +323,14 @@ Budget mix:
 
 Rules:
 - ALWAYS depart from Armavir and return to Armavir.
-- Name at least four timed stops: Armavir departure, two or more CONCRETE places from place_candidates (match by name_en), optional lunch, Armavir return. Copy source_url from that candidate. Keep title_en in English.
-- Do not use generic stop titles such as Arrive in Lori, Cultural Sites, attractions, sightseeing, visit, explore, or tour.
-- If place_candidates is empty or has fewer than 2 names, do not invent monasteries or villages; still return Armavir bookends and put remaining uncertainty in verify.
+- Each itinerary stop MUST have place_name and activity as separate fields. title_en is display only: "{{place_name}} — {{activity}}".
+- place_name MUST be copied exactly from PLACE CANDIDATES name_en, or be "Armavir". Do not invent names. Do not pick places that are not on that list.
+- Choose 2–3 candidates that are geographically sensible for a one-day round trip from Armavir (total one-way km <= about 220). Prefer clustered sights.
+- activity is free text (arrival, lunch, walk, visit, cultural exploration). Never put activity words into place_name.
+- Lunch/rest stops: place_name must be null; they are not places and are never geocoded.
+- Name at least four timed stops: Armavir departure, two or more CONCRETE places from PLACE CANDIDATES, optional lunch, Armavir return. Copy source_url from that candidate.
+- Do not use generic place_name values such as Lori, Cultural Sites, attractions, sightseeing, or tour.
+- If PLACE CANDIDATES is empty or has fewer than 2 names, do not invent monasteries or villages; still return Armavir bookends and put remaining uncertainty in verify.
 - State explicitly: Meals and entrance fees are not included. Do not mention Python or internal scoring.
 - Armavir→Lori legs: at least 2.5–3 hours (07:30 depart → 10:30 arrive).
 - Competitive differentiation may name a company ONLY if it is in SEARCH RESULTS with a URL. Never name Ari Gnank as a competitor. If there are no competitor offers, write that no competitor data was found.
@@ -305,7 +338,6 @@ Rules:
 - Each idea must differ in core concept, target audience slice, and customer experience.
 - Do not start every Armenian title with "Արմավիր –".
 - Do not invent AMD figures or write 15000 AMD in descriptions. Do not write that Python will fill transport.
-- Place names only from place_candidates. If that list has fewer than 2 names, do not invent monasteries or villages.
 - Write full EN and RU; HY may be a short placeholder for a later translation step. Keep itinerary title_en in English.
 
 Return JSON exactly in this shape:

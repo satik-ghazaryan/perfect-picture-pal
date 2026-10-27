@@ -23,6 +23,8 @@ VERIFY_NOTE_HY_EXACT = {
         "Բավարար կոնկրետ վայրեր չեն գտնվել. հարկավոր է ձեռքով ստուգում"
     ),
     "Place data sources unavailable": "Վայրերի տվյալների աղբյուրները անհասանելի են",
+    "No destination stops after Armavir; route km is 0": "Արմավիրից հետո նշանակման կանգառներ չկան. երթուղու կմ-ը 0 է",
+    "Armenian text needs review": "Հայերեն տեքստը հարկավոր է վերանայել",
 }
 VERIFY_NOTE_HY_PREFIXES = (
     ("Place not in search results:", "Վայրը որոնման արդյունքներում չկա:"),

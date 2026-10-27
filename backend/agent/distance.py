@@ -36,9 +36,17 @@ SPLIT_RE = re.compile(r"\s*/\s*|\s*\|\s*|;")
 PLACE_CUT_RE = re.compile(r"\s*[—–]\s*|\s+-\s*|\s*:\s*|\s*\(")
 ACTIVITY_WORDS = {
     "arrival",
+    "arrive",
+    "arriving",
     "departure",
+    "depart",
     "return",
+    "returning",
     "visit",
+    "visiting",
+    "explore",
+    "exploration",
+    "exploring",
     "lunch",
     "break",
     "stop",
@@ -46,8 +54,13 @@ ACTIVITY_WORDS = {
     "transfer",
     "free",
     "time",
+    "walk",
+    "walking",
 }
+LUNCH_HINTS = ("lunch", "meal", "rest")
 ROUTE_KM_ESTIMATE_NOTE = "Route km is an estimate"
+NO_DESTINATION_STOPS_NOTE = "No destination stops after Armavir; route km is 0"
+_LOOKUP_MEM: dict[str, dict[str, Any] | None] = {}
 
 
 @dataclass
@@ -84,6 +97,118 @@ def place_from_stop_title(title: str) -> str:
 
 def is_activity_stop(title: str) -> bool:
     return not place_from_stop_title(title)
+
+
+def stop_place_name(stop: dict[str, Any] | None) -> str:
+    if not isinstance(stop, dict):
+        return ""
+    if "place_name" in stop:
+        raw = stop.get("place_name")
+        if raw is None:
+            return ""
+        return str(raw).strip()
+    display = str(stop.get("title_en") or stop.get("title") or "").strip()
+    return place_from_stop_title(display)
+
+
+def stop_activity(stop: dict[str, Any] | None) -> str:
+    if not isinstance(stop, dict):
+        return ""
+    if str(stop.get("activity") or "").strip():
+        return str(stop.get("activity")).strip()
+    display = str(stop.get("title_en") or stop.get("title") or "").strip()
+    if not display:
+        return ""
+    parts = PLACE_CUT_RE.split(display, maxsplit=1)
+    if len(parts) < 2:
+        return ""
+    return parts[1].strip()
+
+
+def is_lunch_or_rest_stop(stop: dict[str, Any] | str | None) -> bool:
+    if isinstance(stop, str):
+        text = stop.lower()
+        if is_armavir_stop(stop):
+            return False
+        if any(hint in text for hint in LUNCH_HINTS):
+            return True
+        return is_activity_stop(stop)
+    if not isinstance(stop, dict):
+        return False
+    if "place_name" in stop:
+        raw = stop.get("place_name")
+        if raw is None or not str(raw).strip():
+            return True
+        return False
+    title = str(stop.get("title_en") or stop.get("title") or "")
+    if is_armavir_stop(title):
+        return False
+    lowered = title.lower()
+    if any(hint in lowered for hint in LUNCH_HINTS):
+        return True
+    return is_activity_stop(title)
+
+
+def names_fuzzy_match(left: str, right: str) -> bool:
+    a = _norm(left)
+    b = _norm(right)
+    if len(a) < 3 or len(b) < 3:
+        return False
+    return a == b or a in b or b in a
+
+
+def is_nominatim_region(lookup: dict[str, Any] | None) -> bool:
+    if not lookup:
+        return False
+    cls = str(lookup.get("osm_class") or "").lower()
+    typ = str(lookup.get("place_type") or "").lower()
+    if cls in {"boundary", "place"} and typ in {"administrative", "state", "county"}:
+        return True
+    bbox = lookup.get("boundingbox")
+    if isinstance(bbox, (list, tuple)) and len(bbox) == 4:
+        try:
+            south, north, west, east = (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]))
+        except (TypeError, ValueError):
+            return False
+        return abs(north - south) > 0.3 or abs(east - west) > 0.3
+    return False
+
+
+def parse_nominatim_item(item: dict[str, Any]) -> dict[str, Any] | None:
+    try:
+        lat = float(item["lat"])
+        lon = float(item["lon"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    bbox_raw = item.get("boundingbox")
+    bbox = None
+    if isinstance(bbox_raw, (list, tuple)) and len(bbox_raw) == 4:
+        try:
+            bbox = (float(bbox_raw[0]), float(bbox_raw[1]), float(bbox_raw[2]), float(bbox_raw[3]))
+        except (TypeError, ValueError):
+            bbox = None
+    return {
+        "lat": lat,
+        "lon": lon,
+        "osm_class": str(item.get("class") or ""),
+        "place_type": str(item.get("type") or ""),
+        "boundingbox": bbox,
+        "display_name": str(item.get("display_name") or ""),
+    }
+
+
+def choose_nominatim_hit(items: list[dict[str, Any]]) -> dict[str, Any] | None:
+    parsed = [row for row in (parse_nominatim_item(item) for item in items if isinstance(item, dict)) if row]
+    if not parsed:
+        return None
+    regions = [row for row in parsed if is_nominatim_region(row)]
+    if regions:
+        def area(row: dict[str, Any]) -> float:
+            bbox = row.get("boundingbox") or (0, 0, 0, 0)
+            return abs(float(bbox[1]) - float(bbox[0])) * abs(float(bbox[3]) - float(bbox[2]))
+
+        return max(regions, key=area)
+    return parsed[0]
 
 
 def _latin_name(value: str) -> str:
@@ -128,10 +253,19 @@ def destination_titles(itinerary: list[Any], extra_names: list[str] | None = Non
     for stop in itinerary or []:
         if not isinstance(stop, dict):
             continue
-        display = str(stop.get("title_en") or stop.get("title") or "").strip()
-        if not display:
+        if is_lunch_or_rest_stop(stop):
             continue
-        if is_armavir_stop(display) or is_armavir_stop(str(stop.get("title") or "")):
+        place = stop_place_name(stop)
+        display = str(stop.get("title_en") or stop.get("title") or "").strip()
+        if is_armavir_stop(place or display) or is_armavir_stop(str(stop.get("title") or "")):
+            continue
+        if place:
+            for part in split_place_names(place):
+                name = place_from_stop_title(_latin_name(part) or part) or part
+                if name and not is_armavir_stop(name):
+                    titles.append(name)
+            continue
+        if not display:
             continue
         english = english_stop_name(stop, extra_names)
         for part in split_place_names(english or display):
@@ -204,31 +338,90 @@ def _ensure_disk_loaded() -> None:
                 _GEO_CACHE[str(key)] = (float(value[0]), float(value[1]))
             except (TypeError, ValueError):
                 continue
+        elif isinstance(value, dict) and "lat" in value and "lon" in value:
+            try:
+                row = dict(value)
+                row["lat"] = float(value["lat"])
+                row["lon"] = float(value["lon"])
+                _GEO_CACHE[str(key)] = row
+            except (TypeError, ValueError):
+                continue
         elif value is None:
             _GEO_CACHE[str(key)] = None
 
 
 def _persist_geo_cache() -> None:
     try:
-        serializable = {key: list(value) if isinstance(value, tuple) else value for key, value in _GEO_CACHE.items()}
+        serializable = {}
+        for key, value in _GEO_CACHE.items():
+            if isinstance(value, tuple):
+                serializable[key] = list(value)
+            elif isinstance(value, dict):
+                serializable[key] = value
+            else:
+                serializable[key] = value
         _DISK_CACHE_PATH.write_text(json.dumps(serializable, ensure_ascii=False), encoding="utf-8")
     except OSError:
         return
 
 
-def nominatim_coord(name: str, region: str = "") -> tuple[float, float] | None:
+def _lookup_has_meta(row: dict[str, Any] | None) -> bool:
+    if not row:
+        return False
+    return bool(row.get("osm_class") or row.get("place_type") or row.get("boundingbox"))
+
+
+def _coord_from_cache(cached: Any) -> dict[str, Any] | None:
+    if cached is None:
+        return None
+    if isinstance(cached, dict) and "lat" in cached:
+        return cached
+    if isinstance(cached, (tuple, list)) and len(cached) == 2:
+        return {
+            "lat": float(cached[0]),
+            "lon": float(cached[1]),
+            "osm_class": "",
+            "place_type": "",
+            "boundingbox": None,
+        }
+    return None
+
+
+def nominatim_lookup(name: str, region: str = "", *, require_meta: bool = False) -> dict[str, Any] | None:
     query = ", ".join(part for part in (name.strip(), region.strip(), "Armenia") if part)
     if not query:
         return None
     _ensure_disk_loaded()
+    if query in _LOOKUP_MEM:
+        mem = _LOOKUP_MEM.get(query)
+        if mem is None or not require_meta or _lookup_has_meta(mem):
+            return mem
     if query in _GEO_CACHE:
-        return _GEO_CACHE.get(query)
+        cached = _GEO_CACHE.get(query)
+        if cached is None:
+            _LOOKUP_MEM[query] = None
+            return None
+        synthetic = _coord_from_cache(cached)
+        if synthetic is not None and (not require_meta or _lookup_has_meta(synthetic)):
+            _LOOKUP_MEM[query] = synthetic
+            return synthetic
     with _NOMINATIM_LOCK:
         _ensure_disk_loaded()
+        if query in _LOOKUP_MEM:
+            mem = _LOOKUP_MEM.get(query)
+            if mem is None or not require_meta or _lookup_has_meta(mem):
+                return mem
         if query in _GEO_CACHE:
-            return _GEO_CACHE.get(query)
+            cached = _GEO_CACHE.get(query)
+            if cached is None:
+                _LOOKUP_MEM[query] = None
+                return None
+            synthetic = _coord_from_cache(cached)
+            if synthetic is not None and (not require_meta or _lookup_has_meta(synthetic)):
+                _LOOKUP_MEM[query] = synthetic
+                return synthetic
         _wait_nominatim_slot()
-        qs = urllib.parse.urlencode({"q": query, "format": "json", "limit": "1"})
+        qs = urllib.parse.urlencode({"q": query, "format": "json", "limit": "5"})
         url = NOMINATIM_URL.format(qs=qs)
         try:
             request = urllib.request.Request(url, headers={"user-agent": "ari-gnank-distance/1.0"})
@@ -236,21 +429,30 @@ def nominatim_coord(name: str, region: str = "") -> tuple[float, float] | None:
                 payload = json.loads(response.read().decode("utf-8"))
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError, OSError):
             _GEO_CACHE[query] = None
+            _LOOKUP_MEM[query] = None
             _persist_geo_cache()
             return None
-        if not isinstance(payload, list) or not payload or not isinstance(payload[0], dict):
+        rows = payload if isinstance(payload, list) else []
+        chosen = choose_nominatim_hit([item for item in rows if isinstance(item, dict)])
+        if chosen is None:
             _GEO_CACHE[query] = None
+            _LOOKUP_MEM[query] = None
             _persist_geo_cache()
             return None
-        try:
-            coord = (float(payload[0]["lat"]), float(payload[0]["lon"]))
-        except (KeyError, TypeError, ValueError):
-            _GEO_CACHE[query] = None
-            _persist_geo_cache()
-            return None
-        _GEO_CACHE[query] = coord
+        _GEO_CACHE[query] = chosen
+        _LOOKUP_MEM[query] = chosen
         _persist_geo_cache()
-        return coord
+        return chosen
+
+
+def nominatim_coord(name: str, region: str = "") -> tuple[float, float] | None:
+    lookup = nominatim_lookup(name, region)
+    if lookup is None:
+        return None
+    try:
+        return float(lookup["lat"]), float(lookup["lon"])
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 def resolve_coord(name: str, region: str = "") -> tuple[tuple[float, float] | None, str]:
@@ -258,6 +460,10 @@ def resolve_coord(name: str, region: str = "") -> tuple[tuple[float, float] | No
     if geo is not None:
         return geo, "Nominatim"
     return None, "missing"
+
+
+def armavir_distance_km(lat: float, lon: float) -> float:
+    return round(_haversine_km(ARMAVIR_COORD, (lat, lon)), 1)
 
 
 def pair_km(start: tuple[float, float], end: tuple[float, float]) -> tuple[float, bool]:
@@ -268,12 +474,10 @@ def pair_km(start: tuple[float, float], end: tuple[float, float]) -> tuple[float
 
 
 def _lookup_named_coord(title: str, coords_by_name: dict[str, tuple[float, float]]) -> tuple[float, float] | None:
-    key = _norm(title)
-    if not key:
+    if not title:
         return None
     for name, coord in coords_by_name.items():
-        other = _norm(name)
-        if other == key or other in key or key in other:
+        if names_fuzzy_match(title, name):
             return coord
     return None
 
@@ -321,17 +525,17 @@ def one_way_route_km(
         ]
         dests = [item for item in dests if item]
     if not dests:
-        notes.append("No destination stops after Armavir; route km is 0")
+        notes.append(NO_DESTINATION_STOPS_NOTE)
         return RouteKm(0.0, True, notes, km_source="", geocoded_stops=[])
     points: list[tuple[float, float]] = [ARMAVIR_COORD]
     last_ok = ARMAVIR_COORD
     used_osm = True
     stops_by_title = {}
     for stop in itinerary or []:
-        if not isinstance(stop, dict):
+        if not isinstance(stop, dict) or is_lunch_or_rest_stop(stop):
             continue
         display = str(stop.get("title_en") or stop.get("title") or "").strip()
-        name = place_from_stop_title(_latin_name(display) or display)
+        name = stop_place_name(stop) or place_from_stop_title(_latin_name(display) or display)
         if name:
             stops_by_title[name] = stop
     for title in dests:

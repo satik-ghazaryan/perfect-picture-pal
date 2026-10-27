@@ -59,4 +59,8 @@ class AdminCopyTests(unittest.TestCase):
                 "Հեռավորության համացանցային ստուգում (գնի համար չի օգտագործվում):"
             )
         )
-        self.assertEqual(format_verify_note_hy("Armenian text needs review"), "Armenian text needs review")
+        self.assertEqual(format_verify_note_hy("Armenian text needs review"), "Հայերեն տեքստը հարկավոր է վերանայել")
+        self.assertEqual(
+            format_verify_note_hy("No destination stops after Armavir; route km is 0"),
+            "Արմավիրից հետո նշանակման կանգառներ չկան. երթուղու կմ-ը 0 է",
+        )

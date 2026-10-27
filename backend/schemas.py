@@ -45,13 +45,41 @@ class GenerateIdeasRequest(BaseModel):
 
 class ItineraryStop(BaseModel):
     time: str = Field(..., min_length=1, max_length=16)
-    title: str = Field(..., min_length=1, max_length=240)
+    title: str = Field(default="", max_length=240)
     title_en: str = ""
     title_ru: str = ""
     description: str = Field(..., min_length=1, max_length=800)
     description_en: str = ""
     description_ru: str = ""
     source_url: str = ""
+    place_name: str | None = None
+    activity: str = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def fill_display_title(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        data = dict(value)
+        place = data.get("place_name")
+        place_text = str(place).strip() if place not in (None, "") else ""
+        activity = str(data.get("activity") or "").strip()
+        if place_text and activity:
+            display = f"{place_text} — {activity}"
+        elif place_text:
+            display = place_text
+        elif activity:
+            display = activity
+        else:
+            display = ""
+        if display:
+            if not str(data.get("title") or "").strip():
+                data["title"] = display
+            if not str(data.get("title_en") or "").strip():
+                data["title_en"] = display
+        if not str(data.get("title") or "").strip():
+            data["title"] = str(data.get("title_en") or data.get("title_ru") or "Stop")
+        return data
 
 
 class CostBreakdown(BaseModel):
@@ -131,6 +159,7 @@ class PlaceCandidate(BaseModel):
     lat: float | None = None
     lon: float | None = None
     coord_source: str = ""
+    distance_from_armavir_km: float | None = None
 
 
 class ResearchHit(BaseModel):

@@ -62,7 +62,10 @@ class PlaceDiscoveryTests(unittest.TestCase):
             return_value={"queries": search.discovery_queries("Gyumri"), "results": hits, "search_status": "ok"},
         ), patch("agent.place_discovery.fetch_attraction_pages", return_value=[]), patch(
             "agent.place_discovery.extract_place_candidates", return_value=[]
-        ), patch("agent.place_discovery.collect_structured_candidates", return_value=([], True)):
+        ), patch(
+            "agent.place_discovery.collect_structured_bundle",
+            return_value={"candidates": [], "ok": True, "is_region": False},
+        ):
             payload = discover_place("Գյումրի")
         self.assertEqual(payload["place_en"], "Gyumri")
         self.assertIn("Gyumri Armenia top attractions to visit", payload["queries"])
@@ -283,7 +286,9 @@ class PlaceDiscoveryTests(unittest.TestCase):
     def test_structured_sources_failure_is_caught(self) -> None:
         from agent.osm_places import PLACE_DATA_UNAVAILABLE, collect_structured_candidates
 
-        with patch("agent.osm_places.nominatim_coord", return_value=None):
+        with patch("agent.osm_places.nominatim_lookup", return_value=None), patch(
+            "agent.osm_places.nominatim_coord", return_value=None
+        ):
             rows, ok = collect_structured_candidates("Akhtala")
         self.assertEqual(rows, [])
         self.assertFalse(ok)
@@ -388,14 +393,163 @@ class PlaceDiscoveryTests(unittest.TestCase):
                 "description": "A monastery.",
             }
         ]
-        with patch("agent.osm_places.nominatim_coord", return_value=(41.15, 44.76)), patch(
-            "agent.osm_places.fetch_wikipedia_geosearch", return_value=(wiki, True)
+        with patch(
+            "agent.osm_places.nominatim_lookup",
+            return_value={
+                "lat": 41.15,
+                "lon": 44.76,
+                "osm_class": "place",
+                "place_type": "village",
+                "boundingbox": (41.14, 41.16, 44.75, 44.77),
+            },
+        ), patch("agent.osm_places.fetch_wikipedia_geosearch", return_value=(wiki, True)
         ), patch("agent.osm_places.fetch_overpass_resilient", return_value=([], False)), patch(
             "agent.osm_places.classify_visitable", side_effect=lambda rows: rows
         ):
             rows, ok = collect_structured_candidates("Akhtala")
         self.assertTrue(ok)
         self.assertEqual(rows[0]["name_en"], "Akhtala Monastery")
+
+    def test_region_bbox_sampling_and_overpass_bbox(self) -> None:
+        from agent.osm_places import collect_structured_candidates, region_sample_points
+
+        bbox = (40.70, 41.30, 44.00, 44.90)
+        points = region_sample_points(bbox)
+        self.assertEqual(len(points), 5)
+        geo_calls: list[tuple[float, float]] = []
+
+        def fake_geo(lat: float, lon: float, radius_m: int = 10_000):
+            geo_calls.append((round(lat, 4), round(lon, 4)))
+            return (
+                [
+                    {
+                        "name_en": "Haghpat Monastery",
+                        "type": "monastery",
+                        "lat": 41.09,
+                        "lon": 44.71,
+                        "description": "A monastery.",
+                        "wiki_url": "https://en.wikipedia.org/wiki/Haghpat_Monastery",
+                    }
+                ],
+                True,
+            )
+
+        wiki_search = [
+            {
+                "name_en": "Odzun Church",
+                "type": "church",
+                "lat": 41.05,
+                "lon": 44.61,
+                "description": "A church.",
+                "wiki_url": "https://en.wikipedia.org/wiki/Odzun_Church",
+            }
+        ]
+
+        with patch(
+            "agent.osm_places.nominatim_lookup",
+            return_value={
+                "lat": 41.0,
+                "lon": 44.43,
+                "osm_class": "boundary",
+                "place_type": "administrative",
+                "boundingbox": bbox,
+            },
+        ), patch("agent.osm_places.fetch_wikipedia_geosearch", side_effect=fake_geo), patch(
+            "agent.osm_places.fetch_wikipedia_text_search", return_value=(wiki_search, True)
+        ), patch(
+            "agent.osm_places.fetch_overpass_bbox",
+            return_value=(
+                [{"name_en": "Sanahin Monastery", "type": "monastery", "lat": 41.087, "lon": 44.666, "osm_url": "https://www.openstreetmap.org/way/1"}],
+                True,
+            ),
+        ), patch("agent.osm_places.fetch_overpass_resilient", side_effect=AssertionError("around must not run for regions")), patch(
+            "agent.osm_places.classify_visitable", side_effect=lambda rows: rows
+        ):
+            rows, ok = collect_structured_candidates("Lori")
+        self.assertTrue(ok)
+        self.assertEqual(len(geo_calls), 5)
+        names = {item["name_en"] for item in rows}
+        self.assertIn("Haghpat Monastery", names)
+        self.assertIn("Odzun Church", names)
+        self.assertIn("Sanahin Monastery", names)
+        self.assertLessEqual(len(rows), 20)
+
+    def test_place_activity_split_and_lunch_skipped(self) -> None:
+        itinerary = [
+            {"place_name": "Armavir", "activity": "departure", "title_en": "Armavir — departure"},
+            {
+                "place_name": "Odzun Church",
+                "activity": "arrival",
+                "title_en": "Odzun Church — arrival",
+                "lat": 41.05,
+                "lon": 44.61,
+                "coord_source": "Wikipedia",
+            },
+            {"place_name": None, "activity": "lunch", "title_en": "Lunch"},
+            {
+                "place_name": "Haghpat",
+                "activity": "cultural exploration",
+                "title_en": "Haghpat Monastery — cultural exploration",
+                "lat": 41.09,
+                "lon": 44.71,
+                "coord_source": "Wikipedia",
+            },
+            {"place_name": "Armavir", "activity": "return", "title_en": "Armavir — return"},
+        ]
+        dests = distance.destination_titles(itinerary)
+        self.assertEqual(dests, ["Odzun Church", "Haghpat"])
+        with patch.object(distance, "nominatim_coord", side_effect=AssertionError("nominatim should be skipped")), patch.object(
+            distance, "_osrm_km", return_value=80.0
+        ):
+            route = distance.one_way_route_km(
+                itinerary,
+                coords_by_name={"Odzun Church": (41.05, 44.61), "Haghpat Monastery": (41.09, 44.71)},
+            )
+        self.assertGreater(route.km, 0)
+        self.assertNotIn("Lunch", [item["name"] for item in route.geocoded_stops])
+
+    def test_schema_backward_compatible_without_place_name(self) -> None:
+        from schemas import ItineraryStop, TourIdea
+
+        old = ItineraryStop.model_validate(
+            {"time": "11:00", "title": "Haghpat Monastery — arrival", "description": "Visit the monastery."}
+        )
+        self.assertEqual(old.place_name, None)
+        self.assertEqual(old.title, "Haghpat Monastery — arrival")
+        new = ItineraryStop.model_validate(
+            {
+                "time": "11:00",
+                "place_name": "Haghpat Monastery",
+                "activity": "arrival",
+                "description": "Visit the monastery.",
+            }
+        )
+        self.assertEqual(new.title_en, "Haghpat Monastery — arrival")
+        idea = TourIdea.model_validate(
+            {
+                "id": "lori-day",
+                "title_hy": "Լոռի",
+                "title_en": "Lori",
+                "title_ru": "Лори",
+                "description_hy": "Տուր Լոռիում",
+                "description_en": "A Lori day tour.",
+                "description_ru": "Тур в Лори.",
+                "location_hy": "Լոռի",
+                "location_en": "Lori",
+                "location_ru": "Лори",
+                "duration_hours": 10,
+                "itinerary": [
+                    {"time": "08:00", "title": "Armavir — departure", "description": "Go."},
+                    {
+                        "time": "11:00",
+                        "place_name": "Haghpat Monastery",
+                        "activity": "visit",
+                        "description": "See the monastery.",
+                    },
+                ],
+            }
+        )
+        self.assertEqual(idea.itinerary[1].place_name, "Haghpat Monastery")
 
 
 if __name__ == "__main__":

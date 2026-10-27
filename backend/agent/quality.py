@@ -4,7 +4,14 @@ import re
 from difflib import SequenceMatcher
 from typing import Any
 
-from agent.distance import is_activity_stop, is_armavir_stop, place_from_stop_title
+from agent.distance import (
+    is_armavir_stop,
+    is_lunch_or_rest_stop,
+    names_fuzzy_match,
+    place_from_stop_title,
+    stop_activity,
+    stop_place_name,
+)
 from agent.place_discovery import log_discovery
 from agent.pricing import PRICE_NEEDS_DISTANCE
 
@@ -88,7 +95,10 @@ def itinerary_issues(idea: dict[str, Any]) -> list[str]:
     dests = [
         stop
         for stop in stops
-        if isinstance(stop, dict) and _text(stop.get("title")) and not _is_armavir_title(_text(stop.get("title")))
+        if isinstance(stop, dict)
+        and _text(stop.get("title") or stop.get("place_name"))
+        and not _is_armavir_title(_text(stop.get("title_en") or stop.get("title") or stop.get("place_name")))
+        and not is_lunch_or_rest_stop(stop)
     ]
     if len(stops) < 4:
         issues.append("itinerary needs at least four timed stops including departure and return")
@@ -170,6 +180,8 @@ def ensure_armavir_bookends(idea: dict[str, Any], departure: str) -> dict[str, A
             0,
             {
                 "time": "08:00",
+                "place_name": "Armavir",
+                "activity": "departure",
                 "title": "Արմավիր — մեկնում",
                 "title_en": "Armavir — departure",
                 "title_ru": "Армавир — отправление",
@@ -185,6 +197,8 @@ def ensure_armavir_bookends(idea: dict[str, Any], departure: str) -> dict[str, A
         stops.append(
             {
                 "time": f"{hour:02d}:{minute:02d}",
+                "place_name": "Armavir",
+                "activity": "return",
                 "title": "Արմավիր — վերադարձ",
                 "title_en": "Armavir — return",
                 "title_ru": "Армавир — возвращение",
@@ -238,30 +252,38 @@ NOT_ENOUGH_PLACES = "Not enough concrete places found; needs human research"
 
 
 def is_lunch_stop(title: str) -> bool:
-    text = _text(title).lower()
-    if "lunch" in text or "meal" in text:
+    return is_lunch_or_rest_stop(title)
+
+
+def is_generic_place_name(place: str, original: str = "") -> bool:
+    text = _text(place)
+    if not text:
         return True
-    return is_activity_stop(title) and not is_armavir_stop(title)
+    if is_armavir_stop(text) or is_lunch_stop(text):
+        return False
+    blob = f"{original} {text}".strip()
+    lowered_text = blob.lower()
+    if any(phrase in lowered_text for phrase in GENERIC_STOP_PHRASES):
+        return True
+    place_tokens = [token.lower() for token in re.findall(r"[A-Za-z\u0531-\u0587]+", text)]
+    original_tokens = [token.lower() for token in re.findall(r"[A-Za-z\u0531-\u0587]+", original or text)]
+    leftover = [
+        word
+        for word in place_tokens
+        if word not in GENERIC_STOP_WORDS and word not in {"in", "the", "and", "of", "to", "a", "an", "at", "on"}
+    ]
+    had_generic = any(word in GENERIC_STOP_WORDS for word in original_tokens)
+    if had_generic and len(leftover) <= 1:
+        return True
+    if any(word in GENERIC_STOP_WORDS for word in place_tokens) and len(leftover) <= 1:
+        return True
+    return False
 
 
 def is_generic_stop_title(title: str) -> bool:
     if is_armavir_stop(title) or is_lunch_stop(title):
         return False
-    text = _text(title).lower()
-    if any(phrase in text for phrase in GENERIC_STOP_PHRASES):
-        return True
-    tokens = re.findall(r"[A-Za-z\u0531-\u0587]+", text)
-    lowered = [token.lower() for token in tokens]
-    if any(word in GENERIC_STOP_WORDS for word in lowered):
-        leftover = [
-            word
-            for word in lowered
-            if word not in GENERIC_STOP_WORDS and word not in {"in", "the", "and", "of", "to", "a", "an", "at", "on"}
-        ]
-        if len(leftover) <= 1:
-            return True
-    place = place_from_stop_title(title)
-    return not place
+    return is_generic_place_name(place_from_stop_title(title), title)
 
 
 def _candidate_rows(research: dict[str, Any]) -> list[dict[str, Any]]:
@@ -269,19 +291,20 @@ def _candidate_rows(research: dict[str, Any]) -> list[dict[str, Any]]:
     return [item for item in rows if isinstance(item, dict) and _text(item.get("name_en"))]
 
 
-def match_place_candidate(title: str, research: dict[str, Any]) -> dict[str, Any] | None:
-    hay = " ".join([_text(title), place_from_stop_title(title)]).lower()
+def match_place_candidate(title: str | dict[str, Any], research: dict[str, Any]) -> dict[str, Any] | None:
+    if isinstance(title, dict):
+        hay = stop_place_name(title)
+    else:
+        hay = place_from_stop_title(title) or _text(title)
     best: dict[str, Any] | None = None
     best_len = 0
     for row in _candidate_rows(research):
         name = _text(row.get("name_en"))
-        key = name.lower()
-        if len(key) < 3:
+        if not names_fuzzy_match(hay, name):
             continue
-        if key in hay or hay in key:
-            if len(key) > best_len:
-                best = row
-                best_len = len(key)
+        if len(name) > best_len:
+            best = row
+            best_len = len(name)
     return best
 
 
@@ -304,12 +327,18 @@ def classify_itinerary_stops(idea: dict[str, Any], research: dict[str, Any]) -> 
         if not isinstance(stop, dict):
             continue
         title = _text(stop.get("title_en") or stop.get("title"))
-        if not title or _is_armavir_title(title) or is_lunch_stop(title):
+        place = stop_place_name(stop)
+        if is_lunch_or_rest_stop(stop) or _is_armavir_title(place or title):
             continue
-        matched = match_place_candidate(title, research)
+        if not place and not title:
+            continue
+        matched = match_place_candidate(stop, research)
         if matched:
             geo_stop = dict(stop)
-            geo_stop["title_en"] = _text(matched.get("name_en"))
+            matched_name = _text(matched.get("name_en"))
+            geo_stop["place_name"] = matched_name
+            activity = stop_activity(stop)
+            geo_stop["title_en"] = f"{matched_name} — {activity}" if activity else matched_name
             geo_stop["source_url"] = _text(matched.get("source_url") or geo_stop.get("source_url"))
             if matched.get("lat") is not None and matched.get("lon") is not None:
                 geo_stop["lat"] = matched.get("lat")
@@ -317,8 +346,8 @@ def classify_itinerary_stops(idea: dict[str, Any], research: dict[str, Any]) -> 
                 geo_stop["coord_source"] = _text(matched.get("coord_source") or "OSM")
             accepted.append(geo_stop)
             continue
-        generic = is_generic_stop_title(title)
-        allowed = (not candidates) and (not generic) and _search_mentions_stop(title, research)
+        generic = is_generic_place_name(place or place_from_stop_title(title), title)
+        allowed = (not candidates) and (not generic) and _search_mentions_stop(place or title, research)
         if allowed:
             accepted.append(dict(stop))
             continue
@@ -366,8 +395,10 @@ def ground_idea(idea: dict[str, Any], research: dict[str, Any]) -> dict[str, Any
     for stop in idea.get("itinerary") or []:
         if not isinstance(stop, dict):
             continue
-        title = _text(stop.get("title"))
-        if not title or _is_armavir_title(title):
+        if is_lunch_or_rest_stop(stop) or _is_armavir_title(_text(stop.get("title_en") or stop.get("title") or stop.get("place_name"))):
+            continue
+        title = stop_place_name(stop) or _text(stop.get("title"))
+        if not title:
             continue
         tokens = [token for token in re.split(r"[\s,;:/|—.()\-]+", title) if len(token) > 3]
         if tokens and not any(token.lower() in corpus for token in tokens):
@@ -513,7 +544,7 @@ def flag_thin_itinerary(idea: dict[str, Any], research: dict[str, Any] | None = 
     research = research or {}
     corpus = _search_corpus(research)
     for stop in idea.get("itinerary") or []:
-        if not isinstance(stop, dict) or _is_armavir_title(_text(stop.get("title"))):
+        if not isinstance(stop, dict) or _is_armavir_title(_text(stop.get("title"))) or is_lunch_or_rest_stop(stop):
             continue
         reason = _text(stop.get("description") or stop.get("why"))
         if not reason:
@@ -521,7 +552,7 @@ def flag_thin_itinerary(idea: dict[str, Any], research: dict[str, Any] | None = 
             if flag not in verify:
                 verify.append(flag)
         source = _text(stop.get("source_url"))
-        title = _text(stop.get("title_en") or stop.get("title"))
+        title = stop_place_name(stop) or _text(stop.get("title_en") or stop.get("title"))
         tokens = [token for token in re.split(r"[\s,;:/|—.()\-]+", title) if len(token) > 3]
         if tokens and corpus and not any(token.lower() in corpus for token in tokens):
             flag = f"Place not in search results: {title}"
