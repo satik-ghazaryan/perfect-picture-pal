@@ -275,6 +275,66 @@ class QualityFixTests(unittest.TestCase):
             km, _sourced, _notes = one_way_route_km(classified["accepted"], extra_names=[], region="Lori")
         self.assertGreater(km, 0)
 
+    def test_old_style_visit_titles_match_candidates_even_if_place_name_null(self) -> None:
+        idea = {
+            "id": "lori-day",
+            "title_hy": "Լոռի",
+            "title_en": "Lori",
+            "title_ru": "Лори",
+            "description_hy": "Մեկօրյա տուր հայեցակարգ լսարան արժեք տարբերակում սեզոն ռիսկեր։",
+            "description_en": "Lori day tour.",
+            "description_ru": "Тур в Лори.",
+            "location_hy": "Լոռի",
+            "location_en": "Lori",
+            "location_ru": "Лори",
+            "duration_hours": 10,
+            "itinerary": [
+                {"time": "08:00", "title": "Armavir — departure", "title_en": "Armavir — departure", "description": "Go."},
+                {
+                    "time": "11:00",
+                    "title": "Haghpat Monastery — visit",
+                    "title_en": "Haghpat Monastery — visit",
+                    "place_name": None,
+                    "activity": "visit",
+                    "description": "See the monastery.",
+                },
+                {
+                    "time": "13:30",
+                    "title": "Bardzrakash Monastery — visit",
+                    "title_en": "Bardzrakash Monastery — visit",
+                    "description": "See the monastery.",
+                },
+                {"time": "18:00", "title": "Return to Armavir", "title_en": "Return to Armavir", "description": "Back."},
+            ],
+            "verify": [],
+        }
+        research = {
+            "place_en": "Lori",
+            "place_candidates": [
+                {"name_en": "Haghpat Monastery", "type": "monastery", "lat": 41.09, "lon": 44.71, "source_url": "https://example.com/h"},
+                {"name_en": "Bardzrakash Monastery", "type": "monastery", "lat": 40.99, "lon": 44.75, "source_url": "https://example.com/b"},
+            ],
+            "results": [{"title": "Haghpat Monastery", "snippet": "Lori monastery", "url": "https://example.com/h"}],
+        }
+        self.assertFalse(is_generic_stop_title("Haghpat Monastery — visit"))
+        classified = classify_itinerary_stops(idea, research)
+        self.assertEqual(
+            [stop["place_name"] for stop in classified["accepted"]],
+            ["Haghpat Monastery", "Bardzrakash Monastery"],
+        )
+        self.assertEqual(classified["dropped"], [])
+        self.assertFalse(any(item.startswith(GENERIC_STOP_NOTE) for item in idea["verify"]))
+        self.assertNotIn(NOT_ENOUGH_PLACES, idea["verify"])
+        with patch("agent.distance._osrm_km", return_value=95.0):
+            km, sourced, _notes = one_way_route_km(
+                classified["accepted"],
+                extra_names=[],
+                region="Lori",
+                coords_by_name={"Haghpat Monastery": (41.09, 44.71), "Bardzrakash Monastery": (40.99, 44.75)},
+            )
+        self.assertGreater(km, 0)
+        self.assertTrue(sourced)
+
     def test_generic_stops_are_detected_and_skipped_for_geocode(self) -> None:
         self.assertTrue(is_generic_stop_title("Arrive in Lori"))
         self.assertTrue(is_generic_stop_title("Cultural Sites"))

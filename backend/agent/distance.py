@@ -99,16 +99,26 @@ def is_activity_stop(title: str) -> bool:
     return not place_from_stop_title(title)
 
 
+def _activity_only_name(name: str) -> bool:
+    tokens = [token.lower().strip(".,;!") for token in str(name or "").split() if token.strip(".,;!")]
+    if not tokens:
+        return True
+    return all(token in ACTIVITY_WORDS for token in tokens)
+
+
 def stop_place_name(stop: dict[str, Any] | None) -> str:
+    display = ""
+    if isinstance(stop, dict):
+        display = str(stop.get("title_en") or stop.get("title") or "").strip()
+    derived = place_from_stop_title(display)
     if not isinstance(stop, dict):
-        return ""
-    if "place_name" in stop:
-        raw = stop.get("place_name")
-        if raw is None:
-            return ""
-        return str(raw).strip()
-    display = str(stop.get("title_en") or stop.get("title") or "").strip()
-    return place_from_stop_title(display)
+        return derived
+    if "place_name" not in stop:
+        return derived
+    raw = stop.get("place_name")
+    if raw is None or not str(raw).strip() or _activity_only_name(str(raw)):
+        return derived
+    return str(raw).strip()
 
 
 def stop_activity(stop: dict[str, Any] | None) -> str:
@@ -135,16 +145,15 @@ def is_lunch_or_rest_stop(stop: dict[str, Any] | str | None) -> bool:
         return is_activity_stop(stop)
     if not isinstance(stop, dict):
         return False
-    if "place_name" in stop:
-        raw = stop.get("place_name")
-        if raw is None or not str(raw).strip():
-            return True
-        return False
     title = str(stop.get("title_en") or stop.get("title") or "")
-    if is_armavir_stop(title):
+    if is_armavir_stop(title) or is_armavir_stop(stop_place_name(stop)):
         return False
-    lowered = title.lower()
-    if any(hint in lowered for hint in LUNCH_HINTS):
+    place = stop_place_name(stop)
+    if place:
+        return False
+    activity = stop_activity(stop).lower()
+    blob = f"{activity} {title}".lower()
+    if any(hint in blob for hint in LUNCH_HINTS):
         return True
     return is_activity_stop(title)
 

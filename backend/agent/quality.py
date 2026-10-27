@@ -292,19 +292,27 @@ def _candidate_rows(research: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def match_place_candidate(title: str | dict[str, Any], research: dict[str, Any]) -> dict[str, Any] | None:
+    haystacks: list[str] = []
     if isinstance(title, dict):
-        hay = stop_place_name(title)
+        haystacks.append(stop_place_name(title))
+        display = _text(title.get("title_en") or title.get("title"))
+        haystacks.append(place_from_stop_title(display))
+        haystacks.append(display)
     else:
-        hay = place_from_stop_title(title) or _text(title)
+        haystacks.append(place_from_stop_title(title) or _text(title))
+        haystacks.append(_text(title))
     best: dict[str, Any] | None = None
     best_len = 0
-    for row in _candidate_rows(research):
-        name = _text(row.get("name_en"))
-        if not names_fuzzy_match(hay, name):
+    for hay in haystacks:
+        if not hay:
             continue
-        if len(name) > best_len:
-            best = row
-            best_len = len(name)
+        for row in _candidate_rows(research):
+            name = _text(row.get("name_en"))
+            if not names_fuzzy_match(hay, name):
+                continue
+            if len(name) > best_len:
+                best = row
+                best_len = len(name)
     return best
 
 
