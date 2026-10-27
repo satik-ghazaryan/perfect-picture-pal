@@ -31,6 +31,7 @@ const VERIFY_NOTE_HY_EXACT: Record<string, string> = {
   "No competitor data was found": "Մրցակցային տվյալներ չեն գտնվել",
   "Not enough concrete places found; needs human research":
     "Բավարար կոնկրետ վայրեր չեն գտնվել. հարկավոր է ձեռքով ստուգում",
+  "Place data sources unavailable": "Վայրերի տվյալների աղբյուրները անհասանելի են",
 };
 const VERIFY_NOTE_HY_PREFIXES: Array<[string, string]> = [
   ["Place not in search results:", "Վայրը որոնման արդյունքներում չկա:"],
@@ -249,6 +250,12 @@ export function normalizeResearch(value: unknown): TourIdeaResearch {
           name_en: name,
           type: String(row["type"] ?? ""),
           source_url: asHttpUrl(row["source_url"]),
+          osm_url: asHttpUrl(row["osm_url"]),
+          wiki_url: asHttpUrl(row["wiki_url"]),
+          description: String(row["description"] ?? ""),
+          lat: typeof row["lat"] === "number" ? row["lat"] : Number(row["lat"]) || null,
+          lon: typeof row["lon"] === "number" ? row["lon"] : Number(row["lon"]) || null,
+          coord_source: String(row["coord_source"] ?? ""),
         }];
       })
       : [],

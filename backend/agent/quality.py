@@ -311,6 +311,10 @@ def classify_itinerary_stops(idea: dict[str, Any], research: dict[str, Any]) -> 
             geo_stop = dict(stop)
             geo_stop["title_en"] = _text(matched.get("name_en"))
             geo_stop["source_url"] = _text(matched.get("source_url") or geo_stop.get("source_url"))
+            if matched.get("lat") is not None and matched.get("lon") is not None:
+                geo_stop["lat"] = matched.get("lat")
+                geo_stop["lon"] = matched.get("lon")
+                geo_stop["coord_source"] = _text(matched.get("coord_source") or "OSM")
             accepted.append(geo_stop)
             continue
         generic = is_generic_stop_title(title)
@@ -341,11 +345,17 @@ def ground_idea(idea: dict[str, Any], research: dict[str, Any]) -> dict[str, Any
     live = bool(research.get("live"))
     corpus = _search_corpus(research)
     useful = int(research.get("useful_result_count") or len(research.get("results") or []))
+    candidates = _candidate_rows(research)
+    note = str(research.get("place_data_note") or "").strip()
+    if research.get("place_data_unavailable") or note:
+        flag = note or "Place data sources unavailable"
+        if flag not in verify:
+            verify.append(flag)
     if useful < 2:
         flag = "Fewer than 2 useful search results after filtering"
         if flag not in verify:
             verify.append(flag)
-    if not live or not corpus.strip() or useful < 2:
+    if (not live or not corpus.strip() or useful < 2) and len(candidates) < 2:
         flag = "No live web results; places and prices need human research"
         if flag not in verify:
             verify.append(flag)

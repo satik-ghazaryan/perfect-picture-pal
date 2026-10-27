@@ -22,6 +22,7 @@ VERIFY_NOTE_HY_EXACT = {
     "Not enough concrete places found; needs human research": (
         "Բավարար կոնկրետ վայրեր չեն գտնվել. հարկավոր է ձեռքով ստուգում"
     ),
+    "Place data sources unavailable": "Վայրերի տվյալների աղբյուրները անհասանելի են",
 }
 VERIFY_NOTE_HY_PREFIXES = (
     ("Place not in search results:", "Վայրը որոնման արդյունքներում չկա:"),

@@ -1902,17 +1902,28 @@ function IdeasSection({
               <p className="text-xs font-semibold text-foreground">Կոնկրետ վայրեր</p>
               <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
                 {research.place_candidates.map((place) => {
-                  const href = safeHttpUrl(place.source_url || "");
+                  const osm = safeHttpUrl(place.osm_url || "");
+                  const wiki = safeHttpUrl(place.wiki_url || place.source_url || "");
                   return (
-                    <li key={`${place.name_en}-${place.source_url || ""}`}>
-                      {href ? (
-                        <a href={href} target="_blank" rel="noopener noreferrer" className="underline">
-                          {place.name_en}
-                        </a>
-                      ) : (
-                        <span>{place.name_en}</span>
-                      )}
+                    <li key={`${place.name_en}-${place.osm_url || place.source_url || ""}`}>
+                      <span>{place.name_en}</span>
                       {place.type ? ` · ${place.type}` : ""}
+                      {osm ? (
+                        <>
+                          {" · "}
+                          <a href={osm} target="_blank" rel="noopener noreferrer" className="underline">
+                            OSM
+                          </a>
+                        </>
+                      ) : null}
+                      {wiki ? (
+                        <>
+                          {" · "}
+                          <a href={wiki} target="_blank" rel="noopener noreferrer" className="underline">
+                            Wikipedia
+                          </a>
+                        </>
+                      ) : null}
                     </li>
                   );
                 })}
@@ -1969,7 +1980,7 @@ function IdeasSection({
             </p>
             {idea.route_km ? (
               <p className="mt-1 text-xs text-muted-foreground">
-                Երթուղի {idea.route_km} կմ (մեկ ուղղությամբ) · աղբյուր {idea.km_source === "OSRM" ? "OSRM" : "estimate"} · {formatAmd(idea.breakdown?.transport_amd ?? 0)} տրանսպորտ
+                Երթուղի {idea.route_km} կմ (մեկ ուղղությամբ) · աղբյուր {idea.km_source || "estimate"} · {formatAmd(idea.breakdown?.transport_amd ?? 0)} տրանսպորտ
               </p>
             ) : null}
             {idea.geocoded_stops && idea.geocoded_stops.length > 0 ? (

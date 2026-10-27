@@ -223,6 +223,8 @@ def search_node(state: State) -> dict[str, Any]:
         item for item in (discovery.get("place_candidates") or []) if isinstance(item, dict)
     ]
     payload["pages_fetched"] = int(discovery.get("pages_fetched") or 0)
+    payload["place_data_unavailable"] = bool(discovery.get("place_data_unavailable"))
+    payload["place_data_note"] = str(discovery.get("place_data_note") or "")
     payload["queries"] = list(dict.fromkeys(list(discovery.get("queries") or []) + list(payload.get("queries") or [])))
     return {"market_research": json.dumps(payload, ensure_ascii=False)}
 
@@ -526,10 +528,23 @@ def refinement_node(state: State) -> dict[str, Any]:
         candidate = ground_idea(candidate, research)
         region = str(research.get("region_en") or research.get("place_en") or "")
         geo_stops = classified["accepted"]
+        coords_by_name: dict[str, tuple[float, float]] = {}
+        for row in research.get("place_candidates") or []:
+            if not isinstance(row, dict):
+                continue
+            name = str(row.get("name_en") or "").strip()
+            try:
+                lat = float(row.get("lat"))
+                lon = float(row.get("lon"))
+            except (TypeError, ValueError):
+                continue
+            if name and (lat != 0.0 or lon != 0.0):
+                coords_by_name[name] = (lat, lon)
         route = one_way_route_km(
             geo_stops,
             extra_names=[],
             region=region,
+            coords_by_name=coords_by_name,
         )
         km_notes = list(route.notes)
         place_en = str(research.get("place_en") or candidate.get("location_en") or "").strip()

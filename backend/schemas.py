@@ -125,6 +125,12 @@ class PlaceCandidate(BaseModel):
     name_en: str = ""
     type: str = ""
     source_url: str = ""
+    osm_url: str = ""
+    wiki_url: str = ""
+    description: str = ""
+    lat: float | None = None
+    lon: float | None = None
+    coord_source: str = ""
 
 
 class ResearchHit(BaseModel):
@@ -166,6 +172,8 @@ class ResearchBundle(BaseModel):
     region_en: str | None = None
     place_candidates: list[PlaceCandidate] = Field(default_factory=list)
     pages_fetched: int = 0
+    place_data_unavailable: bool = False
+    place_data_note: str = ""
 
 
 class IdeaMarket(BaseModel):

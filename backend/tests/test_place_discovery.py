@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from agent import distance, search
@@ -61,7 +62,7 @@ class PlaceDiscoveryTests(unittest.TestCase):
             return_value={"queries": search.discovery_queries("Gyumri"), "results": hits, "search_status": "ok"},
         ), patch("agent.place_discovery.fetch_attraction_pages", return_value=[]), patch(
             "agent.place_discovery.extract_place_candidates", return_value=[]
-        ):
+        ), patch("agent.place_discovery.collect_structured_candidates", return_value=([], True)):
             payload = discover_place("Գյումրի")
         self.assertEqual(payload["place_en"], "Gyumri")
         self.assertIn("Gyumri Armenia top attractions to visit", payload["queries"])
@@ -244,6 +245,157 @@ class PlaceDiscoveryTests(unittest.TestCase):
         self.assertTrue(note.startswith("Web distance cross-check"))
         self.assertIn("140 km", note)
         self.assertLessEqual(len(note), 120)
+
+    def test_overpass_parse_dedupe_and_cap(self) -> None:
+        from agent.osm_places import CANDIDATE_CAP, merge_candidates, parse_overpass_elements
+
+        sample = json.loads((Path(__file__).parent / "data" / "overpass_sample.json").read_text(encoding="utf-8"))
+        parsed = parse_overpass_elements(sample)
+        names = [item["name_en"] for item in parsed]
+        self.assertEqual(names, ["Akhtala Monastery", "Akhtala Fortress", "Holy Mother of God Church"])
+        self.assertTrue(parsed[0]["osm_url"].endswith("/way/109234567"))
+        self.assertEqual(parsed[0]["type"], "monastery")
+        extras = [{"name_en": f"Place {index}", "lat": 40.0, "lon": 44.0} for index in range(20)]
+        self.assertEqual(len(merge_candidates(parsed, extras)), CANDIDATE_CAP)
+
+    def test_osrm_from_osm_coordinates_skips_nominatim(self) -> None:
+        with patch.object(distance, "nominatim_coord", side_effect=AssertionError("nominatim should be skipped")), patch.object(
+            distance, "_osrm_km", return_value=201.6
+        ):
+            route = distance.one_way_route_km(
+                [
+                    {
+                        "title": "Akhtala Monastery",
+                        "title_en": "Akhtala Monastery",
+                        "lat": 41.1502,
+                        "lon": 44.7581,
+                        "coord_source": "OSM",
+                    }
+                ],
+                extra_names=[],
+                coords_by_name={"Akhtala Monastery": (41.1502, 44.7581)},
+            )
+        self.assertEqual(route.km, 201.6)
+        self.assertTrue(route.sourced)
+        self.assertEqual(route.km_source, "OSRM from OSM coordinates")
+        self.assertEqual(route.geocoded_stops[0]["coord_source"], "OSM")
+
+    def test_structured_sources_failure_is_caught(self) -> None:
+        from agent.osm_places import PLACE_DATA_UNAVAILABLE, collect_structured_candidates
+
+        with patch("agent.osm_places.nominatim_coord", return_value=None):
+            rows, ok = collect_structured_candidates("Akhtala")
+        self.assertEqual(rows, [])
+        self.assertFalse(ok)
+        self.assertEqual(PLACE_DATA_UNAVAILABLE, "Place data sources unavailable")
+
+    def test_wikipedia_geosearch_parse_and_heuristic_filter(self) -> None:
+        from agent.osm_places import filter_visitable_heuristic, parse_wikipedia_geosearch
+
+        data = Path(__file__).parent / "data"
+        geo = json.loads((data / "wikipedia_geosearch.json").read_text(encoding="utf-8"))
+        extracts = json.loads((data / "wikipedia_extracts.json").read_text(encoding="utf-8"))
+        parsed = parse_wikipedia_geosearch(geo, extracts)
+        names = [item["name_en"] for item in parsed]
+        self.assertIn("Black Fortress", names)
+        self.assertIn("Cathedral of the Holy Mother of God, Gyumri", names)
+        self.assertNotIn("List of people from Gyumri", names)
+        self.assertNotIn("Gyumri (disambiguation)", names)
+        kept = filter_visitable_heuristic(parsed)
+        kept_names = [item["name_en"] for item in kept]
+        self.assertIn("Black Fortress", kept_names)
+        self.assertNotIn("Akhuryan River", kept_names)
+
+    def test_merge_prefers_wikipedia_url(self) -> None:
+        from agent.osm_places import merge_candidates
+
+        osm = [
+            {
+                "name_en": "Black Fortress",
+                "type": "fort",
+                "source_url": "https://www.openstreetmap.org/way/1",
+                "osm_url": "https://www.openstreetmap.org/way/1",
+                "wiki_url": "",
+            }
+        ]
+        wiki = [
+            {
+                "name_en": "Black Fortress",
+                "type": "fortress",
+                "source_url": "https://en.wikipedia.org/wiki/Black_Fortress",
+                "wiki_url": "https://en.wikipedia.org/wiki/Black_Fortress",
+                "osm_url": "",
+            }
+        ]
+        merged = merge_candidates(osm, wiki)
+        self.assertEqual(len(merged), 1)
+        self.assertIn("wikipedia.org", merged[0]["source_url"])
+        self.assertTrue(merged[0]["osm_url"].startswith("https://www.openstreetmap.org/"))
+
+    def test_overpass_endpoint_fallback(self) -> None:
+        from agent.osm_places import fetch_overpass
+
+        sample = json.loads((Path(__file__).parent / "data" / "overpass_sample.json").read_text(encoding="utf-8"))
+        calls: list[str] = []
+
+        def fake_post(endpoint: str, query: str, timeout: float):
+            calls.append(endpoint)
+            if "overpass-api.de" in endpoint or "kumi.systems" in endpoint:
+                raise TimeoutError("busy")
+            if "private.coffee" in endpoint:
+                from agent.osm_places import parse_overpass_elements
+
+                return parse_overpass_elements(sample)
+            raise AssertionError(f"unexpected {endpoint}")
+
+        with patch("agent.osm_places._overpass_post", side_effect=fake_post), patch("agent.osm_places.time.sleep", return_value=None):
+            rows, ok = fetch_overpass(41.15, 44.76, 10_000, budget_sec=25)
+        self.assertTrue(ok)
+        self.assertTrue(any(item["name_en"] == "Akhtala Monastery" for item in rows))
+        self.assertTrue(any("overpass-api.de" in item for item in calls))
+        self.assertTrue(any("private.coffee" in item for item in calls))
+
+    def test_llm_classify_never_adds_names(self) -> None:
+        from agent.osm_places import parse_visitable_llm_json
+
+        rows = [
+            {"name_en": "Black Fortress", "description": "A fortress in Gyumri."},
+            {"name_en": "Cathedral of the Holy Mother of God, Gyumri", "description": "A church."},
+        ]
+        parsed = parse_visitable_llm_json(
+            {
+                "items": [
+                    {"title": "Black Fortress", "visitable": True, "type": "fortress"},
+                    {"title": "Invented Gorge", "visitable": True, "type": "park"},
+                    {"title": "Cathedral of the Holy Mother of God, Gyumri", "visitable": False, "type": "church"},
+                ]
+            },
+            rows,
+        )
+        self.assertEqual([item["name_en"] for item in parsed], ["Black Fortress"])
+
+    def test_wiki_success_overpass_fail_still_ok(self) -> None:
+        from agent.osm_places import collect_structured_candidates
+
+        wiki = [
+            {
+                "name_en": "Akhtala Monastery",
+                "type": "monastery",
+                "lat": 41.15,
+                "lon": 44.76,
+                "source_url": "https://en.wikipedia.org/wiki/Akhtala_Monastery",
+                "wiki_url": "https://en.wikipedia.org/wiki/Akhtala_Monastery",
+                "description": "A monastery.",
+            }
+        ]
+        with patch("agent.osm_places.nominatim_coord", return_value=(41.15, 44.76)), patch(
+            "agent.osm_places.fetch_wikipedia_geosearch", return_value=(wiki, True)
+        ), patch("agent.osm_places.fetch_overpass_resilient", return_value=([], False)), patch(
+            "agent.osm_places.classify_visitable", side_effect=lambda rows: rows
+        ):
+            rows, ok = collect_structured_candidates("Akhtala")
+        self.assertTrue(ok)
+        self.assertEqual(rows[0]["name_en"], "Akhtala Monastery")
 
 
 if __name__ == "__main__":

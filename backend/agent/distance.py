@@ -267,14 +267,47 @@ def pair_km(start: tuple[float, float], end: tuple[float, float]) -> tuple[float
     return _haversine_km(start, end) * HAVERSINE_FACTOR, False
 
 
+def _lookup_named_coord(title: str, coords_by_name: dict[str, tuple[float, float]]) -> tuple[float, float] | None:
+    key = _norm(title)
+    if not key:
+        return None
+    for name, coord in coords_by_name.items():
+        other = _norm(name)
+        if other == key or other in key or key in other:
+            return coord
+    return None
+
+
+def _stop_coord(
+    title: str,
+    stop: dict[str, Any] | None,
+    region: str,
+    coords_by_name: dict[str, tuple[float, float]],
+) -> tuple[tuple[float, float] | None, str]:
+    if isinstance(stop, dict):
+        try:
+            lat = float(stop.get("lat"))
+            lon = float(stop.get("lon"))
+            if lat != 0.0 or lon != 0.0:
+                return (lat, lon), str(stop.get("coord_source") or "OSM")
+        except (TypeError, ValueError):
+            pass
+    known = _lookup_named_coord(title, coords_by_name)
+    if known is not None:
+        return known, "OSM"
+    return resolve_coord(title, region)
+
+
 def one_way_route_km(
     itinerary: list[Any],
     extra_names: list[str] | None = None,
     region: str = "",
+    coords_by_name: dict[str, tuple[float, float]] | None = None,
 ) -> RouteKm:
     """Armavir -> each non-Armavir stop in order. No return leg. Never treats a failed geocode as 0 km of travel."""
     notes: list[str] = []
     geocoded_stops: list[dict[str, Any]] = []
+    lookup = {str(key): value for key, value in (coords_by_name or {}).items() if value}
     dests = destination_titles(itinerary, extra_names)
     if not dests:
         for extra in extra_names or []:
@@ -292,11 +325,23 @@ def one_way_route_km(
         return RouteKm(0.0, True, notes, km_source="", geocoded_stops=[])
     points: list[tuple[float, float]] = [ARMAVIR_COORD]
     last_ok = ARMAVIR_COORD
+    used_osm = True
+    stops_by_title = {}
+    for stop in itinerary or []:
+        if not isinstance(stop, dict):
+            continue
+        display = str(stop.get("title_en") or stop.get("title") or "").strip()
+        name = place_from_stop_title(_latin_name(display) or display)
+        if name:
+            stops_by_title[name] = stop
     for title in dests:
-        coord, how = resolve_coord(title, region)
+        coord, how = _stop_coord(title, stops_by_title.get(title), region, lookup)
         if coord is None:
             notes.append(f"Could not geocode stop: {title}; stop skipped")
+            used_osm = False
             continue
+        if how not in {"OSM", "OSM/Wikipedia"}:
+            used_osm = False
         geocoded_stops.append(
             {
                 "name": title,
@@ -341,7 +386,12 @@ def one_way_route_km(
         km, ok = pair_km(points[index], points[index + 1])
         total += km
         osrm_ok = osrm_ok and ok
-    km_source = "OSRM" if osrm_ok else "estimate"
+    if osrm_ok and used_osm:
+        km_source = "OSRM from OSM coordinates"
+    elif osrm_ok:
+        km_source = "OSRM"
+    else:
+        km_source = "estimate"
     if not osrm_ok and ROUTE_KM_ESTIMATE_NOTE not in notes:
         notes.append(ROUTE_KM_ESTIMATE_NOTE)
     return RouteKm(round(total, 1), osrm_ok, notes, km_source=km_source, geocoded_stops=geocoded_stops)

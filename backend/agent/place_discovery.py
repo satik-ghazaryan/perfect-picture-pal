@@ -10,6 +10,7 @@ from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
+from agent.osm_places import PLACE_DATA_UNAVAILABLE, collect_structured_candidates, merge_candidates
 from agent.search import discovery_queries, run_place_attraction_search
 
 LOGGER = logging.getLogger("ari.gnank.place_discovery")
@@ -360,6 +361,8 @@ def discover_place(preferences: str) -> dict[str, Any]:
         "results": [],
         "place_candidates": [],
         "pages_fetched": 0,
+        "place_data_unavailable": False,
+        "place_data_note": "",
         "skipped": "no_preferences",
     }
     if not prefs:
@@ -380,8 +383,10 @@ def discover_place(preferences: str) -> dict[str, Any]:
         }
     search_payload = run_place_attraction_search(place_en)
     results = [row for row in (search_payload.get("results") or []) if isinstance(row, dict)]
+    structured, sources_ok = collect_structured_candidates(str(place_en), str(region_en or ""))
     pages = fetch_attraction_pages(results, place_en)
-    candidates = extract_place_candidates(place_en, pages)
+    page_candidates = extract_place_candidates(place_en, pages)
+    candidates = merge_candidates(structured, page_candidates)
     log_discovery(str(place_en), len(pages), len(candidates))
     return {
         "place_en": place_en,
@@ -391,5 +396,7 @@ def discover_place(preferences: str) -> dict[str, Any]:
         "search_status": search_payload.get("search_status") or "",
         "place_candidates": candidates,
         "pages_fetched": len(pages),
+        "place_data_unavailable": (not sources_ok) and not candidates,
+        "place_data_note": "" if sources_ok or candidates else PLACE_DATA_UNAVAILABLE,
         "skipped": "",
     }

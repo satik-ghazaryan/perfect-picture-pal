@@ -150,6 +150,12 @@ export type TourIdeaPlaceCandidate = {
   name_en: string;
   type?: string;
   source_url?: string;
+  osm_url?: string;
+  wiki_url?: string;
+  description?: string;
+  lat?: number | null;
+  lon?: number | null;
+  coord_source?: string;
 };
 
 export type TourIdeaResearch = {
