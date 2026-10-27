@@ -63,6 +63,17 @@ ARMENIA_MARKERS = {
     "garni",
     "geghard",
     "tatev",
+    "haghpat",
+    "sanahin",
+    "goris",
+    "khor virap",
+    "khorvirap",
+    "gyumri",
+    "ejmiatsin",
+    "echmiadzin",
+    "noravank",
+    "jermuk",
+    "debed",
     "tavush",
     "syunik",
     "gegharkunik",
@@ -75,6 +86,7 @@ FOREIGN_MARKERS = (
     "dallas",
     "fort worth",
     "fortworth",
+    "dfw",
     "florida",
     "india",
     "california",
@@ -94,7 +106,11 @@ FOREIGN_MARKERS = (
     "scotland",
     "switzerland",
     "norway",
+    "united kingdom",
+    "great britain",
+    "north texas",
 )
+ARMENIA_QUERY_TOKENS = ("armenia", "armenian", "lori", "yerevan", "armavir", "հայաստան", "երևան", "արմավիր", "լոռի")
 SEARCH_CALL_TIMEOUT_SEC = 18
 REASON_CODES = (
     "tavily_no_key",
@@ -185,9 +201,20 @@ def _tavily_one(query: str, max_results: int) -> list[dict[str, str]]:
             max_results=max_results,
             search_depth="basic",
             timeout=SEARCH_CALL_TIMEOUT_SEC,
+            country="armenia",
+            include_raw_content=True,
         )
     except TypeError:
-        payload = client.search(query, max_results=max_results, search_depth="basic")
+        try:
+            payload = client.search(
+                query,
+                max_results=max_results,
+                search_depth="basic",
+                timeout=SEARCH_CALL_TIMEOUT_SEC,
+                country="armenia",
+            )
+        except TypeError:
+            payload = client.search(query, max_results=max_results, search_depth="basic")
     rows: list[dict[str, str]] = []
     for item in payload.get("results") or []:
         if not isinstance(item, dict):
@@ -217,7 +244,11 @@ def _ddg_one(query: str, max_results: int) -> list[dict[str, str]]:
     except TypeError:
         client_cm = DDGS()
     with client_cm as client:
-        for item in client.text(query, max_results=max_results) or []:
+        try:
+            hits = client.text(query, max_results=max_results, region="am-en") or []
+        except TypeError:
+            hits = client.text(query, max_results=max_results) or []
+        for item in hits:
             if not isinstance(item, dict):
                 continue
             rows.append(
@@ -268,7 +299,27 @@ def build_queries(inputs: dict[str, Any]) -> list[str]:
         "Armenia one day tour getyourguide viator price",
     ]
     unique = list(dict.fromkeys(queries[:5] + market))
-    return unique[:8]
+    scoped = [scope_query_to_armenia(item) for item in unique]
+    return [item for item in scoped if query_is_armenia_scoped(item)][:8]
+
+
+def query_is_armenia_scoped(query: str) -> bool:
+    blob = _norm_search_text(query)
+    return any(token in blob for token in ARMENIA_QUERY_TOKENS)
+
+
+def scope_query_to_armenia(query: str) -> str:
+    text = " ".join(str(query or "").split())
+    if query_is_armenia_scoped(text):
+        return text
+    return f"{text} Armenia".strip()
+
+
+def _norm_search_text(*parts: str) -> str:
+    blob = " ".join(str(part or "") for part in parts).lower()
+    blob = blob.replace("&", " and ")
+    blob = re.sub(r"[-_/.,]+", " ", blob)
+    return " ".join(blob.split())
 
 
 def _call_with_timeout(
@@ -433,27 +484,28 @@ def market_offers_from_results(results: list[dict[str, str]], found_on: str) -> 
     return offers
 
 
-def result_is_useful(row: dict[str, str], keywords: list[str]) -> bool:
+def result_is_useful(row: dict[str, str], keywords: list[str] | None = None) -> bool:
     title = str(row.get("title") or "").strip()
-    url = str(row.get("url") or "").lower()
+    url = str(row.get("url") or "")
     snippet = str(row.get("snippet") or "")
-    blob = f"{title} {snippet} {url}".lower()
+    blob = _norm_search_text(title, snippet, url)
+    tokens = set(blob.split())
     title_key = re.sub(r"[^a-z]+", " ", title.lower()).strip()
-    if "wikipedia" in url and (title_key in GENERIC_WIKI_TITLES or title_key.split(" ")[0:1] == [title_key] and title_key in GENERIC_WIKI_TITLES):
+    if "wikipedia" in url.lower() and title_key in GENERIC_WIKI_TITLES:
         return False
     if title_key in GENERIC_WIKI_TITLES:
         return False
-    if any(marker in blob for marker in FOREIGN_MARKERS):
+    if any(marker in blob for marker in FOREIGN_MARKERS) or "tx" in tokens:
         return False
     places = [
-        item.lower()
-        for item in keywords
+        _norm_search_text(item)
+        for item in (keywords or [])
         if len(item) >= 4 and item.lower() not in QUERY_NOISE and item.lower() not in TOUR_TYPE_WORDS
     ]
-    has_armenia = any(marker in blob for marker in ARMENIA_MARKERS) or any(place in blob for place in places)
+    has_armenia = any(marker in blob for marker in ARMENIA_MARKERS) or any(place and place in blob for place in places)
     if not has_armenia:
         return False
-    if "wikipedia.org" in url and not any(place in blob for place in places) and "armenia" not in title_key and "armenian" not in blob:
+    if "wikipedia.org" in url.lower() and "armenia" not in blob and "armenian" not in blob:
         return False
     return True
 

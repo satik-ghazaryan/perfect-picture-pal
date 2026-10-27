@@ -25,6 +25,36 @@ class SearchResilienceTests(unittest.TestCase):
         self.assertTrue(any("Tsover" in item or "Lori" in item for item in queries))
         self.assertIn("tripadvisor", joined.lower())
         self.assertFalse(any(len(item) > 90 for item in queries))
+        for query in queries:
+            self.assertTrue(search.query_is_armenia_scoped(query), query)
+
+    def test_exact_foreign_titles_dropped_and_armenia_titles_kept(self) -> None:
+        dropped = [
+            "AllTrails: Trail Guides & Maps for Hiking, Camping, and Running",
+            "Best Hiking Trails Near Dallas & Fort Worth, Texas",
+            "DFW Hiking: The Best of DFW! - North Texas Trails",
+            "THE BEST 10 Hiking in FORT WORTH, TX - Updated 2026 - Yelp",
+            "Best Hiking Trails in Fort Worth: Scenic Trails Worth Your Time...",
+        ]
+        kept = [
+            "THE 15 BEST Lori Province Private Tours (2026) - Tripadvisor",
+            "THE 10 BEST Armenia Tours for 2026 (with Prices) - Tripadvisor",
+            "THE 10 BEST Lori Province Tours for 2025 (with Prices) - Tripadvisor",
+        ]
+        for title in dropped:
+            self.assertFalse(search.result_is_useful({"title": title, "url": "", "snippet": ""}, ["hiking", "Lori"]), title)
+        for title in kept:
+            self.assertTrue(search.result_is_useful({"title": title, "url": "https://www.tripadvisor.com/", "snippet": ""}, ["Lori"]), title)
+        rows = [{"title": title, "url": "", "snippet": "", "query": "q", "source": "tavily"} for title in dropped + kept]
+        with patch.object(search, "_tavily_one", lambda *_: rows), patch.object(search, "_ddg_one", lambda *_: []):
+            payload = search.run_market_search({"season": "autumn", "tour_type": "hiking", "preferences": "Lori"})
+        titles = {row["title"] for row in payload["results"]}
+        for title in dropped:
+            self.assertNotIn(title, titles)
+        for title in kept:
+            self.assertIn(title, titles)
+        self.assertEqual(payload["useful_result_count"], len(payload["results"]))
+        self.assertEqual(payload["useful_result_count"], 3)
 
     def test_timeout_does_not_drop_other_query_hits(self) -> None:
         def fake_tavily(query: str, _max: int):

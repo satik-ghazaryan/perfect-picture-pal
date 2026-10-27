@@ -266,13 +266,19 @@ def ground_idea(idea: dict[str, Any], research: dict[str, Any]) -> dict[str, Any
 
 
 HY_REVIEW_FLAG = "Armenian text needs review"
+FORBIDDEN_CUSTOMER_PHRASES = (
+    "Python-ը կլրացնի տրանսպորտը ըստ կմ",
+    "Transport costs will be filled by Python based on km",
+    "Транспортные расходы будут заполнены Python на основе километража",
+    "Estimated based on transport and guide fees",
+    "Potential for good revenue with group size",
+    "Computed figures (source of truth)",
+)
 INTERNAL_OPS_RE = re.compile(
     r"Python-ը կլրացնի[^.։]*[։.]?|"
     r"will be filled by Python[^.]*\.?|"
     r"Python fills[^.]*\.?|"
-    r"Python-ը կլրացնի տրանսպորտը ըստ կմ\.?|"
-    r"Transport costs will be filled by Python based on km\.?|"
-    r"Computed figures \(source of truth\):[^.]*\.?|"
+    r"Computed figures \(source of truth\)[:\s]*[^.]*\.?|"
     r"source of truth|"
     r"Հաշվարկված թվեր՝[^։.]*[։.]?|"
     r"Расчётные цифры:[^.]*\.?",
@@ -308,7 +314,10 @@ def strip_money_figures(text: str) -> str:
 
 
 def strip_internal_ops(text: str) -> str:
-    cleaned = INTERNAL_OPS_RE.sub("", str(text or ""))
+    cleaned = str(text or "")
+    for phrase in FORBIDDEN_CUSTOMER_PHRASES:
+        cleaned = re.sub(re.escape(phrase), "", cleaned, flags=re.IGNORECASE)
+    cleaned = INTERNAL_OPS_RE.sub("", cleaned)
     return re.sub(r"\s{2,}", " ", cleaned).strip()
 
 
@@ -427,19 +436,26 @@ def _walk_text_fields(idea: dict[str, Any], transform) -> dict[str, Any]:
         original_title = str(row.get("title") or "")
         row["title"] = transform(original_title) or original_title
         original_description = str(row.get("description") or "")
-        row["description"] = transform(original_description) or original_description
+        cleaned_description = transform(original_description)
+        row["description"] = cleaned_description or "Needs verification."
         if row.get("title_en"):
             row["title_en"] = transform(str(row["title_en"])) or row["title_en"]
+        if row.get("title_ru"):
+            row["title_ru"] = transform(str(row["title_ru"])) or row["title_ru"]
+        if row.get("description_en"):
+            row["description_en"] = transform(str(row["description_en"])) or "Needs verification."
+        if row.get("description_ru"):
+            row["description_ru"] = transform(str(row["description_ru"])) or "Needs verification."
         stops.append(row)
     if stops:
         next_idea["itinerary"] = stops
     breakdown = dict(next_idea.get("breakdown") or {})
     if breakdown.get("notes"):
-        breakdown["notes"] = transform(str(breakdown["notes"]))
+        breakdown["notes"] = strip_internal_ops(str(breakdown["notes"]))
         next_idea["breakdown"] = breakdown
     profitability = dict(next_idea.get("profitability") or {})
     if profitability.get("assumptions"):
-        profitability["assumptions"] = transform(str(profitability["assumptions"]))
+        profitability["assumptions"] = strip_internal_ops(str(profitability["assumptions"]))
         next_idea["profitability"] = profitability
     return next_idea
 
@@ -526,7 +542,9 @@ def rewrite_copy_from_numbers(idea: dict[str, Any], research: dict[str, Any] | N
             f"Estimated. Meals and entrance fees are not included. {PRICE_NEEDS_DISTANCE}."
         )
     elif prior_notes:
-        breakdown["notes"] = strip_internal_ops(prior_notes) or prior_notes
+        breakdown["notes"] = strip_internal_ops(prior_notes) or (
+            "Estimated. Meals and entrance fees are not included."
+        )
     next_idea["breakdown"] = breakdown
     profitability = dict(next_idea.get("profitability") or {})
     if profitability:

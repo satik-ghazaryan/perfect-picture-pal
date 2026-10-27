@@ -6,6 +6,7 @@ from unittest.mock import patch
 from agent.distance import one_way_route_km
 from agent.pricing import PRICE_NEEDS_DISTANCE, apply_unit_economics
 from agent.quality import (
+    FORBIDDEN_CUSTOMER_PHRASES,
     HY_REVIEW_FLAG,
     hy_copy_ok,
     mark_hy_review,
@@ -131,6 +132,43 @@ class QualityFixTests(unittest.TestCase):
     def test_strip_money_helper_on_evidence(self) -> None:
         self.assertNotIn("15000", strip_money_figures("price around 15000 AMD"))
         self.assertNotIn("15000", strip_money_figures("Արժեքի բաշխում ... 15000 AMD / անձ"))
+
+    def test_exact_internal_phrases_do_not_survive(self) -> None:
+        hy, en, ru, fees, revenue, computed = FORBIDDEN_CUSTOMER_PHRASES
+        idea = rewrite_copy_from_numbers(
+            {
+                "title_hy": "Լոռի",
+                "title_en": "Lori",
+                "description_hy": f"Հայեցակարգ։ {hy}։",
+                "description_en": f"A hike. {en} {computed}: group 17; cost per person 882 AMD.",
+                "description_ru": f"Поход. {ru}",
+                "notes": f"{fees} {revenue}",
+                "highlights": [hy, en, ru, fees, revenue, computed],
+                "itinerary": [
+                    {"time": "08:00", "title": "Արմավիր — մեկնում", "description": en},
+                    {"time": "11:00", "title": "Դսեղ", "title_en": "Dsegh", "description": ru},
+                ],
+                "breakdown": {"notes": en},
+                "verify": [],
+                "price": 9997,
+            },
+            {"live": True, "results": [], "market_offers": []},
+        )
+        blob = " ".join(
+            [
+                idea["description_hy"],
+                idea["description_en"],
+                idea["description_ru"],
+                idea["notes"],
+                " ".join(idea["highlights"]),
+                idea["itinerary"][0]["description"],
+                idea["itinerary"][1]["description"],
+                str((idea.get("breakdown") or {}).get("notes") or ""),
+            ]
+        )
+        for phrase in FORBIDDEN_CUSTOMER_PHRASES:
+            self.assertNotIn(phrase, blob)
+        self.assertNotIn("cost per person 882 AMD", idea["description_en"])
 
     def test_internal_python_prose_is_stripped(self) -> None:
         blob = strip_internal_ops(
