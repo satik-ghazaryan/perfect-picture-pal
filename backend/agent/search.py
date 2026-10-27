@@ -110,7 +110,22 @@ FOREIGN_MARKERS = (
     "great britain",
     "north texas",
 )
-ARMENIA_QUERY_TOKENS = ("armenia", "armenian", "lori", "yerevan", "armavir", "հայաստան", "երևան", "արմավիր", "լոռի")
+ARMENIA_QUERY_TOKENS = (
+    "armenia",
+    "armenian",
+    "lori",
+    "yerevan",
+    "armavir",
+    "gyumri",
+    "dilijan",
+    "sevan",
+    "vanadzor",
+    "հայաստան",
+    "երևան",
+    "արմավիր",
+    "լոռի",
+    "գյումրի",
+)
 SEARCH_CALL_TIMEOUT_SEC = 18
 REASON_CODES = (
     "tavily_no_key",
@@ -133,25 +148,10 @@ GENERIC_WIKI_TITLES = {
     "tour",
     "hiking",
 }
-REGION_WORDS = (
-    "lori",
-    "tavush",
-    "syunik",
-    "gegharkunik",
-    "kotayk",
-    "aragatsotn",
-    "shirak",
-    "vayots",
-    "armavir",
-    "yerevan",
-    "dsegh",
-    "tsover",
-    "akhtala",
-    "garni",
-    "geghard",
-    "sevan",
-    "dilijan",
-    "tatev",
+MARKET_FALLBACK_QUERIES = (
+    "Akhtala monastery day tour from Yerevan price",
+    "Armenia one day tour Lori price AMD tripadvisor",
+    "Armenia one day tour getyourguide viator price",
 )
 QUERY_NOISE = {
     "the",
@@ -264,9 +264,13 @@ def _ddg_one(query: str, max_results: int) -> list[dict[str, str]]:
 
 
 def place_keywords(inputs: dict[str, Any]) -> list[str]:
+    found: list[str] = []
+    for key in ("place_en", "region_en"):
+        token = str(inputs.get(key) or "").strip()
+        if token:
+            found.append(token)
     extra = str(inputs.get("preferences") or "")
     bits = re.split(r"[\s,/|]+", extra)
-    found: list[str] = []
     for bit in bits:
         token = re.sub(r"[^A-Za-z\u0531-\u0587-]", "", bit).strip()
         if len(token) < 4:
@@ -274,31 +278,39 @@ def place_keywords(inputs: dict[str, Any]) -> list[str]:
         if token.lower() in QUERY_NOISE or token.lower() in TOUR_TYPE_WORDS:
             continue
         found.append(token)
-    keywords = list(dict.fromkeys(found))
+    keywords = list(dict.fromkeys(item for item in found if item))
     return keywords[:8]
 
 
+def discovery_queries(place_en: str) -> list[str]:
+    place = " ".join(str(place_en or "").split())
+    if not place:
+        return []
+    queries = [
+        f"{place} Armenia top attractions to visit",
+        f"{place} Armenia things to see monastery museum",
+        f"{place} Armenia day tour from Armavir",
+    ]
+    scoped = [scope_query_to_armenia(item) for item in queries]
+    return [item for item in scoped if query_is_armenia_scoped(item)][:8]
+
+
 def build_queries(inputs: dict[str, Any]) -> list[str]:
-    places = place_keywords(inputs)
-    region = next((item for item in places if item.lower() in REGION_WORDS), "")
-    queries: list[str] = []
-    for place in places[:4]:
-        loc = f"{place} {region}".strip() if region and place.lower() != region.lower() else place
-        queries.append(f"{loc} Armenia tour")
-        queries.append(f"{place} Lori Armenia" if not region else f"{place} {region} Armenia")
+    place_en = str(inputs.get("place_en") or "").strip()
+    places = [place_en] if place_en else place_keywords(inputs)
     tour_type = str(inputs.get("tour_type") or "cultural").strip()
     if tour_type and tour_type.lower() not in TOUR_TYPE_WORDS:
         tour_type = "cultural"
-    if not queries:
+    queries: list[str] = []
+    if places:
+        for place in places[:4]:
+            queries.append(f"{place} Armenia day tour")
+            queries.append(f"{place} attractions Armenia")
+            queries.append(f"{place} day tour from Armavir price")
+        unique = list(dict.fromkeys(queries))
+    else:
         queries.append(f"Armenia {tour_type or 'cultural'} day tour from Yerevan price")
-    elif tour_type:
-        queries.append(f"Armenia {tour_type} day tour from Yerevan price")
-    market = [
-        "Akhtala monastery day tour from Yerevan price",
-        "Armenia one day tour Lori price AMD tripadvisor",
-        "Armenia one day tour getyourguide viator price",
-    ]
-    unique = list(dict.fromkeys(queries[:5] + market))
+        unique = list(dict.fromkeys(queries + list(MARKET_FALLBACK_QUERIES)))
     scoped = [scope_query_to_armenia(item) for item in unique]
     return [item for item in scoped if query_is_armenia_scoped(item)][:8]
 
@@ -546,9 +558,13 @@ def _pick_status(results: list[dict[str, str]], reasons: list[str]) -> str:
     return "empty"
 
 
-def run_market_search(inputs: dict[str, Any], max_results: int = 5) -> dict[str, Any]:
-    queries = build_queries(inputs)
-    keywords = place_keywords(inputs)
+def run_queries_search(
+    queries: list[str],
+    keywords: list[str] | None = None,
+    max_results: int = 5,
+    *,
+    require_min_unique: bool = True,
+) -> dict[str, Any]:
     found_on = datetime.now(timezone.utc).date().isoformat()
     tavily_ran = True
     tavily_rows, tavily_reasons = _search_all(queries, max_results, _tavily_one, "tavily")
@@ -575,7 +591,7 @@ def run_market_search(inputs: dict[str, Any], max_results: int = 5) -> dict[str,
         unique.append(tagged)
         if len(unique) >= 12:
             break
-    if len(unique) < 2:
+    if require_min_unique and len(unique) < 2:
         unique = []
         if "too_few_results" not in reasons:
             reasons.append("too_few_results")
@@ -617,3 +633,30 @@ def run_market_search(inputs: dict[str, Any], max_results: int = 5) -> dict[str,
             "tavily_key_present": _tavily_key_present(),
         },
     }
+
+
+def run_market_search(inputs: dict[str, Any], max_results: int = 5) -> dict[str, Any]:
+    queries = build_queries(inputs)
+    keywords = place_keywords(inputs)
+    return run_queries_search(queries, keywords, max_results)
+
+
+def run_place_attraction_search(place_en: str, max_results: int = 5) -> dict[str, Any]:
+    queries = discovery_queries(place_en)
+    keywords = [place_en] if place_en else []
+    return run_queries_search(queries, keywords, max_results, require_min_unique=False)
+
+
+def distance_cross_check_snippet(place_en: str) -> str:
+    place = " ".join(str(place_en or "").split())
+    if not place:
+        return ""
+    query = scope_query_to_armenia(f"distance Armavir to {place} km")
+    rows, _reasons = _search_all([query], 3, _tavily_one, "tavily")
+    if not rows:
+        rows, _reasons = _search_all([query], 3, _ddg_one, "ddg")
+    for row in rows:
+        snippet = _clip(str(row.get("snippet") or row.get("title") or ""), 240)
+        if snippet:
+            return f"Web distance cross-check (not used for price): {snippet}"
+    return ""

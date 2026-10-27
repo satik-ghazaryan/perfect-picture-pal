@@ -104,6 +104,8 @@ def apply_unit_economics(
     km_notes: list[str] | None = None,
     offers: list[dict[str, Any]] | None = None,
     has_away_stop: bool = False,
+    km_source: str = "",
+    geocoded_stops: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     next_idea = dict(idea)
     breakdown = dict(next_idea.get("breakdown") or {})
@@ -139,7 +141,7 @@ def apply_unit_economics(
         if position == "unknown" and "No usable competitor offers" not in verify:
             verify.append("No usable competitor offers; price is cost+margin only")
         if not km_sourced and "Route km is an estimate" not in verify:
-            verify.append("Route km is an estimate; confirm driving distance")
+            verify.append("Route km is an estimate")
         unit_note = (
             f"Estimated. Meals and entrance fees are not included. "
             f"GROUP_SIZE={GROUP_SIZE}. Guide {GUIDE_FEE_GROUP_AMD} AMD for the group. "
@@ -159,6 +161,11 @@ def apply_unit_economics(
     next_idea["breakdown"] = breakdown
     next_idea["price"] = suggested
     next_idea["route_km"] = round(float(route_km), 1)
+    source_label = str(km_source or "").strip()
+    if not source_label and route_km > 0:
+        source_label = "OSRM" if km_sourced else "estimate"
+    next_idea["km_source"] = source_label
+    next_idea["geocoded_stops"] = [item for item in (geocoded_stops or []) if isinstance(item, dict)]
     next_idea["transport_rate_per_km_amd"] = rate
     next_idea["cost_per_person_amd"] = cost_pp
     next_idea["min_price_amd"] = min_price

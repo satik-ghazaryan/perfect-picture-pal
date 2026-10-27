@@ -114,6 +114,13 @@ class Profitability(BaseModel):
         }
 
 
+class GeocodedStop(BaseModel):
+    name: str = ""
+    lat: float = 0
+    lon: float = 0
+    coord_source: str = "Nominatim"
+
+
 class ResearchHit(BaseModel):
     title: str = ""
     url: str = ""
@@ -188,6 +195,8 @@ class TourIdea(BaseModel):
     needs_verification: bool = False
     source_urls: list[str] = Field(default_factory=list)
     route_km: float = 0
+    km_source: str = ""
+    geocoded_stops: list[GeocodedStop] = Field(default_factory=list)
     transport_rate_per_km_amd: int = 600
     cost_per_person_amd: int = 0
     min_price_amd: int = 0

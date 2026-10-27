@@ -23,10 +23,44 @@ class SearchResilienceTests(unittest.TestCase):
         joined = " ".join(queries)
         self.assertTrue(any("Dsegh" in item for item in queries))
         self.assertTrue(any("Tsover" in item or "Lori" in item for item in queries))
-        self.assertIn("tripadvisor", joined.lower())
+        self.assertNotIn("tripadvisor", joined.lower())
+        self.assertNotIn("Akhtala", joined)
+        self.assertFalse(any("from Yerevan" in item for item in queries))
         self.assertFalse(any(len(item) > 90 for item in queries))
         for query in queries:
             self.assertTrue(search.query_is_armenia_scoped(query), query)
+
+    def test_hy_place_preferences_need_place_en_from_discovery(self) -> None:
+        self.assertFalse(hasattr(search, "HY_TO_LATIN_PLACES"))
+        self.assertEqual(search.place_keywords({"preferences": "Գյումրի"}), ["Գյումրի"])
+        queries = search.build_queries(
+            {"season": "autumn", "tour_type": "cultural", "preferences": "Գյումրի", "place_en": "Gyumri"}
+        )
+        joined = " ".join(queries)
+        self.assertTrue(any(item.startswith("Gyumri") for item in queries))
+        self.assertIn("Gyumri Armenia day tour", queries)
+        self.assertIn("Gyumri attractions Armenia", queries)
+        self.assertIn("Gyumri day tour from Armavir price", queries)
+        self.assertNotIn("Lori", joined)
+        self.assertNotIn("Akhtala", joined)
+        self.assertNotIn("tripadvisor", joined.lower())
+        self.assertEqual(
+            search.discovery_queries("Gyumri"),
+            [
+                "Gyumri Armenia top attractions to visit",
+                "Gyumri Armenia things to see monastery museum",
+                "Gyumri Armenia day tour from Armavir",
+            ],
+        )
+        row = {"title": "Gyumri city walking tour Armenia", "url": "https://example.com/gyumri", "snippet": ""}
+        self.assertTrue(search.result_is_useful(row, search.place_keywords({"preferences": "Գյումրի", "place_en": "Gyumri"})))
+
+    def test_empty_preferences_keep_market_fallbacks(self) -> None:
+        queries = search.build_queries({"season": "autumn", "tour_type": "cultural", "preferences": ""})
+        joined = " ".join(queries).lower()
+        self.assertIn("yerevan", joined)
+        self.assertIn("akhtala", joined)
+        self.assertIn("tripadvisor", joined)
 
     def test_exact_foreign_titles_dropped_and_armenia_titles_kept(self) -> None:
         dropped = [
@@ -76,7 +110,7 @@ class SearchResilienceTests(unittest.TestCase):
             raise TimeoutError("tavily down")
 
         def ddg(query: str, _max: int):
-            slug = "ddg-" + query.split()[0].lower()
+            slug = "ddg-" + "-".join(query.lower().split())
             return [_hit(query, slug, "duckduckgo")]
 
         with patch.object(search, "_tavily_one", boom), patch.object(search, "_ddg_one", ddg):

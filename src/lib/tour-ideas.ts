@@ -14,6 +14,46 @@ import type {
 
 const GROUP_SIZE_FALLBACK = 17;
 
+const SEARCH_FAILURE_STATUSES = new Set([
+  "tavily_error",
+  "ddg_error",
+  "tavily_timeout",
+  "ddg_timeout",
+  "too_few_results",
+  "empty",
+]);
+const SEARCH_QUIET_STATUSES = new Set(["", "ok", "tavily_no_key"]);
+const VERIFY_NOTE_HY_EXACT: Record<string, string> = {
+  "price needs route distance": "Անհրաժեշտ է երթուղու հեռավորությունը",
+  "Route km is an estimate": "Երթուղու կմ-ը գնահատական է",
+  "No live web results; places and prices need human research":
+    "Կենդանի որոնման արդյունքներ չկան. վայրերն ու գները հարկավոր է ստուգել ձեռքով",
+  "No competitor data was found": "Մրցակցային տվյալներ չեն գտնվել",
+};
+const VERIFY_NOTE_HY_PREFIXES: Array<[string, string]> = [
+  ["Place not in search results:", "Վայրը որոնման արդյունքներում չկա:"],
+  ["Needs sourced fact URL:", "Հարկավոր է աղբյուրի URL:"],
+  ["Could not geocode stop:", "Չհաջողվեց գեոկոդավորել կանգառը:"],
+  ["Web distance cross-check (not used for price):", "Հեռավորության համացանցային ստուգում (գնի համար չի օգտագործվում):"],
+];
+
+export function searchStatusNote(status: string | undefined, usefulCount = 0): string {
+  const code = String(status ?? "").trim();
+  if (SEARCH_QUIET_STATUSES.has(code)) return "";
+  if (code === "partial") return `Որոնումը մասնակի է (օգտակար արդյունքներ՝ ${usefulCount || 0})`;
+  if (SEARCH_FAILURE_STATUSES.has(code) || code) return `search failed: ${code}`;
+  return "";
+}
+
+export function formatVerifyNoteHy(note: string): string {
+  const mapped = VERIFY_NOTE_HY_EXACT[note];
+  if (mapped) return mapped;
+  for (const [english, armenian] of VERIFY_NOTE_HY_PREFIXES) {
+    if (note.startsWith(english)) return armenian + note.slice(english.length);
+  }
+  return note;
+}
+
 const LAST_RUN_KEY = "ari-gnank-last-idea-run";
 const CLIENT_TIMEOUT_MS = 250_000;
 const ADMIN_REQUIRED_ERROR = "Մուտք գործեք admin հաշվով";
@@ -228,6 +268,25 @@ export function normalizeTourIdea(value: unknown): TourIdeaResult | null {
       ? record["source_urls"].map(asHttpUrl).filter(Boolean)
       : [],
     route_km: typeof record["route_km"] === "number" ? record["route_km"] : Number(record["route_km"]) || 0,
+    km_source: typeof record["km_source"] === "string" ? record["km_source"] : "",
+    geocoded_stops: Array.isArray(record["geocoded_stops"])
+      ? record["geocoded_stops"]
+          .map((item) => {
+            if (!item || typeof item !== "object") return null;
+            const row = item as Record<string, unknown>;
+            const name = String(row.name ?? "").trim();
+            const lat = typeof row.lat === "number" ? row.lat : Number(row.lat);
+            const lon = typeof row.lon === "number" ? row.lon : Number(row.lon);
+            if (!name || !Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+            return {
+              name,
+              lat,
+              lon,
+              coord_source: String(row.coord_source ?? "Nominatim"),
+            };
+          })
+          .filter((item): item is { name: string; lat: number; lon: number; coord_source: string } => item !== null)
+      : [],
     transport_rate_per_km_amd: parseAmd(record["transport_rate_per_km_amd"]) || 600,
     cost_per_person_amd: parseAmd(record["cost_per_person_amd"]),
     min_price_amd: parseAmd(record["min_price_amd"]),

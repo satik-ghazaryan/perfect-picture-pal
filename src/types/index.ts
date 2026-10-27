@@ -192,6 +192,13 @@ export type TourIdeaResult = {
   needs_verification?: boolean;
   source_urls?: string[];
   route_km?: number;
+  km_source?: string;
+  geocoded_stops?: Array<{
+    name: string;
+    lat: number;
+    lon: number;
+    coord_source?: string;
+  }>;
   transport_rate_per_km_amd?: number;
   cost_per_person_amd?: number;
   min_price_amd?: number;

@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from agent import distance
-from agent.distance import destination_titles, one_way_route_km
+from agent.distance import destination_titles, has_stop_outside_armavir, one_way_route_km, place_from_stop_title
 from agent.pricing import (
     GROUP_SIZE,
     GUIDE_FEE_GROUP_AMD,
@@ -83,6 +83,62 @@ class PricingTests(unittest.TestCase):
         )
         self.assertEqual(titles, ["Akhtala monastery"])
 
+    def test_place_extracted_and_activity_stops_skipped(self) -> None:
+        self.assertEqual(place_from_stop_title("Gyumri — arrival"), "Gyumri")
+        self.assertEqual(place_from_stop_title("Lunch break"), "")
+        self.assertEqual(place_from_stop_title("Visit the Red Church"), "the Red Church")
+        titles = destination_titles(
+            [
+                {"title": "Armavir — departure", "title_en": "Armavir — departure"},
+                {"title": "Գյումրի — ժամանում", "title_en": "Gyumri — arrival"},
+                {"title": "Ճաշ", "title_en": "Lunch break"},
+                {"title": "Կարմիր եկեղեցի", "title_en": "Visit the Red Church"},
+                {"title": "Free time", "title_en": "Free time"},
+                {"title": "Armavir — return", "title_en": "Armavir — return"},
+            ]
+        )
+        self.assertEqual(titles, ["Gyumri", "the Red Church"])
+        self.assertFalse(
+            has_stop_outside_armavir(
+                [
+                    {"title": "Armavir — departure", "title_en": "Armavir — departure"},
+                    {"title": "Lunch break", "title_en": "Lunch break"},
+                    {"title": "Armavir — return", "title_en": "Armavir — return"},
+                ]
+            )
+        )
+        self.assertTrue(
+            has_stop_outside_armavir(
+                [{"title": "Gyumri — arrival", "title_en": "Gyumri — arrival"}]
+            )
+        )
+        with patch.object(distance, "nominatim_coord", return_value=(40.7942, 43.8453)), patch.object(
+            distance, "_osrm_km", return_value=None
+        ):
+            km, _sourced, notes = one_way_route_km(
+                [
+                    {"title": "Armavir — departure", "title_en": "Armavir — departure"},
+                    {"title": "Gyumri — arrival", "title_en": "Gyumri — arrival"},
+                    {"title": "Lunch break", "title_en": "Lunch break"},
+                    {"title": "Armavir — return", "title_en": "Armavir — return"},
+                ]
+            )
+        self.assertGreater(km, 40)
+        self.assertFalse(any("straight-line fallback" in item for item in notes))
+        self.assertFalse(any("Lunch" in item for item in notes))
+        self.assertIn("Route km is an estimate", notes)
+
+    def test_failed_geocode_note_says_skipped(self) -> None:
+        with patch.object(distance, "nominatim_coord", return_value=None):
+            km, sourced, notes = one_way_route_km(
+                [{"title": "Mystery gorge", "title_en": "Mystery gorge"}],
+                extra_names=["Mystery gorge"],
+            )
+        self.assertEqual(km, 0)
+        self.assertFalse(sourced)
+        self.assertTrue(any("Could not geocode stop: Mystery gorge; stop skipped" in item for item in notes))
+        self.assertFalse(any("straight-line fallback" in item for item in notes))
+
     def test_apply_unit_economics_akhtala(self) -> None:
         idea = apply_unit_economics(
             {
@@ -128,16 +184,22 @@ class PricingTests(unittest.TestCase):
         self.assertGreater(idea["breakdown"]["guide_amd"], 0)
         self.assertEqual(idea["breakdown"]["transport_amd"], 0)
 
-    def test_known_akhtala_route_uses_one_way(self) -> None:
-        km, _sourced, _notes = one_way_route_km(
-            [
-                {"title": "Armavir departure"},
-                {"title": "Akhtala"},
-                {"title": "Armavir return"},
-            ]
-        )
-        self.assertGreater(km, 100)
-        self.assertLess(km, 280)
+    def test_nominatim_akhtala_route_uses_one_way(self) -> None:
+        self.assertFalse(hasattr(distance, "KNOWN_COORDS"))
+        with patch.object(distance, "nominatim_coord", return_value=(41.1500, 44.7580)), patch.object(
+            distance, "_osrm_km", return_value=None
+        ):
+            route = one_way_route_km(
+                [
+                    {"title": "Armavir departure"},
+                    {"title": "Akhtala"},
+                    {"title": "Armavir return"},
+                ]
+            )
+        self.assertGreater(route.km, 100)
+        self.assertLess(route.km, 280)
+        self.assertEqual(route.km_source, "estimate")
+        self.assertEqual(route.geocoded_stops[0]["coord_source"], "Nominatim")
 
 
 class FakeClock:
@@ -173,6 +235,7 @@ class NominatimRateTests(unittest.TestCase):
         self._last = distance._NOMINATIM_LAST_CALL
         distance._GEO_CACHE.clear()
         distance._NOMINATIM_LAST_CALL = 0.0
+        distance._DISK_LOADED = False
 
     def tearDown(self) -> None:
         distance._GEO_CACHE.clear()
@@ -207,6 +270,17 @@ class NominatimRateTests(unittest.TestCase):
         self.assertGreaterEqual(sleeps_after_misses[0], 1.0)
         self.assertGreaterEqual(sleeps_after_misses[0], distance.NOMINATIM_MIN_INTERVAL_SEC - 0.0001)
         self.assertEqual(sleeps_after_hit, sleeps_after_misses)
+
+    def test_nominatim_disk_cache_roundtrip(self) -> None:
+        distance._GEO_CACHE.clear()
+        distance._DISK_LOADED = False
+        distance._DISK_CACHE_PATH.write_text(
+            json.dumps({"Gyumri, Armenia": [40.7942, 43.8453]}),
+            encoding="utf-8",
+        )
+        with patch.object(distance.urllib.request, "urlopen", side_effect=AssertionError("network")):
+            coord = distance.nominatim_coord("Gyumri")
+        self.assertEqual(coord, (40.7942, 43.8453))
 
 
 if __name__ == "__main__":

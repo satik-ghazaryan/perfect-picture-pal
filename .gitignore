@@ -49,3 +49,4 @@ __pycache__/
 *.py[cod]
 scripts/local/
 AUDIT.md
+backend/.nominatim_cache.json

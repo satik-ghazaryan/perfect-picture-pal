@@ -2,27 +2,19 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
-# lat, lon
+# Operator origin only (not a destination gazetteer). Destinations come from Nominatim.
 ARMAVIR_COORD = (40.1544, 44.0385)
-KNOWN_COORDS: dict[str, tuple[float, float]] = {
-    "armavir": ARMAVIR_COORD,
-    "արմավիր": ARMAVIR_COORD,
-    "akhtala": (41.1500, 44.7580),
-    "ախթալա": (41.1500, 44.7580),
-    "dsegh": (40.9610, 44.6510),
-    "դսեղ": (40.9610, 44.6510),
-    "tsover": (40.9530, 44.6680),
-    "ծովեր": (40.9530, 44.6680),
-    "տսովեր": (40.9530, 44.6680),
-}
 
 OSRM_URL = "https://router.project-osrm.org/route/v1/driving/{lon1},{lat1};{lon2},{lat2}?overview=false"
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search?{qs}"
@@ -33,10 +25,43 @@ _CACHE: dict[str, float] = {}
 _GEO_CACHE: dict[str, tuple[float, float] | None] = {}
 _NOMINATIM_LOCK = threading.Lock()
 _NOMINATIM_LAST_CALL = 0.0
+_DISK_LOADED = False
+_DISK_CACHE_PATH = Path(
+    os.getenv("ARI_GEO_CACHE", str(Path(__file__).resolve().parent.parent / ".nominatim_cache.json"))
+)
 LATIN_RE = re.compile(r"[A-Za-z]{3,}")
 ARMENIAN_RE = re.compile(r"[\u0531-\u0587]")
 PAREN_EN_RE = re.compile(r"\(([A-Za-z][A-Za-z0-9 .,'-]{1,80})\)")
 SPLIT_RE = re.compile(r"\s*/\s*|\s*\|\s*|;")
+PLACE_CUT_RE = re.compile(r"\s*[—–]\s*|\s+-\s*|\s*:\s*|\s*\(")
+ACTIVITY_WORDS = {
+    "arrival",
+    "departure",
+    "return",
+    "visit",
+    "lunch",
+    "break",
+    "stop",
+    "drive",
+    "transfer",
+    "free",
+    "time",
+}
+ROUTE_KM_ESTIMATE_NOTE = "Route km is an estimate"
+
+
+@dataclass
+class RouteKm:
+    km: float
+    sourced: bool
+    notes: list[str]
+    km_source: str = ""
+    geocoded_stops: list[dict[str, Any]] = field(default_factory=list)
+
+    def __iter__(self):
+        yield self.km
+        yield self.sourced
+        yield self.notes
 
 
 def _norm(name: str) -> str:
@@ -46,6 +71,19 @@ def _norm(name: str) -> str:
 def is_armavir_stop(title: str) -> bool:
     text = _norm(title)
     return "armavir" in text or "արմավիր" in text
+
+
+def place_from_stop_title(title: str) -> str:
+    text = " ".join(str(title or "").split())
+    if not text:
+        return ""
+    head = PLACE_CUT_RE.split(text, maxsplit=1)[0].strip()
+    kept = [token for token in head.split() if token.lower().strip(".,;!") not in ACTIVITY_WORDS]
+    return " ".join(kept).strip()
+
+
+def is_activity_stop(title: str) -> bool:
+    return not place_from_stop_title(title)
 
 
 def _latin_name(value: str) -> str:
@@ -97,25 +135,14 @@ def destination_titles(itinerary: list[Any], extra_names: list[str] | None = Non
             continue
         english = english_stop_name(stop, extra_names)
         for part in split_place_names(english or display):
-            name = _latin_name(part) or part
-            if name and not is_armavir_stop(name):
+            name = place_from_stop_title(_latin_name(part) or part)
+            if name and not is_armavir_stop(name) and not is_activity_stop(name):
                 titles.append(name)
     return titles
 
 
 def has_stop_outside_armavir(itinerary: list[Any]) -> bool:
     return bool(destination_titles(itinerary))
-
-
-def lookup_coord(title: str) -> tuple[float, float] | None:
-    key = _norm(title)
-    for known, coord in KNOWN_COORDS.items():
-        if known in key or key in known:
-            return coord
-    for token, coord in KNOWN_COORDS.items():
-        if token in key:
-            return coord
-    return None
 
 
 def _haversine_km(a: tuple[float, float], b: tuple[float, float]) -> float:
@@ -160,13 +187,44 @@ def _wait_nominatim_slot() -> None:
     _NOMINATIM_LAST_CALL = time.monotonic()
 
 
+def _ensure_disk_loaded() -> None:
+    global _DISK_LOADED
+    if _DISK_LOADED:
+        return
+    _DISK_LOADED = True
+    try:
+        raw = json.loads(_DISK_CACHE_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, TypeError):
+        return
+    if not isinstance(raw, dict):
+        return
+    for key, value in raw.items():
+        if isinstance(value, list) and len(value) == 2:
+            try:
+                _GEO_CACHE[str(key)] = (float(value[0]), float(value[1]))
+            except (TypeError, ValueError):
+                continue
+        elif value is None:
+            _GEO_CACHE[str(key)] = None
+
+
+def _persist_geo_cache() -> None:
+    try:
+        serializable = {key: list(value) if isinstance(value, tuple) else value for key, value in _GEO_CACHE.items()}
+        _DISK_CACHE_PATH.write_text(json.dumps(serializable, ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        return
+
+
 def nominatim_coord(name: str, region: str = "") -> tuple[float, float] | None:
     query = ", ".join(part for part in (name.strip(), region.strip(), "Armenia") if part)
     if not query:
         return None
+    _ensure_disk_loaded()
     if query in _GEO_CACHE:
         return _GEO_CACHE.get(query)
     with _NOMINATIM_LOCK:
+        _ensure_disk_loaded()
         if query in _GEO_CACHE:
             return _GEO_CACHE.get(query)
         _wait_nominatim_slot()
@@ -178,26 +236,27 @@ def nominatim_coord(name: str, region: str = "") -> tuple[float, float] | None:
                 payload = json.loads(response.read().decode("utf-8"))
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError, OSError):
             _GEO_CACHE[query] = None
+            _persist_geo_cache()
             return None
         if not isinstance(payload, list) or not payload or not isinstance(payload[0], dict):
             _GEO_CACHE[query] = None
+            _persist_geo_cache()
             return None
         try:
             coord = (float(payload[0]["lat"]), float(payload[0]["lon"]))
         except (KeyError, TypeError, ValueError):
             _GEO_CACHE[query] = None
+            _persist_geo_cache()
             return None
         _GEO_CACHE[query] = coord
+        _persist_geo_cache()
         return coord
 
 
 def resolve_coord(name: str, region: str = "") -> tuple[tuple[float, float] | None, str]:
-    known = lookup_coord(name)
-    if known is not None:
-        return known, "known"
     geo = nominatim_coord(name, region)
     if geo is not None:
-        return geo, "nominatim"
+        return geo, "Nominatim"
     return None, "missing"
 
 
@@ -212,56 +271,77 @@ def one_way_route_km(
     itinerary: list[Any],
     extra_names: list[str] | None = None,
     region: str = "",
-) -> tuple[float, bool, list[str]]:
+) -> RouteKm:
     """Armavir -> each non-Armavir stop in order. No return leg. Never treats a failed geocode as 0 km of travel."""
     notes: list[str] = []
+    geocoded_stops: list[dict[str, Any]] = []
     dests = destination_titles(itinerary, extra_names)
     if not dests:
         for extra in extra_names or []:
-            latin = _latin_name(str(extra or ""))
-            if latin and not is_armavir_stop(latin):
+            latin = place_from_stop_title(_latin_name(str(extra or "")) or str(extra or ""))
+            if latin and not is_armavir_stop(latin) and not is_activity_stop(latin):
                 dests.extend(split_place_names(latin))
-        dests = [item for item in dests if item and not is_armavir_stop(item)]
+        dests = [
+            place_from_stop_title(item)
+            for item in dests
+            if item and not is_armavir_stop(item) and not is_activity_stop(item)
+        ]
+        dests = [item for item in dests if item]
     if not dests:
         notes.append("No destination stops after Armavir; route km is 0")
-        return 0.0, True, notes
+        return RouteKm(0.0, True, notes, km_source="", geocoded_stops=[])
     points: list[tuple[float, float]] = [ARMAVIR_COORD]
-    sourced = True
     last_ok = ARMAVIR_COORD
     for title in dests:
         coord, how = resolve_coord(title, region)
         if coord is None:
-            notes.append(f"Could not geocode stop: {title}; using straight-line fallback from last known stop")
-            sourced = False
+            notes.append(f"Could not geocode stop: {title}; stop skipped")
             continue
-        if how != "known":
-            sourced = False
-            notes.append(f"Geocoded {title} via {how}; confirm driving distance")
+        geocoded_stops.append(
+            {
+                "name": title,
+                "lat": round(coord[0], 6),
+                "lon": round(coord[1], 6),
+                "coord_source": how,
+            }
+        )
         points.append(coord)
         last_ok = coord
     if len(points) < 2:
-        extras = [_latin_name(str(item or "")) for item in (extra_names or [])]
-        extras = [item for item in extras if item and not is_armavir_stop(item)]
+        extras = [
+            place_from_stop_title(_latin_name(str(item or "")) or str(item or ""))
+            for item in (extra_names or [])
+        ]
+        extras = [item for item in extras if item and not is_armavir_stop(item) and not is_activity_stop(item)]
         for extra in extras:
             coord, how = resolve_coord(extra, region)
             if coord is None:
                 continue
             points.append(coord)
-            sourced = False
+            geocoded_stops.append(
+                {
+                    "name": extra,
+                    "lat": round(coord[0], 6),
+                    "lon": round(coord[1], 6),
+                    "coord_source": how,
+                }
+            )
             notes.append(f"Used location fallback {extra} ({how}); confirm driving distance")
             last_ok = coord
             break
     if len(points) < 2:
         notes.append("price needs route distance")
-        return 0.0, False, notes
+        return RouteKm(0.0, False, notes, km_source="", geocoded_stops=geocoded_stops)
     skipped = len(dests) - (len(points) - 1)
     if skipped > 0 and last_ok != ARMAVIR_COORD:
         notes.append("Unmapped stops were skipped; km uses mapped stops plus haversine x 1.6 when OSRM is missing")
     total = 0.0
+    osrm_ok = True
     for index in range(len(points) - 1):
         km, ok = pair_km(points[index], points[index + 1])
         total += km
-        sourced = sourced and ok
-    if not sourced:
-        notes.append("Route km used a fallback estimate; confirm driving distance")
-    return round(total, 1), sourced, notes
+        osrm_ok = osrm_ok and ok
+    km_source = "OSRM" if osrm_ok else "estimate"
+    if not osrm_ok and ROUTE_KM_ESTIMATE_NOTE not in notes:
+        notes.append(ROUTE_KM_ESTIMATE_NOTE)
+    return RouteKm(round(total, 1), osrm_ok, notes, km_source=km_source, geocoded_stops=geocoded_stops)

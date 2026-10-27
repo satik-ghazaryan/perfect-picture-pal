@@ -65,7 +65,7 @@ import {
 } from "@/lib/loyalty";
 import { downloadPassengerWorkbook } from "@/lib/passenger-export";
 import { isSupabaseConfigured } from "@/lib/supabase";
-import { generateTourIdeas, normalizeResearch, readCachedIdeaRun, saveTourIdeaDraft } from "@/lib/tour-ideas";
+import { formatVerifyNoteHy, generateTourIdeas, normalizeResearch, readCachedIdeaRun, saveTourIdeaDraft, searchStatusNote } from "@/lib/tour-ideas";
 import type { TourIdeaInput, TourIdeaResearch, TourIdeaResult } from "@/types";
 
 const sections = [
@@ -1759,6 +1759,8 @@ function IdeasSection({
     }
   };
 
+  const searchNote = searchStatusNote(research.search_status, research.useful_result_count ?? research.results.length);
+
   return (
     <section className="space-y-4">
       <div>
@@ -1872,9 +1874,9 @@ function IdeasSection({
       {summary ? (
         <p className="rounded-2xl bg-muted px-4 py-3 text-sm text-muted-foreground">{summary}</p>
       ) : null}
-      {research.search_status && research.search_status !== "ok" ? (
+      {searchNote ? (
         <p className="rounded-2xl border border-border bg-accent px-4 py-3 text-sm font-semibold" role="status">
-          search failed: {research.search_status}
+          {searchNote}
         </p>
       ) : null}
 
@@ -1930,17 +1932,32 @@ function IdeasSection({
             <p className="mt-1 text-xs text-muted-foreground">{idea.description_en}</p>
             <p className="mt-1 text-xs text-muted-foreground">{idea.description_ru}</p>
             <p className="mt-3 text-sm font-black">
-              {idea.price == null ? "price needs route distance" : `Առաջարկվող գին ${formatAmd(idea.price)}`}
+              {idea.price == null
+                ? "Գինը չի հաշվարկվել. երթուղու հեռավորությունը անհայտ է"
+                : `Առաջարկվող գին ${formatAmd(idea.price)}`}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Խումբ {idea.profitability?.group_size ?? 17} · արժեք/անձ {formatAmd(idea.cost_per_person_amd ?? idea.profitability?.expense_per_person_amd ?? 0)}
-              · նվազագույն գին {formatAmd(idea.min_price_amd ?? 0)}
-              · շահույթ/անձ {formatAmd(idea.profitability?.profit_per_person_amd ?? 0)}
+              Խումբ {idea.profitability?.group_size ?? 17}
+              {" · արժեք/անձ "}
+              {idea.price == null ? "—" : formatAmd(idea.cost_per_person_amd ?? idea.profitability?.expense_per_person_amd ?? 0)}
+              {" · նվազագույն գին "}
+              {idea.price == null ? "—" : formatAmd(idea.min_price_amd ?? 0)}
+              {" · շահույթ/անձ "}
+              {idea.price == null ? "—" : formatAmd(idea.profitability?.profit_per_person_amd ?? 0)}
             </p>
             {idea.route_km ? (
               <p className="mt-1 text-xs text-muted-foreground">
-                Երթուղի {idea.route_km} կմ (մեկ ուղղությամբ) · {formatAmd(idea.breakdown?.transport_amd ?? 0)} տրանսպորտ
+                Երթուղի {idea.route_km} կմ (մեկ ուղղությամբ) · աղբյուր {idea.km_source === "OSRM" ? "OSRM" : "estimate"} · {formatAmd(idea.breakdown?.transport_amd ?? 0)} տրանսպորտ
               </p>
+            ) : null}
+            {idea.geocoded_stops && idea.geocoded_stops.length > 0 ? (
+              <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+                {idea.geocoded_stops.map((stop) => (
+                  <li key={`${stop.name}-${stop.lat}-${stop.lon}`}>
+                    {stop.name} · {stop.lat}, {stop.lon} · {stop.coord_source || "Nominatim"}
+                  </li>
+                ))}
+              </ul>
             ) : null}
             <p className="mt-1 text-xs font-semibold text-muted-foreground">
               {marketPositionLabel(idea.market_position)}
@@ -1980,7 +1997,7 @@ function IdeasSection({
             {idea.verify && idea.verify.length > 0 ? (
               <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
                 {idea.verify.map((item) => (
-                  <li key={item}>verify: {item}</li>
+                  <li key={item}>verify: {formatVerifyNoteHy(item)}</li>
                 ))}
               </ul>
             ) : null}

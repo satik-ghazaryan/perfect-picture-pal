@@ -45,24 +45,34 @@ def _idea_with_copy() -> dict:
 
 class QualityFixTests(unittest.TestCase):
     def test_armenian_slash_stop_uses_english_names_not_zero_km(self) -> None:
-        km, _sourced, notes = one_way_route_km(
-            [
-                {"time": "08:00", "title": "Արմավիր — մեկնում"},
-                {
-                    "time": "11:00",
-                    "title": "Դսեղ գյուղ / Տսովեր լիճ / Գրիգոր Մոնաստեր",
-                    "title_en": "Dsegh village / Tsover lake / Grigor Monastery",
-                    "description": "Lori",
-                },
-            ]
-        )
+        coords = {
+            "Dsegh village": (40.9610, 44.6510),
+            "Tsover lake": (40.9530, 44.6680),
+            "Grigor Monastery": (40.97, 44.64),
+        }
+
+        def fake_nominatim(name: str, region: str = ""):
+            return coords.get(name) or (40.96, 44.65)
+
+        with patch("agent.distance.nominatim_coord", side_effect=fake_nominatim), patch(
+            "agent.distance._osrm_km", return_value=None
+        ):
+            km, _sourced, notes = one_way_route_km(
+                [
+                    {"time": "08:00", "title": "Արմավիր — մեկնում"},
+                    {
+                        "time": "11:00",
+                        "title": "Դսեղ գյուղ / Տսովեր լիճ / Գրիգոր Մոնաստեր",
+                        "title_en": "Dsegh village / Tsover lake / Grigor Monastery",
+                        "description": "Lori",
+                    },
+                ]
+            )
         self.assertGreater(km, 50)
         self.assertFalse(any(item == "price needs route distance" for item in notes))
 
     def test_failed_geocode_does_not_price_guide_only(self) -> None:
-        with patch("agent.distance.lookup_coord", return_value=None), patch(
-            "agent.distance.nominatim_coord", return_value=None
-        ):
+        with patch("agent.distance.nominatim_coord", return_value=None):
             km, sourced, notes = one_way_route_km(
                 [{"time": "11:00", "title": "Mystery gorge", "title_en": "Mystery gorge", "description": "x"}],
                 extra_names=["Mystery gorge"],

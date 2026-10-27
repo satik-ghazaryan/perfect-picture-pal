@@ -12,7 +12,9 @@ from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 from pydantic import ValidationError
 
+from agent.admin_copy import search_status_note
 from agent.distance import has_stop_outside_armavir, one_way_route_km
+from agent.place_discovery import discover_place
 from agent.pricing import (
     GROUP_SIZE,
     GUIDE_FEE_GROUP_AMD,
@@ -30,7 +32,7 @@ from agent.quality import (
     mark_hy_review,
     rewrite_copy_from_numbers,
 )
-from agent.search import run_market_search
+from agent.search import distance_cross_check_snippet, run_market_search
 from schemas import GenerateIdeasRequest, TourIdea
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
@@ -39,6 +41,7 @@ load_dotenv()
 
 class State(TypedDict):
     inputs: dict[str, Any]
+    place_discovery: str
     market_research: str
     research_data: str
     ideas_raw: list[dict[str, Any]]
@@ -67,7 +70,7 @@ SYSTEM = (
     "Python computes one-way route_km × AMD/km and cost/person = (transport_group + guide) / group_size. "
     f"Minimum price is cost per person × {MIN_MARGIN_PCT}%. "
     "Itinerary: at least four timed stops (Armavir start, two or more sourced places, Armavir return). "
-    "Each stop needs a short reason and, when possible, a source_url from SEARCH RESULTS. "
+    "Each stop needs a short reason and a source_url copied from SEARCH RESULTS. "
     "No vague 'adventure activities'. Never claim previous participants, reviews, awards, or Quality n/10 in customer text. "
     "quality_score is an internal field only. "
     "State: Meals and entrance fees are not included. "
@@ -171,8 +174,51 @@ IDEA_JSON_SHAPE = """
 """
 
 
+def _discovery_payload(state: State) -> dict[str, Any]:
+    try:
+        payload = json.loads(state.get("place_discovery") or "{}")
+    except json.JSONDecodeError:
+        payload = {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def place_discovery_node(state: State) -> dict[str, Any]:
+    prefs = str((state.get("inputs") or {}).get("preferences") or "")
+    payload = discover_place(prefs)
+    return {"place_discovery": json.dumps(payload, ensure_ascii=False)}
+
+
 def search_node(state: State) -> dict[str, Any]:
-    payload = run_market_search(state["inputs"])
+    inputs = dict(state["inputs"])
+    discovery = _discovery_payload(state)
+    place_en = str(discovery.get("place_en") or "").strip()
+    region_en = str(discovery.get("region_en") or "").strip()
+    if place_en:
+        inputs["place_en"] = place_en
+    if region_en:
+        inputs["region_en"] = region_en
+    payload = run_market_search(inputs)
+    disc_results = [row for row in (discovery.get("results") or []) if isinstance(row, dict)]
+    merged: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for row in list(payload.get("results") or []) + disc_results:
+        key = str(row.get("url") or row.get("title") or "")
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        merged.append(row)
+        if len(merged) >= 12:
+            break
+    payload["results"] = merged
+    payload["useful_result_count"] = len(merged)
+    payload["live"] = bool(merged)
+    if len(merged) >= 2 and payload.get("search_status") in {"too_few_results", "empty"}:
+        payload["search_status"] = "ok"
+        payload["error"] = ""
+    payload["discovery_queries"] = discovery.get("queries") or []
+    payload["place_en"] = place_en or None
+    payload["region_en"] = region_en or None
+    payload["queries"] = list(dict.fromkeys(list(discovery.get("queries") or []) + list(payload.get("queries") or [])))
     return {"market_research": json.dumps(payload, ensure_ascii=False)}
 
 
@@ -224,7 +270,7 @@ def generation_node(state: State) -> dict[str, Any]:
     payload = state["inputs"]
     count = int(payload.get("count") or 3)
     prompt = f"""
-SEARCH RESULTS (only allowed place names and competitor prices):
+SEARCH RESULTS (only allowed place names and competitor prices; includes place discovery hits):
 {state.get("market_research") or "{}"}
 
 Research briefing (not live-verified):
@@ -242,7 +288,7 @@ Budget mix:
 
 Rules:
 - ALWAYS depart from Armavir and return to Armavir.
-- Name at least four timed stops: Armavir departure, two or more CONCRETE places from SEARCH RESULTS, Armavir return. Each stop needs a reason and source_url when the URL is in SEARCH RESULTS. Keep title_en in English (Dsegh village, Tsover Lake).
+- Name at least four timed stops: Armavir departure, two or more CONCRETE places from SEARCH RESULTS, Armavir return. Each stop needs a reason and source_url copied from a SEARCH RESULTS url. Keep title_en in English.
 - State explicitly: Meals and entrance fees are not included. Do not mention Python or internal scoring.
 - Armavir→Lori legs: at least 2.5–3 hours (07:30 depart → 10:30 arrive).
 - Competitive differentiation may name a company ONLY if it is in SEARCH RESULTS with a URL. Never name Ari Gnank as a competitor. If there are no competitor offers, write that no competitor data was found.
@@ -470,12 +516,18 @@ def refinement_node(state: State) -> dict[str, Any]:
         candidate = ensure_armavir_bookends(dict(raw), departure)
         candidate = ground_idea(candidate, research)
         extra_names = [str(candidate.get("title_en") or ""), str(candidate.get("location_en") or "")]
-        region = str(candidate.get("location_en") or "")
-        route_km, sourced, km_notes = one_way_route_km(
+        region = str(research.get("region_en") or candidate.get("location_en") or "")
+        route = one_way_route_km(
             candidate.get("itinerary") or [],
             extra_names=extra_names,
             region=region,
         )
+        km_notes = list(route.notes)
+        place_en = str(research.get("place_en") or candidate.get("location_en") or "").strip()
+        if place_en:
+            cross = distance_cross_check_snippet(place_en)
+            if cross and cross not in km_notes:
+                km_notes.append(cross)
         away = has_stop_outside_armavir(candidate.get("itinerary") or []) or any(
             name and "armavir" not in name.lower() and "արմավիր" not in name.lower()
             for name in extra_names
@@ -483,11 +535,13 @@ def refinement_node(state: State) -> dict[str, Any]:
         candidate = apply_yerevan_transfer(candidate)
         candidate = apply_unit_economics(
             candidate,
-            route_km=route_km,
-            km_sourced=sourced,
+            route_km=route.km,
+            km_sourced=route.sourced,
             km_notes=km_notes,
             offers=offers,
             has_away_stop=away,
+            km_source=route.km_source,
+            geocoded_stops=route.geocoded_stops,
         )
         candidate = rewrite_copy_from_numbers(candidate, research)
         priced.append(candidate)
@@ -531,6 +585,7 @@ def refinement_node(state: State) -> dict[str, Any]:
 
 def build_graph():
     graph = StateGraph(State)
+    graph.add_node("place_discovery_node", place_discovery_node)
     graph.add_node("search_node", search_node)
     graph.add_node("research_node", research_node)
     graph.add_node("generation_node", generation_node)
@@ -538,7 +593,8 @@ def build_graph():
     graph.add_node("refine_llm_node", refine_llm_node)
     graph.add_node("hy_adapt_node", hy_adapt_node)
     graph.add_node("refinement_node", refinement_node)
-    graph.add_edge(START, "search_node")
+    graph.add_edge(START, "place_discovery_node")
+    graph.add_edge("place_discovery_node", "search_node")
     graph.add_edge("search_node", "research_node")
     graph.add_edge("research_node", "generation_node")
     graph.add_edge("generation_node", "evaluation_node")
@@ -566,6 +622,7 @@ def get_graph():
 def run_idea_workflow(request: GenerateIdeasRequest) -> tuple[list[dict[str, Any]], str, dict[str, Any]]:
     initial: State = {
         "inputs": request.model_dump(),
+        "place_discovery": "",
         "market_research": "",
         "research_data": "",
         "ideas_raw": [],
@@ -594,11 +651,10 @@ def run_idea_workflow(request: GenerateIdeasRequest) -> tuple[list[dict[str, Any
     provider_line = f"providers tavily={tavily_flag or 'n/a'} (key={key_flag}) ddg={ddg_flag or 'n/a'}"
     if provider_line not in research_summary:
         research_summary = f"{provider_line}. {research_summary}".strip()
-    if status and status not in {"ok", ""}:
-        flag = f"search failed: {status}"
-        if flag not in research_summary:
-            research_summary = f"{flag}. {research_summary}".strip()
     useful = int(research.get("useful_result_count") or len(research.get("results") or []))
+    status_note = search_status_note(status, useful)
+    if status_note and status_note not in research_summary:
+        research_summary = f"{status_note}. {research_summary}".strip()
     if useful < 2:
         few = "Fewer than 2 useful search results after filtering; do not treat snippets as market proof."
         if few not in research_summary:
