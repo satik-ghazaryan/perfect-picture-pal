@@ -121,6 +121,12 @@ class GeocodedStop(BaseModel):
     coord_source: str = "Nominatim"
 
 
+class PlaceCandidate(BaseModel):
+    name_en: str = ""
+    type: str = ""
+    source_url: str = ""
+
+
 class ResearchHit(BaseModel):
     title: str = ""
     url: str = ""
@@ -156,6 +162,10 @@ class ResearchBundle(BaseModel):
     tavily_key_present: bool = False
     useful_result_count: int = 0
     provider_status: dict[str, Any] = Field(default_factory=dict)
+    place_en: str | None = None
+    region_en: str | None = None
+    place_candidates: list[PlaceCandidate] = Field(default_factory=list)
+    pages_fetched: int = 0
 
 
 class IdeaMarket(BaseModel):

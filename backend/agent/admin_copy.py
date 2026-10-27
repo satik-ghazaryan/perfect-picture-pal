@@ -19,12 +19,16 @@ VERIFY_NOTE_HY_EXACT = {
         "Կենդանի որոնման արդյունքներ չկան. վայրերն ու գները հարկավոր է ստուգել ձեռքով"
     ),
     "No competitor data was found": "Մրցակցային տվյալներ չեն գտնվել",
+    "Not enough concrete places found; needs human research": (
+        "Բավարար կոնկրետ վայրեր չեն գտնվել. հարկավոր է ձեռքով ստուգում"
+    ),
 }
 VERIFY_NOTE_HY_PREFIXES = (
     ("Place not in search results:", "Վայրը որոնման արդյունքներում չկա:"),
     ("Needs sourced fact URL:", "Հարկավոր է աղբյուրի URL:"),
     ("Could not geocode stop:", "Չհաջողվեց գեոկոդավորել կանգառը:"),
     ("Web distance cross-check (not used for price):", "Հեռավորության համացանցային ստուգում (գնի համար չի օգտագործվում):"),
+    ("Generic stop, no concrete place:", "Ընդհանուր կանգառ, կոնկրետ վայր չկա:"),
 )
 
 

@@ -49,6 +49,10 @@ class AdminCopyTests(unittest.TestCase):
             format_verify_note_hy("Could not geocode stop: Gyumri — arrival; stop skipped"),
             "Չհաջողվեց գեոկոդավորել կանգառը: Gyumri — arrival; stop skipped",
         )
+        self.assertEqual(
+            format_verify_note_hy("Not enough concrete places found; needs human research"),
+            "Բավարար կոնկրետ վայրեր չեն գտնվել. հարկավոր է ձեռքով ստուգում",
+        )
         self.assertEqual(format_verify_note_hy("Route km is an estimate"), "Երթուղու կմ-ը գնահատական է")
         self.assertTrue(
             format_verify_note_hy("Web distance cross-check (not used for price): 120 km").startswith(

@@ -29,12 +29,15 @@ const VERIFY_NOTE_HY_EXACT: Record<string, string> = {
   "No live web results; places and prices need human research":
     "Կենդանի որոնման արդյունքներ չկան. վայրերն ու գները հարկավոր է ստուգել ձեռքով",
   "No competitor data was found": "Մրցակցային տվյալներ չեն գտնվել",
+  "Not enough concrete places found; needs human research":
+    "Բավարար կոնկրետ վայրեր չեն գտնվել. հարկավոր է ձեռքով ստուգում",
 };
 const VERIFY_NOTE_HY_PREFIXES: Array<[string, string]> = [
   ["Place not in search results:", "Վայրը որոնման արդյունքներում չկա:"],
   ["Needs sourced fact URL:", "Հարկավոր է աղբյուրի URL:"],
   ["Could not geocode stop:", "Չհաջողվեց գեոկոդավորել կանգառը:"],
   ["Web distance cross-check (not used for price):", "Հեռավորության համացանցային ստուգում (գնի համար չի օգտագործվում):"],
+  ["Generic stop, no concrete place:", "Ընդհանուր կանգառ, կոնկրետ վայր չկա:"],
 ];
 
 export function searchStatusNote(status: string | undefined, usefulCount = 0): string {
@@ -196,6 +199,8 @@ export function normalizeResearch(value: unknown): TourIdeaResearch {
       tavily_key_present: false,
       useful_result_count: 0,
       provider_status: {},
+      place_candidates: [],
+      pages_fetched: 0,
     };
   }
   const record = value as Record<string, unknown>;
@@ -231,6 +236,22 @@ export function normalizeResearch(value: unknown): TourIdeaResearch {
         tavily_key_present: Boolean((record["provider_status"] as Record<string, unknown>)["tavily_key_present"]),
       }
       : {},
+    place_en: typeof record["place_en"] === "string" ? record["place_en"] : null,
+    region_en: typeof record["region_en"] === "string" ? record["region_en"] : null,
+    pages_fetched: Number(record["pages_fetched"] ?? 0) || 0,
+    place_candidates: Array.isArray(record["place_candidates"])
+      ? record["place_candidates"].flatMap((item) => {
+        if (!item || typeof item !== "object") return [];
+        const row = item as Record<string, unknown>;
+        const name = String(row["name_en"] ?? "").trim();
+        if (!name) return [];
+        return [{
+          name_en: name,
+          type: String(row["type"] ?? ""),
+          source_url: asHttpUrl(row["source_url"]),
+        }];
+      })
+      : [],
   };
 }
 

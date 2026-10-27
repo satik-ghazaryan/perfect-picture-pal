@@ -647,6 +647,33 @@ def run_place_attraction_search(place_en: str, max_results: int = 5) -> dict[str
     return run_queries_search(queries, keywords, max_results, require_min_unique=False)
 
 
+KM_IN_TEXT_RE = re.compile(r"\b\d+(?:[.,]\d+)?\s*km\b", re.IGNORECASE)
+DISTANCE_BOILERPLATE = (
+    "distance calculator",
+    "calculating mileage",
+    "helps in calculating",
+    "enter location",
+    "calculate the distance",
+)
+
+
+def usable_web_distance_snippet(snippet: str, place_en: str, origin: str = "Armavir") -> str:
+    text = " ".join(str(snippet or "").split())
+    if not text:
+        return ""
+    lowered = text.lower()
+    if any(item in lowered for item in DISTANCE_BOILERPLATE):
+        return ""
+    if not KM_IN_TEXT_RE.search(text):
+        return ""
+    place = " ".join(str(place_en or "").split()).lower()
+    start = " ".join(str(origin or "Armavir").split()).lower()
+    if not place or start not in lowered or place not in lowered:
+        return ""
+    note = f"Web distance cross-check (not used for price): {text}"
+    return note[:120]
+
+
 def distance_cross_check_snippet(place_en: str) -> str:
     place = " ".join(str(place_en or "").split())
     if not place:
@@ -656,7 +683,8 @@ def distance_cross_check_snippet(place_en: str) -> str:
     if not rows:
         rows, _reasons = _search_all([query], 3, _ddg_one, "ddg")
     for row in rows:
-        snippet = _clip(str(row.get("snippet") or row.get("title") or ""), 240)
-        if snippet:
-            return f"Web distance cross-check (not used for price): {snippet}"
+        snippet = str(row.get("snippet") or row.get("title") or "")
+        usable = usable_web_distance_snippet(snippet, place)
+        if usable:
+            return usable
     return ""

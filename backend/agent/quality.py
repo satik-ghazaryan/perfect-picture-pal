@@ -4,6 +4,8 @@ import re
 from difflib import SequenceMatcher
 from typing import Any
 
+from agent.distance import is_activity_stop, is_armavir_stop, place_from_stop_title
+from agent.place_discovery import log_discovery
 from agent.pricing import PRICE_NEEDS_DISTANCE
 
 ARMENIAN_RE = re.compile(r"[\u0531-\u0587]")
@@ -212,8 +214,126 @@ def _search_corpus(research: dict[str, Any]) -> str:
 
 
 def _is_armavir_title(title: str) -> bool:
-    text = title.lower()
-    return "armavir" in text or "արմավիր" in text
+    return is_armavir_stop(title)
+
+
+GENERIC_STOP_PHRASES = (
+    "cultural sites",
+    "cultural site",
+    "sightseeing",
+)
+GENERIC_STOP_WORDS = {
+    "attractions",
+    "attraction",
+    "sightseeing",
+    "visit",
+    "explore",
+    "arrive",
+    "arriving",
+    "tour",
+    "tours",
+}
+GENERIC_STOP_NOTE = "Generic stop, no concrete place:"
+NOT_ENOUGH_PLACES = "Not enough concrete places found; needs human research"
+
+
+def is_lunch_stop(title: str) -> bool:
+    text = _text(title).lower()
+    if "lunch" in text or "meal" in text:
+        return True
+    return is_activity_stop(title) and not is_armavir_stop(title)
+
+
+def is_generic_stop_title(title: str) -> bool:
+    if is_armavir_stop(title) or is_lunch_stop(title):
+        return False
+    text = _text(title).lower()
+    if any(phrase in text for phrase in GENERIC_STOP_PHRASES):
+        return True
+    tokens = re.findall(r"[A-Za-z\u0531-\u0587]+", text)
+    lowered = [token.lower() for token in tokens]
+    if any(word in GENERIC_STOP_WORDS for word in lowered):
+        leftover = [
+            word
+            for word in lowered
+            if word not in GENERIC_STOP_WORDS and word not in {"in", "the", "and", "of", "to", "a", "an", "at", "on"}
+        ]
+        if len(leftover) <= 1:
+            return True
+    place = place_from_stop_title(title)
+    return not place
+
+
+def _candidate_rows(research: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = research.get("place_candidates") or []
+    return [item for item in rows if isinstance(item, dict) and _text(item.get("name_en"))]
+
+
+def match_place_candidate(title: str, research: dict[str, Any]) -> dict[str, Any] | None:
+    hay = " ".join([_text(title), place_from_stop_title(title)]).lower()
+    best: dict[str, Any] | None = None
+    best_len = 0
+    for row in _candidate_rows(research):
+        name = _text(row.get("name_en"))
+        key = name.lower()
+        if len(key) < 3:
+            continue
+        if key in hay or hay in key:
+            if len(key) > best_len:
+                best = row
+                best_len = len(key)
+    return best
+
+
+def _search_mentions_stop(title: str, research: dict[str, Any]) -> bool:
+    corpus = _search_corpus(research)
+    if not corpus.strip():
+        return False
+    place = place_from_stop_title(title) or _text(title)
+    tokens = [token for token in re.split(r"[\s,;:/|—.()\-]+", place) if len(token) > 3]
+    return bool(tokens) and any(token.lower() in corpus for token in tokens)
+
+
+def classify_itinerary_stops(idea: dict[str, Any], research: dict[str, Any]) -> dict[str, Any]:
+    """Keep Armavir/lunch; geocode only concrete candidate (or search-backed) names."""
+    verify = [str(item) for item in (idea.get("verify") or []) if str(item).strip()]
+    candidates = _candidate_rows(research)
+    accepted: list[dict[str, Any]] = []
+    dropped: list[str] = []
+    for stop in idea.get("itinerary") or []:
+        if not isinstance(stop, dict):
+            continue
+        title = _text(stop.get("title_en") or stop.get("title"))
+        if not title or _is_armavir_title(title) or is_lunch_stop(title):
+            continue
+        matched = match_place_candidate(title, research)
+        if matched:
+            geo_stop = dict(stop)
+            geo_stop["title_en"] = _text(matched.get("name_en"))
+            geo_stop["source_url"] = _text(matched.get("source_url") or geo_stop.get("source_url"))
+            accepted.append(geo_stop)
+            continue
+        generic = is_generic_stop_title(title)
+        allowed = (not candidates) and (not generic) and _search_mentions_stop(title, research)
+        if allowed:
+            accepted.append(dict(stop))
+            continue
+        dropped.append(title)
+        flag = f"{GENERIC_STOP_NOTE} {title}"
+        if flag not in verify:
+            verify.append(flag)
+    if len(accepted) < 2 and NOT_ENOUGH_PLACES not in verify:
+        verify.append(NOT_ENOUGH_PLACES)
+    idea["verify"] = verify
+    idea["needs_verification"] = bool(verify)
+    log_discovery(
+        str(research.get("place_en") or ""),
+        int(research.get("pages_fetched") or 0),
+        len(candidates),
+        accepted=[_text(item.get("title_en") or item.get("title")) for item in accepted],
+        dropped=dropped,
+    )
+    return {"idea": idea, "accepted": accepted, "dropped": dropped}
 
 
 def ground_idea(idea: dict[str, Any], research: dict[str, Any]) -> dict[str, Any]:

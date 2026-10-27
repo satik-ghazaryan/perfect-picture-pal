@@ -25,6 +25,7 @@ from agent.pricing import (
 )
 from agent.quality import (
     attach_review_flag,
+    classify_itinerary_stops,
     collect_quality_issues,
     ensure_armavir_bookends,
     ground_idea,
@@ -55,7 +56,7 @@ SYSTEM = (
     "You are the commercial tour desk for «Արի Գնանք» (Ari Gnank). "
     "ALWAYS prioritize tours that start and end in Armavir, Armenia. "
     "Place names, attractions, roads, and factual claims MUST appear in the provided "
-    "SEARCH RESULTS JSON (title, snippet, or URL). If a name is not in that JSON, do not use it. "
+    "SEARCH RESULTS JSON, especially place_candidates[]. If a name is not in that JSON, do not use it. "
     "Armavir as departure is always allowed. "
     "If search results are empty, say so; do not invent destinations; set verify to include "
     "'No live web results; places and prices need human research'. "
@@ -218,6 +219,10 @@ def search_node(state: State) -> dict[str, Any]:
     payload["discovery_queries"] = discovery.get("queries") or []
     payload["place_en"] = place_en or None
     payload["region_en"] = region_en or None
+    payload["place_candidates"] = [
+        item for item in (discovery.get("place_candidates") or []) if isinstance(item, dict)
+    ]
+    payload["pages_fetched"] = int(discovery.get("pages_fetched") or 0)
     payload["queries"] = list(dict.fromkeys(list(discovery.get("queries") or []) + list(payload.get("queries") or [])))
     return {"market_research": json.dumps(payload, ensure_ascii=False)}
 
@@ -270,7 +275,7 @@ def generation_node(state: State) -> dict[str, Any]:
     payload = state["inputs"]
     count = int(payload.get("count") or 3)
     prompt = f"""
-SEARCH RESULTS (only allowed place names and competitor prices; includes place discovery hits):
+SEARCH RESULTS (place_candidates is the only allowed list of visitable stop names; snippets are market context):
 {state.get("market_research") or "{}"}
 
 Research briefing (not live-verified):
@@ -288,7 +293,9 @@ Budget mix:
 
 Rules:
 - ALWAYS depart from Armavir and return to Armavir.
-- Name at least four timed stops: Armavir departure, two or more CONCRETE places from SEARCH RESULTS, Armavir return. Each stop needs a reason and source_url copied from a SEARCH RESULTS url. Keep title_en in English.
+- Name at least four timed stops: Armavir departure, two or more CONCRETE places from place_candidates (match by name_en), optional lunch, Armavir return. Copy source_url from that candidate. Keep title_en in English.
+- Do not use generic stop titles such as Arrive in Lori, Cultural Sites, attractions, sightseeing, visit, explore, or tour.
+- If place_candidates is empty or has fewer than 2 names, do not invent monasteries or villages; still return Armavir bookends and put remaining uncertainty in verify.
 - State explicitly: Meals and entrance fees are not included. Do not mention Python or internal scoring.
 - Armavir→Lori legs: at least 2.5–3 hours (07:30 depart → 10:30 arrive).
 - Competitive differentiation may name a company ONLY if it is in SEARCH RESULTS with a URL. Never name Ari Gnank as a competitor. If there are no competitor offers, write that no competitor data was found.
@@ -296,7 +303,7 @@ Rules:
 - Each idea must differ in core concept, target audience slice, and customer experience.
 - Do not start every Armenian title with "Արմավիր –".
 - Do not invent AMD figures or write 15000 AMD in descriptions. Do not write that Python will fill transport.
-- Place names only from SEARCH RESULTS. If useful_result_count is under 2, do not invent monasteries or villages.
+- Place names only from place_candidates. If that list has fewer than 2 names, do not invent monasteries or villages.
 - Write full EN and RU; HY may be a short placeholder for a later translation step. Keep itinerary title_en in English.
 
 Return JSON exactly in this shape:
@@ -514,12 +521,14 @@ def refinement_node(state: State) -> dict[str, Any]:
     leftover_source = [item for item in (state.get("evaluated_ideas") or state.get("ideas_raw") or []) if isinstance(item, dict)]
     for raw in leftover_source:
         candidate = ensure_armavir_bookends(dict(raw), departure)
+        classified = classify_itinerary_stops(candidate, research)
+        candidate = classified["idea"]
         candidate = ground_idea(candidate, research)
-        extra_names = [str(candidate.get("title_en") or ""), str(candidate.get("location_en") or "")]
-        region = str(research.get("region_en") or candidate.get("location_en") or "")
+        region = str(research.get("region_en") or research.get("place_en") or "")
+        geo_stops = classified["accepted"]
         route = one_way_route_km(
-            candidate.get("itinerary") or [],
-            extra_names=extra_names,
+            geo_stops,
+            extra_names=[],
             region=region,
         )
         km_notes = list(route.notes)
@@ -528,9 +537,8 @@ def refinement_node(state: State) -> dict[str, Any]:
             cross = distance_cross_check_snippet(place_en)
             if cross and cross not in km_notes:
                 km_notes.append(cross)
-        away = has_stop_outside_armavir(candidate.get("itinerary") or []) or any(
-            name and "armavir" not in name.lower() and "արմավիր" not in name.lower()
-            for name in extra_names
+        away = bool(classified["accepted"] or classified["dropped"]) or has_stop_outside_armavir(
+            candidate.get("itinerary") or []
         )
         candidate = apply_yerevan_transfer(candidate)
         candidate = apply_unit_economics(

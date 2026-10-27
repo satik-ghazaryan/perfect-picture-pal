@@ -1880,7 +1880,7 @@ function IdeasSection({
         </p>
       ) : null}
 
-      {(research.queries.length > 0 || research.results.length > 0 || research.search_status) ? (
+      {(research.queries.length > 0 || research.results.length > 0 || research.search_status || (research.place_candidates && research.place_candidates.length > 0)) ? (
         <details className="rounded-3xl border border-border bg-card p-4">
           <summary className="cursor-pointer text-sm font-bold">Հետազոտության աղբյուրներ</summary>
           <p className="mt-2 text-xs text-muted-foreground">{research.disclaimer || "Market reference only. Estimated."}</p>
@@ -1896,6 +1896,28 @@ function IdeasSection({
                 <li key={query}>{query}</li>
               ))}
             </ul>
+          ) : null}
+          {research.place_candidates && research.place_candidates.length > 0 ? (
+            <div className="mt-3">
+              <p className="text-xs font-semibold text-foreground">Կոնկրետ վայրեր</p>
+              <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
+                {research.place_candidates.map((place) => {
+                  const href = safeHttpUrl(place.source_url || "");
+                  return (
+                    <li key={`${place.name_en}-${place.source_url || ""}`}>
+                      {href ? (
+                        <a href={href} target="_blank" rel="noopener noreferrer" className="underline">
+                          {place.name_en}
+                        </a>
+                      ) : (
+                        <span>{place.name_en}</span>
+                      )}
+                      {place.type ? ` · ${place.type}` : ""}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
           ) : null}
           <div className="mt-3 space-y-2">
             {research.results.map((hit) => {

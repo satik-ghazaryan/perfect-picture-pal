@@ -7,8 +7,12 @@ from agent.distance import one_way_route_km
 from agent.pricing import PRICE_NEEDS_DISTANCE, apply_unit_economics
 from agent.quality import (
     FORBIDDEN_CUSTOMER_PHRASES,
+    GENERIC_STOP_NOTE,
     HY_REVIEW_FLAG,
+    NOT_ENOUGH_PLACES,
+    classify_itinerary_stops,
     hy_copy_ok,
+    is_generic_stop_title,
     mark_hy_review,
     rewrite_copy_from_numbers,
     sanitize_competitors,
@@ -230,6 +234,64 @@ class QualityFixTests(unittest.TestCase):
         )
         joined = " ".join(idea["verify"])
         self.assertIn("too thin", joined)
+
+    def test_generic_stops_are_detected_and_skipped_for_geocode(self) -> None:
+        self.assertTrue(is_generic_stop_title("Arrive in Lori"))
+        self.assertTrue(is_generic_stop_title("Cultural Sites"))
+        self.assertTrue(is_generic_stop_title("Cultural Sites Visit"))
+        self.assertFalse(is_generic_stop_title("Haghpat Monastery"))
+        idea = {
+            "itinerary": [
+                {"time": "08:00", "title": "Armavir — departure", "title_en": "Armavir — departure"},
+                {"time": "11:00", "title": "Arrive in Lori", "title_en": "Arrive in Lori"},
+                {"time": "12:30", "title": "Cultural Sites", "title_en": "Cultural Sites"},
+                {"time": "13:30", "title": "Lunch break", "title_en": "Lunch break"},
+                {"time": "18:00", "title": "Armavir — return", "title_en": "Armavir — return"},
+            ],
+            "verify": [],
+        }
+        research = {
+            "place_en": "Lori",
+            "pages_fetched": 2,
+            "place_candidates": [
+                {"name_en": "Haghpat Monastery", "type": "monastery", "source_url": "https://example.com/haghpat"},
+                {"name_en": "Sanahin Monastery", "type": "monastery", "source_url": "https://example.com/sanahin"},
+            ],
+            "results": [],
+        }
+        classified = classify_itinerary_stops(idea, research)
+        self.assertEqual(classified["accepted"], [])
+        self.assertTrue(any(item.startswith(GENERIC_STOP_NOTE) for item in idea["verify"]))
+        self.assertIn(NOT_ENOUGH_PLACES, idea["verify"])
+        km, _sourced, _notes = one_way_route_km(classified["accepted"], extra_names=[], region="Lori")
+        self.assertEqual(km, 0)
+
+    def test_candidate_names_are_the_only_geocode_stops(self) -> None:
+        idea = {
+            "itinerary": [
+                {"title": "Armavir — departure", "title_en": "Armavir — departure"},
+                {"title": "Haghpat Monastery", "title_en": "Haghpat Monastery"},
+                {"title": "Visit Sanahin Monastery", "title_en": "Visit Sanahin Monastery"},
+                {"title": "Arrive in Lori", "title_en": "Arrive in Lori"},
+                {"title": "Armavir — return", "title_en": "Armavir — return"},
+            ],
+            "verify": [],
+        }
+        research = {
+            "place_en": "Lori",
+            "pages_fetched": 1,
+            "place_candidates": [
+                {"name_en": "Haghpat Monastery", "type": "monastery", "source_url": "https://example.com/h"},
+                {"name_en": "Sanahin Monastery", "type": "monastery", "source_url": "https://example.com/s"},
+            ],
+        }
+        classified = classify_itinerary_stops(idea, research)
+        self.assertEqual(
+            [stop["title_en"] for stop in classified["accepted"]],
+            ["Haghpat Monastery", "Sanahin Monastery"],
+        )
+        self.assertIn("Arrive in Lori", classified["dropped"])
+        self.assertNotIn(NOT_ENOUGH_PLACES, idea["verify"])
 
 
 if __name__ == "__main__":

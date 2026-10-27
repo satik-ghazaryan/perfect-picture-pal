@@ -146,6 +146,12 @@ export type TourIdeaResearchHit = {
   kind?: string;
 };
 
+export type TourIdeaPlaceCandidate = {
+  name_en: string;
+  type?: string;
+  source_url?: string;
+};
+
 export type TourIdeaResearch = {
   live: boolean;
   provider: string;
@@ -163,6 +169,10 @@ export type TourIdeaResearch = {
     ddg?: string;
     tavily_key_present?: boolean;
   };
+  place_en?: string | null;
+  region_en?: string | null;
+  place_candidates?: TourIdeaPlaceCandidate[];
+  pages_fetched?: number;
 };
 
 export type TourIdeaResult = {
