@@ -1880,7 +1880,7 @@ function IdeasSection({
         </p>
       ) : null}
 
-      {(research.queries.length > 0 || research.results.length > 0 || research.search_status || (research.place_candidates && research.place_candidates.length > 0)) ? (
+      {(research.queries.length > 0 || research.results.length > 0 || research.search_status || (research.place_candidates && research.place_candidates.length > 0) || (research.onewaytour_tours && research.onewaytour_tours.length > 0) || research.onewaytour_unavailable) ? (
         <details className="rounded-3xl border border-border bg-card p-4">
           <summary className="cursor-pointer text-sm font-bold">Հետազոտության աղբյուրներ</summary>
           <p className="mt-2 text-xs text-muted-foreground">{research.disclaimer || "Market reference only. Estimated."}</p>
@@ -1897,17 +1897,45 @@ function IdeasSection({
               ))}
             </ul>
           ) : null}
+          {research.onewaytour_unavailable ? (
+            <p className="mt-2 text-xs text-muted-foreground">OneWayTour տվյալները անհասանելի են</p>
+          ) : null}
+          {research.onewaytour_tours && research.onewaytour_tours.length > 0 ? (
+            <div className="mt-3">
+              <p className="text-xs font-semibold text-foreground">OneWayTour տուրեր (շուկայական հղում)</p>
+              <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
+                {research.onewaytour_tours.map((tour) => {
+                  const href = safeHttpUrl(tour.url || "");
+                  return (
+                    <li key={`${tour.url}-${tour.name}`}>
+                      {href ? (
+                        <a href={href} target="_blank" rel="noopener noreferrer" className="underline">
+                          {tour.name || href}
+                        </a>
+                      ) : (
+                        <span>{tour.name}</span>
+                      )}
+                      {tour.price_amd ? ` · ${formatAmd(tour.price_amd)}` : ""}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ) : null}
           {research.place_candidates && research.place_candidates.length > 0 ? (
             <div className="mt-3">
               <p className="text-xs font-semibold text-foreground">Կոնկրետ վայրեր</p>
               <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
                 {research.place_candidates.map((place) => {
                   const osm = safeHttpUrl(place.osm_url || "");
-                  const wiki = safeHttpUrl(place.wiki_url || place.source_url || "");
+                  const wiki = safeHttpUrl(place.wiki_url || "");
+                  const source = safeHttpUrl(place.source_url || "");
+                  const fromOneWay = source.includes("onewaytour.com");
                   return (
                     <li key={`${place.name_en}-${place.osm_url || place.source_url || ""}`}>
                       <span>{place.name_en}</span>
                       {place.type ? ` · ${place.type}` : ""}
+                      {fromOneWay ? " · OneWayTour" : ""}
                       {osm ? (
                         <>
                           {" · "}
@@ -1921,6 +1949,14 @@ function IdeasSection({
                           {" · "}
                           <a href={wiki} target="_blank" rel="noopener noreferrer" className="underline">
                             Wikipedia
+                          </a>
+                        </>
+                      ) : null}
+                      {fromOneWay && source ? (
+                        <>
+                          {" · "}
+                          <a href={source} target="_blank" rel="noopener noreferrer" className="underline">
+                            տուր
                           </a>
                         </>
                       ) : null}
@@ -1966,23 +2002,27 @@ function IdeasSection({
             <p className="mt-1 text-xs text-muted-foreground">{idea.description_ru}</p>
             <p className="mt-3 text-sm font-black">
               {idea.price == null
-                ? "Գինը չի հաշվարկվել. երթուղու հեռավորությունը անհայտ է"
+                ? "Գինը չի հաշվարկվել"
                 : `Առաջարկվող գին ${formatAmd(idea.price)}`}
             </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Խումբ {idea.profitability?.group_size ?? 17}
-              {" · արժեք/անձ "}
-              {idea.price == null ? "—" : formatAmd(idea.cost_per_person_amd ?? idea.profitability?.expense_per_person_amd ?? 0)}
-              {" · նվազագույն գին "}
-              {idea.price == null ? "—" : formatAmd(idea.min_price_amd ?? 0)}
-              {" · շահույթ/անձ "}
-              {idea.price == null ? "—" : formatAmd(idea.profitability?.profit_per_person_amd ?? 0)}
-            </p>
-            {idea.route_km ? (
-              <p className="mt-1 text-xs text-muted-foreground">
-                Երթուղի {idea.route_km} կմ (մեկ ուղղությամբ) · աղբյուր {idea.km_source || "estimate"} · {formatAmd(idea.breakdown?.transport_amd ?? 0)} տրանսպորտ
-              </p>
-            ) : null}
+            {idea.price != null ? (
+              <>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Երթուղի {idea.route_km ?? 0} կմ · աղբյուր {(idea.km_source || "").toLowerCase().includes("osrm") ? "OSRM" : "estimate"}
+                  {" · տրանսպորտ "}
+                  {idea.route_km ?? 0} × {idea.transport_rate_per_km_amd ?? 600} = {formatAmd(idea.breakdown?.transport_amd ?? 0)}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Արժեք/անձ (տրանսպորտ + 15000) / 17 = {formatAmd(idea.cost_per_person_amd ?? idea.profitability?.expense_per_person_amd ?? 0)}
+                  {" · նվազագույն գին (+25%) "}
+                  {formatAmd(idea.min_price_amd ?? 0)}
+                  {" · վերջնական գին "}
+                  {formatAmd(idea.price)}
+                </p>
+              </>
+            ) : (
+              <p className="mt-1 text-xs text-muted-foreground">Խումբ {idea.profitability?.group_size ?? 17}</p>
+            )}
             {idea.geocoded_stops && idea.geocoded_stops.length > 0 ? (
               <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">
                 {idea.geocoded_stops.map((stop) => (
@@ -2046,11 +2086,18 @@ function IdeasSection({
             ) : null}
             {idea.itinerary.length > 0 ? (
               <div className="mt-3 space-y-1 text-sm">
-                {idea.itinerary.map((stop) => (
-                  <p key={`${stop.time}-${stop.title}`}>
-                    <span className="font-bold">{stop.time}</span> · {stop.title}
-                  </p>
-                ))}
+                {idea.itinerary.map((stop) => {
+                  const display =
+                    stop.title_hy ||
+                    (stop.place_name && stop.activity
+                      ? `${stop.place_name} — ${stop.activity}`
+                      : stop.place_name || stop.title);
+                  return (
+                    <p key={`${stop.time}-${stop.title}`}>
+                      <span className="font-bold">{stop.time}</span> · {display}
+                    </p>
+                  );
+                })}
               </div>
             ) : null}
             <div className="mt-4 flex flex-wrap gap-2">

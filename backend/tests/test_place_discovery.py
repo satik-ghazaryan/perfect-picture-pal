@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from agent import distance, search
-from agent.graph import place_discovery_node, search_node
+from agent.graph import _preserve_stop_english, place_discovery_node, search_node
 from agent.place_discovery import (
     discover_place,
     html_to_text,
@@ -65,19 +65,53 @@ class PlaceDiscoveryTests(unittest.TestCase):
         ), patch(
             "agent.place_discovery.collect_structured_bundle",
             return_value={"candidates": [], "ok": True, "is_region": False},
+        ), patch(
+            "agent.onewaytour.collect_onewaytour",
+            return_value={
+                "unavailable": True,
+                "tours": [],
+                "offers": [],
+                "place_candidates": [],
+                "verify": "",
+                "pages_fetched": 0,
+            },
         ):
             payload = discover_place("Գյումրի")
         self.assertEqual(payload["place_en"], "Gyumri")
         self.assertIn("Gyumri Armenia top attractions to visit", payload["queries"])
         self.assertIn("Gyumri Armenia things to see monastery museum", payload["queries"])
         self.assertIn("Gyumri Armenia day tour from Armavir", payload["queries"])
+        self.assertIn("Gyumri Armenia site:onewaytour.com", payload["queries"])
         self.assertEqual(len(payload["results"]), 2)
+
+    def test_hy_adapt_cannot_replace_english_place_title(self) -> None:
+        original = [
+            {"time": "11:00", "title": "Haghpat Monastery — visit", "title_en": "Haghpat Monastery — visit", "place_name": "Haghpat Monastery", "activity": "visit"},
+        ]
+        adapted = [
+            {"time": "11:00", "title": "Ախթալա (Akhtala) Մոնաստեր — այցելություն", "title_en": "Akhtala Monastery — visit", "place_name": None},
+        ]
+        merged = _preserve_stop_english(original, adapted)
+        self.assertEqual(merged[0]["title_en"], "Haghpat Monastery — visit")
+        self.assertEqual(merged[0]["place_name"], "Haghpat Monastery")
+        self.assertEqual(merged[0]["activity"], "visit")
+        self.assertEqual(merged[0]["title"], "Haghpat Monastery — visit")
+        self.assertEqual(merged[0]["title_hy"], "Ախթալա (Akhtala) Մոնաստեր — այցելություն")
 
     def test_graph_search_merges_discovery_into_market(self) -> None:
         discovery = {
             "place_en": "Gyumri",
             "region_en": "Shirak",
             "queries": search.discovery_queries("Gyumri"),
+            "onewaytour_offers": [
+                {
+                    "title": "Gyumri day tour",
+                    "url": "https://onewaytour.com/group-tours/gyumri",
+                    "observed_price_amd": 9000,
+                    "company": "OneWayTour",
+                    "duration_days": 1,
+                }
+            ],
             "results": [
                 {
                     "title": "Gyumri walking tour Armenia",
@@ -121,6 +155,8 @@ class PlaceDiscoveryTests(unittest.TestCase):
         urls = {row["url"] for row in bundled["results"]}
         self.assertIn("https://example.com/gyumri-walk", urls)
         self.assertIn("https://example.com/gyumri-tour", urls)
+        offer_urls = {row["url"] for row in bundled.get("market_offers") or []}
+        self.assertIn("https://onewaytour.com/group-tours/gyumri", offer_urls)
 
     def test_place_discovery_node_uses_discover_place(self) -> None:
         with patch(
@@ -280,7 +316,7 @@ class PlaceDiscoveryTests(unittest.TestCase):
             )
         self.assertEqual(route.km, 201.6)
         self.assertTrue(route.sourced)
-        self.assertEqual(route.km_source, "OSRM from OSM coordinates")
+        self.assertEqual(route.km_source, "OSRM")
         self.assertEqual(route.geocoded_stops[0]["coord_source"], "OSM")
 
     def test_structured_sources_failure_is_caught(self) -> None:

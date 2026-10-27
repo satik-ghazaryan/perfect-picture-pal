@@ -91,10 +91,9 @@ class QualityFixTests(unittest.TestCase):
             km_notes=notes,
             has_away_stop=True,
         )
-        self.assertIsNone(idea["price"])
-        self.assertEqual(idea["market_position"], "unknown")
+        self.assertIsNotNone(idea["price"])
+        self.assertGreater(idea["price"], 0)
         self.assertEqual(idea["breakdown"]["transport_amd"], 0)
-        self.assertNotEqual(idea["cost_per_person_amd"], 882)
         self.assertIn(PRICE_NEEDS_DISTANCE, idea["verify"])
 
     def test_evidence_money_strings_are_stripped(self) -> None:
@@ -274,6 +273,37 @@ class QualityFixTests(unittest.TestCase):
         with patch("agent.distance._osrm_km", return_value=90.0):
             km, _sourced, _notes = one_way_route_km(classified["accepted"], extra_names=[], region="Lori")
         self.assertGreater(km, 0)
+
+    def test_hy_parenthetical_place_matches_candidate(self) -> None:
+        idea = {
+            "itinerary": [
+                {"title": "Armavir — departure", "title_en": "Armavir — departure"},
+                {
+                    "title": "Ախթալա (Akhtala) Մոնաստեր — այցելություն",
+                    "title_en": "Akhtala Monastery — visit",
+                    "description": "See the monastery.",
+                },
+                {
+                    "title": "Սանահին (Sanahin) Մոնաստեր — այցելություն",
+                    "title_en": "Sanahin Monastery — visit",
+                    "description": "See the monastery.",
+                },
+            ],
+            "verify": [],
+        }
+        research = {
+            "place_en": "Akhtala",
+            "place_candidates": [
+                {"name_en": "Akhtala Monastery", "type": "monastery", "lat": 41.15, "lon": 44.76, "source_url": "https://example.com/a"},
+                {"name_en": "Sanahin Monastery", "type": "monastery", "lat": 41.09, "lon": 44.67, "source_url": "https://example.com/s"},
+            ],
+        }
+        classified = classify_itinerary_stops(idea, research)
+        self.assertEqual(
+            [stop["place_name"] for stop in classified["accepted"]],
+            ["Akhtala Monastery", "Sanahin Monastery"],
+        )
+        self.assertEqual(classified["dropped"], [])
 
     def test_old_style_visit_titles_match_candidates_even_if_place_name_null(self) -> None:
         idea = {

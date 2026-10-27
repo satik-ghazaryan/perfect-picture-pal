@@ -50,6 +50,7 @@ class SearchResilienceTests(unittest.TestCase):
                 "Gyumri Armenia top attractions to visit",
                 "Gyumri Armenia things to see monastery museum",
                 "Gyumri Armenia day tour from Armavir",
+                "Gyumri Armenia site:onewaytour.com",
             ],
         )
         row = {"title": "Gyumri city walking tour Armenia", "url": "https://example.com/gyumri", "snippet": ""}

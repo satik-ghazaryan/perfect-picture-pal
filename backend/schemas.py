@@ -48,12 +48,17 @@ class ItineraryStop(BaseModel):
     title: str = Field(default="", max_length=240)
     title_en: str = ""
     title_ru: str = ""
+    title_hy: str = ""
     description: str = Field(..., min_length=1, max_length=800)
     description_en: str = ""
     description_ru: str = ""
     source_url: str = ""
     place_name: str | None = None
     activity: str = ""
+    activity_hy: str = ""
+    reason_hy: str = ""
+    lat: float | None = None
+    lon: float | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -182,6 +187,9 @@ class MarketOffer(BaseModel):
     found_on: str = ""
     label: str = "market_reference"
     snippet: str = ""
+    company: str = ""
+    retrieved_at: str = ""
+    duration_days: float | None = None
 
 
 class ResearchBundle(BaseModel):
@@ -203,6 +211,8 @@ class ResearchBundle(BaseModel):
     pages_fetched: int = 0
     place_data_unavailable: bool = False
     place_data_note: str = ""
+    onewaytour_unavailable: bool = False
+    onewaytour_tours: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class IdeaMarket(BaseModel):

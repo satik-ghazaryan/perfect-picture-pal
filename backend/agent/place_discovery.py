@@ -186,12 +186,15 @@ def select_fetch_urls(results: list[dict[str, Any]], place_en: str = "") -> list
             continue
         blob = f"{row.get('title') or ''} {row.get('snippet') or ''} {url}".lower()
         if place and place not in blob and "armenia" not in blob and "armenian" not in blob:
-            continue
+            if "onewaytour.com" not in url.lower():
+                continue
         seen.add(url)
         picked.append(url)
         if len(picked) >= FETCH_URL_LIMIT:
             break
-    return picked
+    preferred = [url for url in picked if "onewaytour.com" in url.lower()]
+    rest = [url for url in picked if url not in preferred]
+    return (preferred + rest)[:FETCH_URL_LIMIT]
 
 
 def fetch_page(url: str) -> str:
@@ -392,10 +395,33 @@ def discover_place(preferences: str) -> dict[str, Any]:
     bundle = collect_structured_bundle(str(place_en), str(region_en or ""))
     structured = [item for item in (bundle.get("candidates") or []) if isinstance(item, dict)]
     sources_ok = bool(bundle.get("ok"))
+    if region_en and str(region_en).strip().lower() != str(place_en).strip().lower():
+        region_bundle = collect_structured_bundle(str(region_en), str(region_en))
+        structured = merge_candidates(
+            structured,
+            [item for item in (region_bundle.get("candidates") or []) if isinstance(item, dict)],
+            cap=REGION_CANDIDATE_CAP,
+        )
+        sources_ok = sources_ok or bool(region_bundle.get("ok"))
     pages = fetch_attraction_pages(results, place_en)
     page_candidates = extract_place_candidates(place_en, pages)
     cap = REGION_CANDIDATE_CAP if bundle.get("is_region") else CANDIDATE_CAP
-    candidates = merge_candidates(structured, page_candidates, cap=cap)
+    owt: dict[str, Any] = {
+        "unavailable": True,
+        "tours": [],
+        "offers": [],
+        "place_candidates": [],
+        "verify": "",
+        "pages_fetched": 0,
+    }
+    try:
+        from agent.onewaytour import collect_onewaytour
+
+        owt = collect_onewaytour(str(place_en), str(region_en or ""))
+    except Exception:  # noqa: BLE001
+        owt["verify"] = "OneWayTour data unavailable"
+    owt_places = [item for item in (owt.get("place_candidates") or []) if isinstance(item, dict)]
+    candidates = merge_candidates(structured, page_candidates, owt_places, cap=cap)
     log_discovery(str(place_en), len(pages), len(candidates))
     return {
         "place_en": place_en,
@@ -404,10 +430,14 @@ def discover_place(preferences: str) -> dict[str, Any]:
         "results": results,
         "search_status": search_payload.get("search_status") or "",
         "place_candidates": candidates,
-        "pages_fetched": len(pages),
+        "pages_fetched": len(pages) + int(owt.get("pages_fetched") or 0),
         "place_data_unavailable": (not sources_ok) and not candidates,
         "place_data_note": "" if sources_ok or candidates else PLACE_DATA_UNAVAILABLE,
         "is_region": bool(bundle.get("is_region")),
         "bbox": bundle.get("bbox"),
         "skipped": "",
+        "onewaytour_unavailable": bool(owt.get("unavailable")),
+        "onewaytour_tours": list(owt.get("tours") or []),
+        "onewaytour_offers": list(owt.get("offers") or []),
+        "onewaytour_verify": str(owt.get("verify") or ""),
     }

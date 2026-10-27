@@ -54,6 +54,11 @@ class AdminCopyTests(unittest.TestCase):
             "Բավարար կոնկրետ վայրեր չեն գտնվել. հարկավոր է ձեռքով ստուգում",
         )
         self.assertEqual(format_verify_note_hy("Route km is an estimate"), "Երթուղու կմ-ը գնահատական է")
+        self.assertEqual(
+            format_verify_note_hy("Route km is a rough estimate; confirm"),
+            "Երթուղու կմ-ը կոպիտ գնահատական է. հաստատեք",
+        )
+        self.assertEqual(format_verify_note_hy("OneWayTour data unavailable"), "OneWayTour տվյալները անհասանելի են")
         self.assertTrue(
             format_verify_note_hy("Web distance cross-check (not used for price): 120 km").startswith(
                 "Հեռավորության համացանցային ստուգում (գնի համար չի օգտագործվում):"

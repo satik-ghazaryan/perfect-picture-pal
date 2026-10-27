@@ -59,6 +59,7 @@ ACTIVITY_WORDS = {
 }
 LUNCH_HINTS = ("lunch", "meal", "rest")
 ROUTE_KM_ESTIMATE_NOTE = "Route km is an estimate"
+ROUTE_KM_ROUGH_NOTE = "Route km is a rough estimate; confirm"
 NO_DESTINATION_STOPS_NOTE = "No destination stops after Armavir; route km is 0"
 _LOOKUP_MEM: dict[str, dict[str, Any] | None] = {}
 
@@ -235,18 +236,29 @@ def _latin_name(value: str) -> str:
     return ""
 
 
+def _latin_if_not_armenian(value: str) -> str:
+    text = str(value or "").strip()
+    if not text or ARMENIAN_RE.search(text):
+        return ""
+    return _latin_name(text)
+
+
 def english_stop_name(stop: dict[str, Any], extra_names: list[str] | None = None) -> str:
-    title_en = _latin_name(str(stop.get("title_en") or ""))
-    if title_en:
-        return title_en
-    title = _latin_name(str(stop.get("title") or ""))
-    if title:
-        return title
-    description = _latin_name(str(stop.get("description") or ""))
-    if description:
-        return description
+    if isinstance(stop, dict):
+        place = str(stop.get("place_name") or "").strip()
+        if place and not ARMENIAN_RE.search(place) and not _activity_only_name(place):
+            return place
+        title_en = _latin_if_not_armenian(str(stop.get("title_en") or ""))
+        if title_en:
+            return title_en
+        title = _latin_if_not_armenian(str(stop.get("title") or ""))
+        if title:
+            return title
+        description = _latin_if_not_armenian(str(stop.get("description") or ""))
+        if description:
+            return description
     for extra in extra_names or []:
-        latin = _latin_name(str(extra or ""))
+        latin = _latin_if_not_armenian(str(extra or ""))
         if latin and not is_armavir_stop(latin):
             return latin
     return ""
@@ -511,11 +523,96 @@ def _stop_coord(
     return resolve_coord(title, region)
 
 
+def _candidate_coord(row: dict[str, Any], region: str) -> tuple[tuple[float, float] | None, str]:
+    try:
+        lat = float(row.get("lat"))
+        lon = float(row.get("lon"))
+        if lat != 0.0 or lon != 0.0:
+            return (lat, lon), str(row.get("coord_source") or "OSM")
+    except (TypeError, ValueError):
+        pass
+    name = str(row.get("name_en") or "").strip()
+    if not name:
+        return None, "missing"
+    return resolve_coord(name, region)
+
+
+def _itinerary_blob(itinerary: list[Any]) -> str:
+    parts: list[str] = []
+    for stop in itinerary or []:
+        if not isinstance(stop, dict):
+            continue
+        parts.extend(
+            str(stop.get(key) or "")
+            for key in ("place_name", "title_en", "title", "activity", "description")
+        )
+    return " ".join(parts).lower()
+
+
+def _estimate_from_candidates(
+    itinerary: list[Any],
+    region: str,
+    candidates: list[dict[str, Any]],
+) -> tuple[float, list[dict[str, Any]], str]:
+    blob = _itinerary_blob(itinerary)
+    mentioned: list[dict[str, Any]] = []
+    usable: list[tuple[dict[str, Any], tuple[float, float], str, float]] = []
+    for row in candidates:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("name_en") or "").strip()
+        if not name or is_armavir_stop(name):
+            continue
+        coord, how = _candidate_coord(row, region)
+        if coord is None:
+            continue
+        dist = armavir_distance_km(coord[0], coord[1])
+        usable.append((row, coord, how, dist))
+        if name.lower() in blob:
+            mentioned.append(row)
+    if mentioned:
+        ranked = [item for item in usable if str(item[0].get("name_en") or "") in {str(row.get("name_en") or "") for row in mentioned}]
+        if ranked:
+            nearest = min(ranked, key=lambda item: item[3])
+            geo = {
+                "name": str(nearest[0].get("name_en") or ""),
+                "lat": round(nearest[1][0], 6),
+                "lon": round(nearest[1][1], 6),
+                "coord_source": nearest[2],
+            }
+            return round(nearest[3] * HAVERSINE_FACTOR, 1), [geo], "itinerary candidate"
+    if region.strip() and (blob.strip() or usable):
+        coord = nominatim_coord(region.strip(), "")
+        if coord is not None:
+            km = round(armavir_distance_km(coord[0], coord[1]) * HAVERSINE_FACTOR, 1)
+            geo = {
+                "name": region.strip(),
+                "lat": round(coord[0], 6),
+                "lon": round(coord[1], 6),
+                "coord_source": "Nominatim",
+            }
+            return km, [geo], "region center"
+    if usable:
+        distances = sorted(item[3] for item in usable)
+        mid = distances[len(distances) // 2]
+        km = round(mid * HAVERSINE_FACTOR, 1)
+        sample = usable[len(usable) // 2]
+        geo = {
+            "name": str(sample[0].get("name_en") or ""),
+            "lat": round(sample[1][0], 6),
+            "lon": round(sample[1][1], 6),
+            "coord_source": sample[2],
+        }
+        return km, [geo], "median candidates"
+    return 0.0, [], ""
+
+
 def one_way_route_km(
     itinerary: list[Any],
     extra_names: list[str] | None = None,
     region: str = "",
     coords_by_name: dict[str, tuple[float, float]] | None = None,
+    place_candidates: list[dict[str, Any]] | None = None,
 ) -> RouteKm:
     """Armavir -> each non-Armavir stop in order. No return leg. Never treats a failed geocode as 0 km of travel."""
     notes: list[str] = []
@@ -534,6 +631,13 @@ def one_way_route_km(
         ]
         dests = [item for item in dests if item]
     if not dests:
+        km, geo_rows, how = _estimate_from_candidates(itinerary, region, list(place_candidates or []))
+        if km > 0:
+            if ROUTE_KM_ROUGH_NOTE not in notes:
+                notes.append(ROUTE_KM_ROUGH_NOTE)
+            if how:
+                notes.append(f"Used {how} for route km")
+            return RouteKm(km, False, notes, km_source="estimate", geocoded_stops=geo_rows)
         notes.append(NO_DESTINATION_STOPS_NOTE)
         return RouteKm(0.0, True, notes, km_source="", geocoded_stops=[])
     points: list[tuple[float, float]] = [ARMAVIR_COORD]
@@ -567,7 +671,7 @@ def one_way_route_km(
         last_ok = coord
     if len(points) < 2:
         extras = [
-            place_from_stop_title(_latin_name(str(item or "")) or str(item or ""))
+            place_from_stop_title(_latin_if_not_armenian(str(item or "")) or str(item or ""))
             for item in (extra_names or [])
         ]
         extras = [item for item in extras if item and not is_armavir_stop(item) and not is_activity_stop(item)]
@@ -588,6 +692,13 @@ def one_way_route_km(
             last_ok = coord
             break
     if len(points) < 2:
+        km, geo_rows, how = _estimate_from_candidates(itinerary, region, list(place_candidates or []))
+        if km > 0:
+            if ROUTE_KM_ROUGH_NOTE not in notes:
+                notes.append(ROUTE_KM_ROUGH_NOTE)
+            if how:
+                notes.append(f"Used {how} for route km")
+            return RouteKm(km, False, notes, km_source="estimate", geocoded_stops=geo_rows)
         notes.append("price needs route distance")
         return RouteKm(0.0, False, notes, km_source="", geocoded_stops=geocoded_stops)
     skipped = len(dests) - (len(points) - 1)
@@ -599,12 +710,7 @@ def one_way_route_km(
         km, ok = pair_km(points[index], points[index + 1])
         total += km
         osrm_ok = osrm_ok and ok
-    if osrm_ok and used_osm:
-        km_source = "OSRM from OSM coordinates"
-    elif osrm_ok:
-        km_source = "OSRM"
-    else:
-        km_source = "estimate"
+    km_source = "OSRM" if osrm_ok else "estimate"
     if not osrm_ok and ROUTE_KM_ESTIMATE_NOTE not in notes:
         notes.append(ROUTE_KM_ESTIMATE_NOTE)
     return RouteKm(round(total, 1), osrm_ok, notes, km_source=km_source, geocoded_stops=geocoded_stops)

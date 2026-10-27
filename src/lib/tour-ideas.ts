@@ -26,6 +26,8 @@ const SEARCH_QUIET_STATUSES = new Set(["", "ok", "tavily_no_key"]);
 const VERIFY_NOTE_HY_EXACT: Record<string, string> = {
   "price needs route distance": "Անհրաժեշտ է երթուղու հեռավորությունը",
   "Route km is an estimate": "Երթուղու կմ-ը գնահատական է",
+  "Route km is a rough estimate; confirm": "Երթուղու կմ-ը կոպիտ գնահատական է. հաստատեք",
+  "OneWayTour data unavailable": "OneWayTour տվյալները անհասանելի են",
   "No live web results; places and prices need human research":
     "Կենդանի որոնման արդյունքներ չկան. վայրերն ու գները հարկավոր է ստուգել ձեռքով",
   "No competitor data was found": "Մրցակցային տվյալներ չեն գտնվել",
@@ -100,17 +102,23 @@ function asStop(value: unknown): TourIdeaStop | null {
   if (!time || !title) return null;
   const titleEn = String(record["title_en"] ?? "").trim() || (placeName && activity ? `${placeName} — ${activity}` : "");
   const titleRu = String(record["title_ru"] ?? "").trim();
+  const titleHy = String(record["title_hy"] ?? "").trim();
   const descriptionEn = String(record["description_en"] ?? "").trim();
   const descriptionRu = String(record["description_ru"] ?? "").trim();
   const sourceUrl = asHttpUrl(record["source_url"]);
+  const activityHy = String(record["activity_hy"] ?? "").trim();
+  const reasonHy = String(record["reason_hy"] ?? "").trim();
   const stop: TourIdeaStop = { time, title, description };
   if (titleEn) stop.title_en = titleEn;
   if (titleRu) stop.title_ru = titleRu;
+  if (titleHy) stop.title_hy = titleHy;
   if (descriptionEn) stop.description_en = descriptionEn;
   if (descriptionRu) stop.description_ru = descriptionRu;
   if (sourceUrl) stop.source_url = sourceUrl;
   if (hasPlaceName) stop.place_name = placeName;
   if (activity) stop.activity = activity;
+  if (activityHy) stop.activity_hy = activityHy;
+  if (reasonHy) stop.reason_hy = reasonHy;
   return stop;
 }
 
@@ -175,6 +183,9 @@ function asOffers(value: unknown): TourIdeaMarketOffer[] {
       found_on: String(record["found_on"] ?? ""),
       label: String(record["label"] ?? "market_reference"),
       snippet: String(record["snippet"] ?? ""),
+      company: String(record["company"] ?? ""),
+      retrieved_at: String(record["retrieved_at"] ?? ""),
+      duration_days: typeof record["duration_days"] === "number" ? record["duration_days"] : null,
     }];
   });
 }
@@ -215,6 +226,8 @@ export function normalizeResearch(value: unknown): TourIdeaResearch {
       provider_status: {},
       place_candidates: [],
       pages_fetched: 0,
+      onewaytour_unavailable: false,
+      onewaytour_tours: [],
     };
   }
   const record = value as Record<string, unknown>;
@@ -273,6 +286,28 @@ export function normalizeResearch(value: unknown): TourIdeaResearch {
             typeof row["distance_from_armavir_km"] === "number"
               ? row["distance_from_armavir_km"]
               : Number(row["distance_from_armavir_km"]) || null,
+        }];
+      })
+      : [],
+    onewaytour_unavailable: Boolean(record["onewaytour_unavailable"]),
+    onewaytour_tours: Array.isArray(record["onewaytour_tours"])
+      ? record["onewaytour_tours"].flatMap((item) => {
+        if (!item || typeof item !== "object") return [];
+        const row = item as Record<string, unknown>;
+        const name = String(row["name"] ?? row["title"] ?? "").trim();
+        const url = asHttpUrl(row["url"]);
+        if (!name && !url) return [];
+        const places = Array.isArray(row["places"])
+          ? row["places"].map((place) => String(place).trim()).filter(Boolean)
+          : [];
+        const priceRaw = row["price_amd"] ?? row["observed_price_amd"];
+        return [{
+          name,
+          url,
+          price_amd: priceRaw == null ? null : parseAmd(priceRaw),
+          duration: String(row["duration"] ?? ""),
+          departure_city: String(row["departure_city"] ?? ""),
+          places,
         }];
       })
       : [],

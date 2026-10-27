@@ -5,6 +5,7 @@ from difflib import SequenceMatcher
 from typing import Any
 
 from agent.distance import (
+    english_stop_name,
     is_armavir_stop,
     is_lunch_or_rest_stop,
     names_fuzzy_match,
@@ -295,12 +296,15 @@ def match_place_candidate(title: str | dict[str, Any], research: dict[str, Any])
     haystacks: list[str] = []
     if isinstance(title, dict):
         haystacks.append(stop_place_name(title))
-        display = _text(title.get("title_en") or title.get("title"))
-        haystacks.append(place_from_stop_title(display))
-        haystacks.append(display)
+        title_en = _text(title.get("title_en"))
+        if title_en and not ARMENIAN_RE.search(title_en):
+            haystacks.append(place_from_stop_title(title_en))
+            haystacks.append(title_en)
+        haystacks.append(english_stop_name(title))
     else:
-        haystacks.append(place_from_stop_title(title) or _text(title))
-        haystacks.append(_text(title))
+        if not ARMENIAN_RE.search(_text(title)):
+            haystacks.append(place_from_stop_title(title) or _text(title))
+            haystacks.append(_text(title))
     best: dict[str, Any] | None = None
     best_len = 0
     for hay in haystacks:
@@ -526,11 +530,14 @@ def hy_copy_ok(idea: dict[str, Any]) -> bool:
     for stop in idea.get("itinerary") or []:
         if not isinstance(stop, dict):
             continue
-        title = _text(stop.get("title"))
-        if title and not hy_text_ok(title):
+        title_hy = _text(stop.get("title_hy"))
+        if title_hy and not hy_text_ok(title_hy):
             return False
-        description = _text(stop.get("description"))
-        if description and ARMENIAN_RE.search(description) is None and LATIN_WORD_RE.search(description):
+        activity_hy = _text(stop.get("activity_hy"))
+        if activity_hy and not hy_text_ok(activity_hy):
+            return False
+        reason_hy = _text(stop.get("reason_hy"))
+        if reason_hy and not hy_text_ok(reason_hy):
             return False
     return True
 

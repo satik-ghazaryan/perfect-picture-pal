@@ -15,6 +15,7 @@ from pydantic import ValidationError
 from agent.admin_copy import search_status_note
 from agent.distance import has_stop_outside_armavir, one_way_route_km
 from agent.place_discovery import discover_place
+from agent.onewaytour import UNAVAILABLE as ONEWAYTOUR_UNAVAILABLE
 from agent.pricing import (
     GROUP_SIZE,
     GUIDE_FEE_GROUP_AMD,
@@ -227,7 +228,22 @@ def search_node(state: State) -> dict[str, Any]:
     payload["pages_fetched"] = int(discovery.get("pages_fetched") or 0)
     payload["place_data_unavailable"] = bool(discovery.get("place_data_unavailable"))
     payload["place_data_note"] = str(discovery.get("place_data_note") or "")
+    payload["onewaytour_unavailable"] = bool(discovery.get("onewaytour_unavailable"))
+    payload["onewaytour_tours"] = [item for item in (discovery.get("onewaytour_tours") or []) if isinstance(item, dict)]
     payload["queries"] = list(dict.fromkeys(list(discovery.get("queries") or []) + list(payload.get("queries") or [])))
+    owt_offers = [item for item in (discovery.get("onewaytour_offers") or []) if isinstance(item, dict)]
+    existing_offers = [item for item in (payload.get("market_offers") or []) if isinstance(item, dict)]
+    seen_offer = {str(item.get("url") or item.get("title") or "") for item in existing_offers}
+    merged_offers = list(existing_offers)
+    for offer in owt_offers:
+        key = str(offer.get("url") or offer.get("title") or "")
+        if not key or key in seen_offer:
+            continue
+        seen_offer.add(key)
+        merged_offers.append(offer)
+    payload["market_offers"] = merged_offers
+    if discovery.get("onewaytour_verify"):
+        payload["onewaytour_verify"] = discovery.get("onewaytour_verify")
     return {"market_research": json.dumps(payload, ensure_ascii=False)}
 
 
@@ -438,50 +454,81 @@ def route_after_evaluation(state: State) -> Literal["refine", "hy_adapt"]:
     return "hy_adapt"
 
 
+_HY_RE = re.compile(r"[\u0531-\u0587]")
+_STRUCTURED_STOP_KEYS = ("time", "place_name", "activity", "title_en", "source_url", "lat", "lon")
+
+
 def _preserve_stop_english(original: list[dict[str, Any]], adapted: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    by_time = {}
-    for stop in original:
-        if not isinstance(stop, dict):
-            continue
-        key = str(stop.get("time") or "")
-        english = str(stop.get("title_en") or "")
-        title = str(stop.get("title") or "")
-        if not english and re.search(r"[A-Za-z]{3,}", title) and not re.search(r"[\u0531-\u0587]", title):
-            english = title
-        if key:
-            by_time[key] = english
+    adapted_by_time = {
+        str(stop.get("time") or ""): stop
+        for stop in adapted
+        if isinstance(stop, dict) and str(stop.get("time") or "")
+    }
     merged: list[dict[str, Any]] = []
-    for index, stop in enumerate(adapted):
-        if not isinstance(stop, dict):
+    for index, orig in enumerate(original):
+        if not isinstance(orig, dict):
             continue
-        row = dict(stop)
-        key = str(row.get("time") or "")
-        if not row.get("title_en"):
-            row["title_en"] = by_time.get(key) or (
-                str(original[index].get("title_en") or original[index].get("title") or "")
-                if index < len(original) and isinstance(original[index], dict)
-                else ""
-            )
+        row = dict(orig)
+        matched: dict[str, Any] | None = None
+        if index < len(adapted) and isinstance(adapted[index], dict):
+            matched = adapted[index]
+        orig_time = str(orig.get("time") or "")
+        if orig_time and (matched is None or str(matched.get("time") or "") not in {"", orig_time}):
+            matched = adapted_by_time.get(orig_time, matched)
+        if not isinstance(matched, dict):
+            matched = {}
+        for key in _STRUCTURED_STOP_KEYS:
+            if key in orig:
+                row[key] = orig.get(key)
+        title_hy = str(matched.get("title_hy") or "").strip()
+        adapted_title = str(matched.get("title") or "").strip()
+        if not title_hy and _HY_RE.search(adapted_title):
+            title_hy = adapted_title
+        activity_hy = str(matched.get("activity_hy") or "").strip()
+        adapted_activity = str(matched.get("activity") or "").strip()
+        if not activity_hy and _HY_RE.search(adapted_activity):
+            activity_hy = adapted_activity
+        reason_hy = str(matched.get("reason_hy") or "").strip()
+        adapted_desc = str(matched.get("description") or "").strip()
+        if not reason_hy and _HY_RE.search(adapted_desc):
+            reason_hy = adapted_desc
+        if title_hy:
+            row["title_hy"] = title_hy
+        if activity_hy:
+            row["activity_hy"] = activity_hy
+        if reason_hy:
+            row["reason_hy"] = reason_hy
+        place = str(row.get("place_name") or "").strip()
+        activity = str(row.get("activity") or "").strip()
+        if place:
+            display = f"{place} — {activity}" if activity else place
+            row["title"] = display
+            if not str(row.get("title_en") or "").strip():
+                row["title_en"] = display
+        elif orig.get("title"):
+            row["title"] = orig.get("title")
         merged.append(row)
     return merged
 
 
 def _hy_adapt_prompt(ideas: list[dict[str, Any]], market: str, retry: bool) -> str:
     extra = (
-        "RETRY: previous output still contained English sentences in HY fields. "
-        "Every title_hy, description_hy, location_hy, and itinerary title/description MUST be Armenian script. "
-        "Latin letters are allowed only inside parentheses for place names, e.g. Ախթալա (Akhtala). "
+        "RETRY: previous HY fields still contained English sentences or Latin place names in parentheses. "
         if retry
         else ""
     )
     return f"""
 {extra}
-Translate into natural Armenian: title_hy, description_hy, location_hy, and each itinerary stop title + description.
-Also fill itinerary title_ru and description_ru in Russian.
-Keep itinerary title_en and description_en in English.
-Latin in HY fields only inside parentheses for place names, e.g. Ախթալա (Akhtala).
+Translate customer copy into natural Armenian.
+Fill idea-level title_hy, description_hy, location_hy.
+For each itinerary stop fill ONLY title_hy, activity_hy, and reason_hy.
+Do not change place names, stop order, or times.
+Do not change place_name, activity, title_en, source_url, lat, or lon.
+Put the Armenian place name only inside title_hy. Do not put Latin names in parentheses.
+Lunch / meal stops must use title_hy «Ճաշի ընդմիջում».
+Keep itinerary title, title_en, description_en in English. Fill title_ru and description_ru in Russian.
 Do not add places, prices, Python notes, quality scores, or new facts.
-Do not change numeric values. Do not add itinerary stops.
+Do not change numeric values. Do not add or reorder itinerary stops.
 
 SEARCH RESULTS:
 {market}
@@ -489,7 +536,7 @@ SEARCH RESULTS:
 IDEAS JSON:
 {json.dumps(ideas, ensure_ascii=False)}
 
-Return JSON: {{ "ideas": [ ... same objects with HY and RU itinerary fields filled ] }}
+Return JSON: {{ "ideas": [ ... same objects with HY fields filled ] }}
 """
 
 
@@ -499,16 +546,42 @@ def _merge_hy_ideas(originals: dict[str, dict[str, Any]], adapted: list[Any]) ->
         if not isinstance(item, dict):
             continue
         original = originals.get(str(item.get("id") or "")) or {}
+        structured = [row for row in (original.get("itinerary") or []) if isinstance(row, dict)]
         item["itinerary"] = _preserve_stop_english(
-            list(original.get("itinerary") or []),
+            structured,
             [row for row in (item.get("itinerary") or []) if isinstance(row, dict)],
         )
+        item["_structured_stops"] = structured
         merged_ideas.append(item)
     return merged_ideas
 
 
+def _debug_idea_line(
+    idea: dict[str, Any],
+    accepted: list[dict[str, Any]],
+    dropped: list[str],
+) -> None:
+    if os.getenv("DEBUG_IDEAS", "").strip() != "1":
+        return
+    stops = []
+    for stop in idea.get("itinerary") or []:
+        if not isinstance(stop, dict):
+            continue
+        stops.append((stop.get("place_name"), stop.get("activity"), stop.get("title_en")))
+    verify = [str(item)[:80] for item in (idea.get("verify") or [])[:8]]
+    line = (
+        f"idea_debug {idea.get('id')} stops={stops} "
+        f"accepted={[item.get('place_name') or item.get('title_en') for item in accepted]} "
+        f"dropped={dropped} route_km={idea.get('route_km')} km_source={idea.get('km_source')} "
+        f"price={idea.get('price')} verify={verify}"
+    )
+    print(line, flush=True)
+
+
 def hy_adapt_node(state: State) -> dict[str, Any]:
     ideas = [item for item in (state.get("evaluated_ideas") or state.get("ideas_raw") or []) if isinstance(item, dict)]
+    for item in ideas:
+        item["_structured_stops"] = [row for row in (item.get("itinerary") or []) if isinstance(row, dict)]
     originals = {str(item.get("id") or index): item for index, item in enumerate(ideas)}
     market = state.get("market_research") or "{}"
     merged = ideas
@@ -553,17 +626,27 @@ def refinement_node(state: State) -> dict[str, Any]:
     offers = [item for item in (research.get("market_offers") or []) if isinstance(item, dict)]
     priced: list[dict[str, Any]] = []
     leftover_source = [item for item in (state.get("evaluated_ideas") or state.get("ideas_raw") or []) if isinstance(item, dict)]
+    band_offers = []
+    for offer in offers:
+        if offer.get("company") == "OneWayTour" and offer.get("duration_days") not in (None, 1, 1.0):
+            continue
+        band_offers.append(offer)
     for raw in leftover_source:
         candidate = ensure_armavir_bookends(dict(raw), departure)
-        classified = classify_itinerary_stops(candidate, research)
-        candidate = classified["idea"]
+        structured = [row for row in (candidate.pop("_structured_stops", None) or candidate.get("itinerary") or []) if isinstance(row, dict)]
+        geo_idea = dict(candidate)
+        geo_idea["itinerary"] = structured
+        classified = classify_itinerary_stops(geo_idea, research)
+        candidate["verify"] = list(geo_idea.get("verify") or [])
         candidate = ground_idea(candidate, research)
+        if research.get("onewaytour_unavailable") or research.get("onewaytour_verify"):
+            if ONEWAYTOUR_UNAVAILABLE not in candidate["verify"]:
+                candidate["verify"].append(ONEWAYTOUR_UNAVAILABLE)
         region = str(research.get("region_en") or research.get("place_en") or "")
         geo_stops = classified["accepted"]
         coords_by_name: dict[str, tuple[float, float]] = {}
-        for row in research.get("place_candidates") or []:
-            if not isinstance(row, dict):
-                continue
+        candidates_rows = [row for row in (research.get("place_candidates") or []) if isinstance(row, dict)]
+        for row in candidates_rows:
             name = str(row.get("name_en") or "").strip()
             try:
                 lat = float(row.get("lat"))
@@ -577,6 +660,7 @@ def refinement_node(state: State) -> dict[str, Any]:
             extra_names=[],
             region=region,
             coords_by_name=coords_by_name,
+            place_candidates=candidates_rows,
         )
         km_notes = list(route.notes)
         place_en = str(research.get("place_en") or candidate.get("location_en") or "").strip()
@@ -585,7 +669,7 @@ def refinement_node(state: State) -> dict[str, Any]:
             if cross and cross not in km_notes:
                 km_notes.append(cross)
         away = bool(classified["accepted"] or classified["dropped"]) or has_stop_outside_armavir(
-            candidate.get("itinerary") or []
+            structured
         )
         candidate = apply_yerevan_transfer(candidate)
         candidate = apply_unit_economics(
@@ -593,12 +677,13 @@ def refinement_node(state: State) -> dict[str, Any]:
             route_km=route.km,
             km_sourced=route.sourced,
             km_notes=km_notes,
-            offers=offers,
+            offers=band_offers,
             has_away_stop=away,
             km_source=route.km_source,
             geocoded_stops=route.geocoded_stops,
         )
         candidate = rewrite_copy_from_numbers(candidate, research)
+        _debug_idea_line(candidate, classified["accepted"], classified["dropped"])
         priced.append(candidate)
     priced = tag_budget_fit(priced, budget)
     leftover_issues = collect_quality_issues(priced)

@@ -114,10 +114,9 @@ def apply_unit_economics(
     verify = [str(item) for item in (next_idea.get("verify") or []) if str(item).strip()]
     if km_notes:
         verify.extend(item for item in km_notes if item not in verify)
-    blocked = has_away_stop and transport_group <= 0
+    zero_stops = (not has_away_stop) and transport_group <= 0
+    blocked = zero_stops
     if blocked:
-        if PRICE_NEEDS_DISTANCE not in verify:
-            verify.append(PRICE_NEEDS_DISTANCE)
         cost_pp = 0
         min_price = 0
         suggested: int | None = None
@@ -128,7 +127,7 @@ def apply_unit_economics(
         unit_note = (
             f"Estimated. Meals and entrance fees are not included. "
             f"GROUP_SIZE={GROUP_SIZE}. Guide {GUIDE_FEE_GROUP_AMD} AMD for the group. "
-            f"{PRICE_NEEDS_DISTANCE}. No selling price until driving km is known."
+            "No selling price because the itinerary has no destination stops."
         )
     else:
         cost_pp = cost_per_person_amd(transport_group)

@@ -15,6 +15,8 @@ SEARCH_QUIET_STATUSES = frozenset({"", "ok", "tavily_no_key"})
 VERIFY_NOTE_HY_EXACT = {
     "price needs route distance": "Անհրաժեշտ է երթուղու հեռավորությունը",
     "Route km is an estimate": "Երթուղու կմ-ը գնահատական է",
+    "Route km is a rough estimate; confirm": "Երթուղու կմ-ը կոպիտ գնահատական է. հաստատեք",
+    "OneWayTour data unavailable": "OneWayTour տվյալները անհասանելի են",
     "No live web results; places and prices need human research": (
         "Կենդանի որոնման արդյունքներ չկան. վայրերն ու գները հարկավոր է ստուգել ձեռքով"
     ),

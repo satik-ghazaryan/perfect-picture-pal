@@ -85,12 +85,15 @@ export type TourIdeaStop = {
   title: string;
   title_en?: string;
   title_ru?: string;
+  title_hy?: string;
   description: string;
   description_en?: string;
   description_ru?: string;
   source_url?: string;
   place_name?: string | null;
   activity?: string;
+  activity_hy?: string;
+  reason_hy?: string;
 };
 
 export type TourIdeaBreakdown = {
@@ -128,6 +131,9 @@ export type TourIdeaMarketOffer = {
   found_on: string;
   label: string;
   snippet?: string;
+  company?: string;
+  retrieved_at?: string;
+  duration_days?: number | null;
 };
 
 export type TourIdeaMarket = {
@@ -182,6 +188,15 @@ export type TourIdeaResearch = {
   region_en?: string | null;
   place_candidates?: TourIdeaPlaceCandidate[];
   pages_fetched?: number;
+  onewaytour_unavailable?: boolean;
+  onewaytour_tours?: Array<{
+    name: string;
+    url: string;
+    price_amd?: number | null;
+    duration?: string;
+    departure_city?: string;
+    places?: string[];
+  }>;
 };
 
 export type TourIdeaResult = {

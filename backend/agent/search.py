@@ -153,6 +153,9 @@ MARKET_FALLBACK_QUERIES = (
     "Armenia one day tour Lori price AMD tripadvisor",
     "Armenia one day tour getyourguide viator price",
 )
+OPERATOR_SITE_QUERIES = (
+    "onewaytour.com",
+)
 QUERY_NOISE = {
     "the",
     "and",
@@ -291,6 +294,7 @@ def discovery_queries(place_en: str) -> list[str]:
         f"{place} Armenia things to see monastery museum",
         f"{place} Armenia day tour from Armavir",
     ]
+    queries.extend(f"{place} Armenia site:{host}" for host in OPERATOR_SITE_QUERIES)
     scoped = [scope_query_to_armenia(item) for item in queries]
     return [item for item in scoped if query_is_armenia_scoped(item)][:8]
 
@@ -307,6 +311,7 @@ def build_queries(inputs: dict[str, Any]) -> list[str]:
             queries.append(f"{place} Armenia day tour")
             queries.append(f"{place} attractions Armenia")
             queries.append(f"{place} day tour from Armavir price")
+            queries.extend(f"{place} Armenia site:{host}" for host in OPERATOR_SITE_QUERIES)
         unique = list(dict.fromkeys(queries))
     else:
         queries.append(f"Armenia {tour_type or 'cultural'} day tour from Yerevan price")
