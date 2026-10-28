@@ -16,20 +16,24 @@ from agent.admin_copy import search_status_note
 from agent.distance import has_stop_outside_armavir, one_way_route_km
 from agent.place_discovery import discover_place
 from agent.onewaytour import UNAVAILABLE as ONEWAYTOUR_UNAVAILABLE
+from agent.onewaytour import _offer_from_tour, idea_match_names, is_one_day_tour, partition_tours
 from agent.pricing import (
     GROUP_SIZE,
     GUIDE_FEE_GROUP_AMD,
-    MIN_MARGIN_PCT,
     apply_unit_economics,
     apply_yerevan_transfer,
     tag_budget_fit,
 )
+from agent.hy_labels import fallback_title_hy, hy_labels_for_candidates
 from agent.quality import (
+    NO_LIVE_RESULTS,
+    WEB_SEARCH_FEW,
     attach_review_flag,
     classify_itinerary_stops,
     collect_quality_issues,
     ensure_armavir_bookends,
     ground_idea,
+    has_live_data,
     hy_copy_ok,
     mark_hy_review,
     rewrite_copy_from_numbers,
@@ -59,18 +63,21 @@ SYSTEM = (
     "Place names, attractions, roads, and factual claims MUST appear in the provided "
     "SEARCH RESULTS JSON, especially place_candidates[]. If a name is not in that JSON, do not use it. "
     "Armavir as departure is always allowed. "
-    "If search results are empty, say so; do not invent destinations; set verify to include "
-    "'No live web results; places and prices need human research'. "
-    "Competitor prices are MARKET REFERENCE only — never confirmed. "
+    "If search results are empty AND place_candidates are empty, say so; do not invent destinations; "
+    "set verify to include 'No live web results; places and prices need human research'. "
+    "If place_candidates or any web/Wikipedia/Overpass/OneWayTour data exists, do NOT use that note. "
+    "If only web search is thin, you may add 'Web search returned few results'. "
+    "Competitor prices are MARKET REFERENCE only — never confirmed and never used to set our selling price. "
     "Never name Ari Gnank / Արի Գնանք as a competitor; that is this operator. "
     "Name another company only if it appears in SEARCH RESULTS with a URL. "
     "If no competitor offers exist, say that no competitor data was found. "
     "Every uncertain item goes in verify[] (short English strings). Do not silently guess. "
     "Do not write AMD / ֏ / ₽ selling prices, cost breakdowns, or profit in customer copy. "
+    "Never suggest or write a selling price; leave price at 0. "
     "Leave breakdown numbers at 0 and do not write 'Python will fill' or 'source of truth' anywhere. "
     f"GROUP_SIZE is {GROUP_SIZE} (not 18). Guide fee is {GUIDE_FEE_GROUP_AMD} AMD for the whole group. "
     "Python computes one-way route_km × AMD/km and cost/person = (transport_group + guide) / group_size. "
-    f"Minimum price is cost per person × {MIN_MARGIN_PCT}%. "
+    "Python sets selling price = cost per person × 1.25. Competitor prices are display-only. "
     "Itinerary: at least four timed stops (Armavir start, two or more sourced places, Armavir return). "
     "Each stop needs a short reason and a source_url copied from SEARCH RESULTS. "
     "No vague 'adventure activities'. Never claim previous participants, reviews, awards, or Quality n/10 in customer text. "
@@ -258,7 +265,8 @@ Use this live web-search JSON as market observation only (not confirmed bookings
 {market}
 
 Operator: Արի Գնանք. ALWAYS prioritize Armavir-based departures. Group size is {GROUP_SIZE}.
-If a comparable product is sold from Yerevan, note the extra driving km as market context only; Python prices by one-way route km.
+If a comparable product is sold from Yerevan, note the extra driving km as market context only.
+Do not recommend or write a selling price. Python sets price = cost × 1.25. Competitor AMD figures are observed market reference only.
 Armavir to Lori driving time is at least 2.5–3 hours (07:30 departure → ~10:30 arrival).
 List market benchmarks ONLY when the company name and URL appear in the search JSON. Never list Ari Gnank or Արի Գնանք as a competitor. If fewer than 2 useful search hits, say so and do not invent villages, lakes, or companies.
 
@@ -280,7 +288,7 @@ Return JSON:
   "destinations": [{{"name": "", "why": "", "drive_hours_from_armavir": 0, "confidence": "estimated"}}],
   "seasonal_notes": "",
   "logistics": "If Yerevan is a stop, its driving km is already in the one-way route. Needs verification.",
-  "cost_assumptions": "{GROUP_SIZE} participants. Guide {GUIDE_FEE_GROUP_AMD} AMD group. Meals and entrance fees are not included. Transport is one-way km × rate (Python). Cost/person = (transport+guide)/{GROUP_SIZE}.",
+  "cost_assumptions": "{GROUP_SIZE} participants. Guide {GUIDE_FEE_GROUP_AMD} AMD group. Meals and entrance fees are not included. Transport is one-way km × rate (Python). Cost/person = (transport+guide)/{GROUP_SIZE}. Selling price is cost × 1.25 (Python only; do not write a price).",
   "risks": []
 }}
 """
@@ -332,10 +340,9 @@ Season={payload.get("season")}; audience={payload.get("target_audience")};
 type={payload.get("tour_type")}; duration_days={payload.get("duration_days")};
 budget_amd ceiling per person (includes transport)={payload.get("budget_amd")}; preferences={payload.get("preferences")}.
 
-Budget mix:
-- If {count} == 1: keep that idea within budget after transport.
-- If {count} >= 2: ALL ideas except one must strictly fit the budget after transport; include EXACTLY ONE premium idea whose final price is slightly over budget (about 5–15%).
-- Set budget_fit to "within" or "over" accordingly.
+Budget mix (itinerary length/distance only; do not write prices):
+- If {count} == 1: keep that idea realistic for a same-day trip.
+- If {count} >= 2: ALL ideas except one should be a compact day; include EXACTLY ONE farther/premium itinerary. Python will price each as cost × 1.25 and set budget_fit later.
 
 Rules:
 - ALWAYS depart from Armavir and return to Armavir.
@@ -353,7 +360,7 @@ Rules:
 - Use market observations from research when discussing the market, still label Estimated / Needs verification.
 - Each idea must differ in core concept, target audience slice, and customer experience.
 - Do not start every Armenian title with "Արմավիր –".
-- Do not invent AMD figures or write 15000 AMD in descriptions. Do not write that Python will fill transport.
+- Do not invent AMD figures, selling prices, or write 15000 AMD in descriptions. Never suggest a price. Python sets price = cost × 1.25. Competitor prices are reference only.
 - Write full EN and RU; HY may be a short placeholder for a later translation step. Keep itinerary title_en in English.
 
 Return JSON exactly in this shape:
@@ -377,9 +384,9 @@ Admin constraints: budget ceiling {payload.get("budget_amd")} AMD/person includi
 Check each idea for:
 1) originality and specificity
 2) practical Armavir same-day itinerary
-3) completeness of concept, audience, value, differentiation, seasonality, cost breakdown, price, profitability, risks, quality score
+3) completeness of concept, audience, value, differentiation, seasonality, risks, quality score
 4) language purity and fluent HY/EN/RU
-5) financial arithmetic is computed later in Python; flag invented AMD numbers
+5) financial arithmetic is computed later in Python (price = cost × 1.25); flag invented AMD numbers or suggested selling prices
 5b) 3–4 named stops from SEARCH RESULTS only; Armavir start; Lori drives 2.5–3 hours if Lori is in the results
 6) budget mix: all but exactly one idea within budget; exactly one slightly over if count>=2
 7) verified vs assumption labels
@@ -403,7 +410,7 @@ Return JSON:
     }}
   ]
 }}
-Do not lower a realistic Estimated price just to fit the budget; instead score budget lower and explain.
+Do not write or adjust a selling price. Leave price at 0; Python sets price = cost × 1.25. Score budget from itinerary realism, not from invented AMD.
 """
     data = _invoke_json(prompt, temperature=0.2)
     ideas = data.get("ideas") if isinstance(data, dict) else source
@@ -524,8 +531,10 @@ Fill idea-level title_hy, description_hy, location_hy.
 For each itinerary stop fill ONLY title_hy, activity_hy, and reason_hy.
 Do not change place names, stop order, or times.
 Do not change place_name, activity, title_en, source_url, lat, or lon.
-Put the Armenian place name only inside title_hy. Do not put Latin names in parentheses.
+title_hy MUST be "{{Armenian name of the place}} — {{Armenian activity}}" for every stop.
+Armavir departure is «Արմավիր — մեկնում»; return is «Արմավիր — վերադարձ».
 Lunch / meal stops must use title_hy «Ճաշի ընդմիջում».
+Do not put Latin names in parentheses.
 Keep itinerary title, title_en, description_en in English. Fill title_ru and description_ru in Russian.
 Do not add places, prices, Python notes, quality scores, or new facts.
 Do not change numeric values. Do not add or reorder itinerary stops.
@@ -600,8 +609,21 @@ def hy_adapt_node(state: State) -> dict[str, Any]:
                 merged = _merge_hy_ideas(originals, adapted)
         except Exception:  # noqa: BLE001
             pass
+    research = {}
+    try:
+        loaded = json.loads(market)
+        if isinstance(loaded, dict):
+            research = loaded
+    except json.JSONDecodeError:
+        research = {}
+    labels = hy_labels_for_candidates([row for row in (research.get("place_candidates") or []) if isinstance(row, dict)])
     flagged: list[dict[str, Any]] = []
     for item in merged:
+        itinerary = []
+        for stop in item.get("itinerary") or []:
+            if isinstance(stop, dict):
+                itinerary.append(fallback_title_hy(stop, labels))
+        item["itinerary"] = itinerary
         if not hy_copy_ok(item):
             flagged.append(mark_hy_review(item))
         else:
@@ -626,11 +648,8 @@ def refinement_node(state: State) -> dict[str, Any]:
     offers = [item for item in (research.get("market_offers") or []) if isinstance(item, dict)]
     priced: list[dict[str, Any]] = []
     leftover_source = [item for item in (state.get("evaluated_ideas") or state.get("ideas_raw") or []) if isinstance(item, dict)]
-    band_offers = []
-    for offer in offers:
-        if offer.get("company") == "OneWayTour" and offer.get("duration_days") not in (None, 1, 1.0):
-            continue
-        band_offers.append(offer)
+    labels = hy_labels_for_candidates([row for row in (research.get("place_candidates") or []) if isinstance(row, dict)])
+    owt_tours = [item for item in (research.get("onewaytour_tours") or []) if isinstance(item, dict)]
     for raw in leftover_source:
         candidate = ensure_armavir_bookends(dict(raw), departure)
         structured = [row for row in (candidate.pop("_structured_stops", None) or candidate.get("itinerary") or []) if isinstance(row, dict)]
@@ -639,9 +658,30 @@ def refinement_node(state: State) -> dict[str, Any]:
         classified = classify_itinerary_stops(geo_idea, research)
         candidate["verify"] = list(geo_idea.get("verify") or [])
         candidate = ground_idea(candidate, research)
+        if has_live_data(research):
+            candidate["verify"] = [
+                item for item in (candidate.get("verify") or []) if item != NO_LIVE_RESULTS
+            ]
         if research.get("onewaytour_unavailable") or research.get("onewaytour_verify"):
             if ONEWAYTOUR_UNAVAILABLE not in candidate["verify"]:
                 candidate["verify"].append(ONEWAYTOUR_UNAVAILABLE)
+        match_names = idea_match_names(candidate, research)
+        matched_owt, other_owt, owt_reasons = partition_tours(owt_tours, match_names)
+        owt_offers = []
+        retrieved = str(research.get("retrieved_at") or "")
+        for tour in matched_owt:
+            offer = _offer_from_tour(tour, retrieved)
+            if offer:
+                owt_offers.append(offer)
+        band_offers = [item for item in offers if str(item.get("company") or "") != "OneWayTour"] + owt_offers
+        if os.getenv("DEBUG_IDEAS", "").strip() == "1":
+            print(
+                f"onewaytour_debug idea={candidate.get('id')} fetched={len(owt_tours)} "
+                f"one_day={sum(1 for row in owt_tours if is_one_day_tour(row))} "
+                f"matched={len(matched_owt)} offers={len(owt_offers)} other={len(other_owt)} "
+                f"reasons={owt_reasons[:8]}",
+                flush=True,
+            )
         region = str(research.get("region_en") or research.get("place_en") or "")
         geo_stops = classified["accepted"]
         coords_by_name: dict[str, tuple[float, float]] = {}
@@ -683,6 +723,11 @@ def refinement_node(state: State) -> dict[str, Any]:
             geocoded_stops=route.geocoded_stops,
         )
         candidate = rewrite_copy_from_numbers(candidate, research)
+        itinerary = []
+        for stop in candidate.get("itinerary") or []:
+            if isinstance(stop, dict):
+                itinerary.append(fallback_title_hy(stop, labels))
+        candidate["itinerary"] = itinerary
         _debug_idea_line(candidate, classified["accepted"], classified["dropped"])
         priced.append(candidate)
     priced = tag_budget_fit(priced, budget)
@@ -795,12 +840,11 @@ def run_idea_workflow(request: GenerateIdeasRequest) -> tuple[list[dict[str, Any
     status_note = search_status_note(status, useful)
     if status_note and status_note not in research_summary:
         research_summary = f"{status_note}. {research_summary}".strip()
-    if useful < 2:
-        few = "Fewer than 2 useful search results after filtering; do not treat snippets as market proof."
-        if few not in research_summary:
-            research_summary = f"{few} {research_summary}".strip()
-    if not research.get("live"):
-        empty = "No live web results; places and prices need human research."
-        if empty not in research_summary:
-            research_summary = f"{empty} {research_summary}".strip()
+    live_data = has_live_data(research)
+    if useful < 2 and live_data:
+        if WEB_SEARCH_FEW not in research_summary:
+            research_summary = f"{WEB_SEARCH_FEW}. {research_summary}".strip()
+    if not live_data:
+        if NO_LIVE_RESULTS not in research_summary:
+            research_summary = f"{NO_LIVE_RESULTS} {research_summary}".strip()
     return ideas, research_summary, research

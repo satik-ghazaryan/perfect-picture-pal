@@ -69,3 +69,24 @@ class AdminCopyTests(unittest.TestCase):
             format_verify_note_hy("No destination stops after Armavir; route km is 0"),
             "Արմավիրից հետո նշանակման կանգառներ չկան. երթուղու կմ-ը 0 է",
         )
+        self.assertEqual(
+            format_verify_note_hy("No usable competitor offers; price is cost+margin only"),
+            "Գինը՝ ծախս × 1.25. մրցակիցների գները միայն տեղեկատվական են",
+        )
+        self.assertEqual(
+            format_verify_note_hy("price = cost x 1.25; competitor prices are shown for reference only"),
+            "Գինը՝ ծախս × 1.25. մրցակիցների գները միայն տեղեկատվական են",
+        )
+        self.assertEqual(
+            format_verify_note_hy("No competitor data found for similar tours."),
+            "Նման տուրերի համար մրցակցային տվյալներ չեն գտնվել։",
+        )
+        self.assertEqual(
+            format_verify_note_hy("Meals and entrance fees are not included."),
+            "Սնունդը և մուտքի տոմսերը ներառված չեն։",
+        )
+        self.assertEqual(format_verify_note_hy("Web search returned few results"), "Որոնումը քիչ արդյունք է տվել")
+        self.assertEqual(
+            format_verify_note_hy("Route km is an estimate; confirm driving distance"),
+            "Երթուղու կմ-ը գնահատական է. հաստատեք վարման հեռավորությունը",
+        )

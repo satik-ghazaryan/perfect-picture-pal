@@ -50,3 +50,5 @@ __pycache__/
 scripts/local/
 AUDIT.md
 backend/.nominatim_cache.json
+backend/.onewaytour_cache.json
+backend/.hy_label_cache.json

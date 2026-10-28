@@ -156,6 +156,7 @@ class GeocodedStop(BaseModel):
 
 class PlaceCandidate(BaseModel):
     name_en: str = ""
+    name_hy: str = ""
     type: str = ""
     source_url: str = ""
     osm_url: str = ""

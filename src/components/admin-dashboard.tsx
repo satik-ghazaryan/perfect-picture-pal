@@ -65,7 +65,7 @@ import {
 } from "@/lib/loyalty";
 import { downloadPassengerWorkbook } from "@/lib/passenger-export";
 import { isSupabaseConfigured } from "@/lib/supabase";
-import { formatVerifyNoteHy, generateTourIdeas, normalizeResearch, readCachedIdeaRun, saveTourIdeaDraft, searchStatusNote } from "@/lib/tour-ideas";
+import { formatStopTitleHy, formatVerifyNoteHy, generateTourIdeas, normalizeResearch, readCachedIdeaRun, saveTourIdeaDraft, searchStatusNote } from "@/lib/tour-ideas";
 import type { TourIdeaInput, TourIdeaResearch, TourIdeaResult } from "@/types";
 
 const sections = [
@@ -1901,25 +1901,46 @@ function IdeasSection({
             <p className="mt-2 text-xs text-muted-foreground">OneWayTour տվյալները անհասանելի են</p>
           ) : null}
           {research.onewaytour_tours && research.onewaytour_tours.length > 0 ? (
-            <div className="mt-3">
-              <p className="text-xs font-semibold text-foreground">OneWayTour տուրեր (շուկայական հղում)</p>
-              <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
-                {research.onewaytour_tours.map((tour) => {
-                  const href = safeHttpUrl(tour.url || "");
-                  return (
-                    <li key={`${tour.url}-${tour.name}`}>
-                      {href ? (
-                        <a href={href} target="_blank" rel="noopener noreferrer" className="underline">
-                          {tour.name || href}
-                        </a>
-                      ) : (
-                        <span>{tour.name}</span>
-                      )}
-                      {tour.price_amd ? ` · ${formatAmd(tour.price_amd)}` : ""}
-                    </li>
-                  );
-                })}
-              </ul>
+            <div className="mt-3 space-y-3">
+              {(() => {
+                const matched = research.onewaytour_tours.filter((tour) => tour.matched);
+                const other = research.onewaytour_tours.filter((tour) => !tour.matched);
+                const renderTours = (tours: typeof research.onewaytour_tours) => (
+                  <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
+                    {tours.map((tour) => {
+                      const href = safeHttpUrl(tour.url || "");
+                      return (
+                        <li key={`${tour.url}-${tour.name}`}>
+                          {href ? (
+                            <a href={href} target="_blank" rel="noopener noreferrer" className="underline">
+                              {tour.name || href}
+                            </a>
+                          ) : (
+                            <span>{tour.name}</span>
+                          )}
+                          {tour.price_amd ? ` · ${formatAmd(tour.price_amd)}` : ""}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                );
+                return (
+                  <>
+                    {matched.length > 0 ? (
+                      <div>
+                        <p className="text-xs font-semibold text-foreground">OneWayTour համընկնող տուրեր (շուկայական հղում)</p>
+                        {renderTours(matched)}
+                      </div>
+                    ) : null}
+                    {other.length > 0 ? (
+                      <div>
+                        <p className="text-xs font-semibold text-foreground">այլ մեկօրյա տուրեր (հղում)</p>
+                        {renderTours(other)}
+                      </div>
+                    ) : null}
+                  </>
+                );
+              })()}
             </div>
           ) : null}
           {research.place_candidates && research.place_candidates.length > 0 ? (
@@ -1933,7 +1954,7 @@ function IdeasSection({
                   const fromOneWay = source.includes("onewaytour.com");
                   return (
                     <li key={`${place.name_en}-${place.osm_url || place.source_url || ""}`}>
-                      <span>{place.name_en}</span>
+                      <span>{place.name_hy ? `${place.name_hy} / ${place.name_en}` : place.name_en}</span>
                       {place.type ? ` · ${place.type}` : ""}
                       {fromOneWay ? " · OneWayTour" : ""}
                       {osm ? (
@@ -2032,17 +2053,12 @@ function IdeasSection({
                 ))}
               </ul>
             ) : null}
-            <p className="mt-1 text-xs font-semibold text-muted-foreground">
-              {marketPositionLabel(idea.market_position)}
-              {idea.market?.difference_amd ? ` · տարբերություն ${formatAmd(Math.abs(idea.market.difference_amd))}` : ""}
-            </p>
-            {idea.market && idea.market.offer_count > 0 ? (
-              <p className="mt-1 text-xs text-muted-foreground">
-                Շուկա (market reference) {idea.market.offer_count} առաջարկ · {formatAmd(idea.market.price_min_amd ?? 0)}–{formatAmd(idea.market.price_max_amd ?? 0)}
-                {idea.market.price_median_amd ? ` · մեդիան ${formatAmd(idea.market.price_median_amd)}` : ""}
+            {idea.price != null && idea.market && idea.market.offer_count > 0 ? (
+              <p className="mt-1 text-xs font-semibold text-muted-foreground">
+                Մրցակիցներ՝ {formatAmd(idea.market.price_min_amd ?? 0)}–{formatAmd(idea.market.price_max_amd ?? 0)} · մեր գինը {formatAmd(idea.price)} ({marketPositionLabel(idea.market_position)})
               </p>
             ) : (
-              <p className="mt-1 text-xs text-muted-foreground">Մրցակցային գներ չկան · գինը cost×1.25 է (verify)</p>
+              <p className="mt-1 text-xs text-muted-foreground">Գինը՝ ծախս × 1.25. մրցակիցների գները միայն տեղեկատվական են</p>
             )}
             {idea.market?.offers?.length ? (
               <ul className="mt-2 space-y-1 text-xs">
@@ -2080,24 +2096,17 @@ function IdeasSection({
             {idea.highlights.length > 0 ? (
               <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-foreground">
                 {idea.highlights.map((item) => (
-                  <li key={item}>{item}</li>
+                  <li key={item}>{formatVerifyNoteHy(item)}</li>
                 ))}
               </ul>
             ) : null}
             {idea.itinerary.length > 0 ? (
               <div className="mt-3 space-y-1 text-sm">
-                {idea.itinerary.map((stop) => {
-                  const display =
-                    stop.title_hy ||
-                    (stop.place_name && stop.activity
-                      ? `${stop.place_name} — ${stop.activity}`
-                      : stop.place_name || stop.title);
-                  return (
+                {idea.itinerary.map((stop) => (
                     <p key={`${stop.time}-${stop.title}`}>
-                      <span className="font-bold">{stop.time}</span> · {display}
+                      <span className="font-bold">{stop.time}</span> · {formatStopTitleHy(stop)}
                     </p>
-                  );
-                })}
+                ))}
               </div>
             ) : null}
             <div className="mt-4 flex flex-wrap gap-2">

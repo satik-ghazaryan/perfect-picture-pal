@@ -417,7 +417,9 @@ def discover_place(preferences: str) -> dict[str, Any]:
     try:
         from agent.onewaytour import collect_onewaytour
 
-        owt = collect_onewaytour(str(place_en), str(region_en or ""))
+        match_names = [str(place_en), str(region_en or "")]
+        match_names.extend(str(item.get("name_en") or "") for item in structured if isinstance(item, dict))
+        owt = collect_onewaytour(str(place_en), str(region_en or ""), match_names=match_names)
     except Exception:  # noqa: BLE001
         owt["verify"] = "OneWayTour data unavailable"
     owt_places = [item for item in (owt.get("place_candidates") or []) if isinstance(item, dict)]

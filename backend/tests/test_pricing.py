@@ -9,6 +9,7 @@ from agent.distance import destination_titles, has_stop_outside_armavir, one_way
 from agent.pricing import (
     GROUP_SIZE,
     GUIDE_FEE_GROUP_AMD,
+    PRICE_REFERENCE_NOTE,
     apply_unit_economics,
     apply_yerevan_transfer,
     choose_suggested_price,
@@ -41,16 +42,66 @@ class PricingTests(unittest.TestCase):
             {"observed_price_amd": 14000, "title": "B", "url": "https://example.com/b", "found_on": "2026-10-26"},
         ]
         suggested, position, market = choose_suggested_price(7998, offers)
-        self.assertGreaterEqual(suggested, 9997)
-        self.assertLessEqual(suggested, 14000)
-        self.assertEqual(position, "in_range")
+        self.assertEqual(suggested, 9997)
+        self.assertEqual(position, "below_market")
         self.assertEqual(market["offer_count"], 2)
+        self.assertEqual(market["price_min_amd"], 12000)
+        self.assertEqual(market["price_max_amd"], 14000)
 
     def test_min_price_above_market_band(self) -> None:
         offers = [{"observed_price_amd": 5000, "title": "Cheap", "url": "https://example.com/c", "found_on": "2026-10-26"}]
-        suggested, position, _market = choose_suggested_price(7998, offers)
+        suggested, position, market = choose_suggested_price(7998, offers)
         self.assertEqual(suggested, 9997)
         self.assertEqual(position, "above_market")
+        self.assertEqual(market["price_min_amd"], 5000)
+
+    def test_offers_do_not_change_final_price(self) -> None:
+        high = [
+            {"observed_price_amd": 52000, "title": "High", "url": "https://example.com/h", "found_on": "2026-10-26"},
+            {"observed_price_amd": 56000, "title": "Higher", "url": "https://example.com/i", "found_on": "2026-10-26"},
+        ]
+        low = [{"observed_price_amd": 4000, "title": "Low", "url": "https://example.com/l", "found_on": "2026-10-26"}]
+        floor = min_price_amd(7998)
+        high_price, high_pos, high_market = choose_suggested_price(7998, high)
+        low_price, low_pos, low_market = choose_suggested_price(7998, low)
+        none_price, none_pos, none_market = choose_suggested_price(7998, [])
+        self.assertEqual(high_price, floor)
+        self.assertEqual(low_price, floor)
+        self.assertEqual(none_price, floor)
+        self.assertEqual(high_pos, "below_market")
+        self.assertEqual(low_pos, "above_market")
+        self.assertEqual(none_pos, "unknown")
+        _mid_price, mid_pos, _mid_market = choose_suggested_price(
+            7998,
+            [
+                {"observed_price_amd": 9000, "title": "MidA", "url": "https://example.com/m", "found_on": "2026-10-26"},
+                {"observed_price_amd": 11000, "title": "MidB", "url": "https://example.com/n", "found_on": "2026-10-26"},
+            ],
+        )
+        self.assertEqual(_mid_price, floor)
+        self.assertEqual(mid_pos, "in_range")
+        self.assertEqual(high_market["offer_count"], 2)
+        self.assertEqual(none_market["offer_count"], 0)
+        with_high = apply_unit_economics(
+            {"id": "lori", "title_en": "Lori", "itinerary": [{"title": "Haghpat"}]},
+            route_km=201.6,
+            km_sourced=True,
+            offers=high,
+            has_away_stop=True,
+        )
+        with_low = apply_unit_economics(
+            {"id": "lori", "title_en": "Lori", "itinerary": [{"title": "Haghpat"}]},
+            route_km=201.6,
+            km_sourced=True,
+            offers=low,
+            has_away_stop=True,
+        )
+        self.assertEqual(with_high["price"], with_low["price"])
+        self.assertEqual(with_high["price"], with_high["min_price_amd"])
+        self.assertNotEqual(with_high["market_position"], with_low["market_position"])
+        self.assertIn(PRICE_REFERENCE_NOTE, with_high["verify"])
+        self.assertFalse(any("No usable competitor offers" in item for item in with_high["verify"]))
+        self.assertIn(PRICE_REFERENCE_NOTE, with_high["breakdown"]["notes"])
 
     def test_yerevan_addon_does_not_change_price(self) -> None:
         idea = {
@@ -72,6 +123,24 @@ class PricingTests(unittest.TestCase):
         grounded = ground_idea(idea, {"live": False, "results": []})
         self.assertTrue(grounded["needs_verification"])
         self.assertTrue(any("No live web results" in item for item in grounded["verify"]))
+
+    def test_live_candidates_do_not_get_empty_web_note(self) -> None:
+        idea = {
+            "title_en": "Lori",
+            "itinerary": [{"time": "11:00", "title": "Haghpat Monastery", "place_name": "Haghpat Monastery", "description": "Visit"}],
+            "verify": ["No live web results; places and prices need human research"],
+        }
+        grounded = ground_idea(
+            idea,
+            {
+                "live": True,
+                "useful_result_count": 1,
+                "results": [{"title": "Haghpat", "url": "https://en.wikipedia.org/wiki/Haghpat_Monastery"}],
+                "place_candidates": [{"name_en": "Haghpat Monastery", "wiki_url": "https://en.wikipedia.org/wiki/Haghpat_Monastery"}],
+            },
+        )
+        self.assertFalse(any("No live web results" in item for item in grounded["verify"]))
+        self.assertTrue(any("Web search returned few results" in item for item in grounded["verify"]))
 
     def test_akhtala_itinerary_skips_return_leg(self) -> None:
         titles = destination_titles(

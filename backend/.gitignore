@@ -10,3 +10,5 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .nominatim_cache.json
+.onewaytour_cache.json
+.hy_label_cache.json

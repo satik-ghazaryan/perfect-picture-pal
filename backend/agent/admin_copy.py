@@ -16,11 +16,24 @@ VERIFY_NOTE_HY_EXACT = {
     "price needs route distance": "Անհրաժեշտ է երթուղու հեռավորությունը",
     "Route km is an estimate": "Երթուղու կմ-ը գնահատական է",
     "Route km is a rough estimate; confirm": "Երթուղու կմ-ը կոպիտ գնահատական է. հաստատեք",
+    "Route km is an estimate; confirm driving distance": "Երթուղու կմ-ը գնահատական է. հաստատեք վարման հեռավորությունը",
     "OneWayTour data unavailable": "OneWayTour տվյալները անհասանելի են",
     "No live web results; places and prices need human research": (
         "Կենդանի որոնման արդյունքներ չկան. վայրերն ու գները հարկավոր է ստուգել ձեռքով"
     ),
     "No competitor data was found": "Մրցակցային տվյալներ չեն գտնվել",
+    "No competitor data was found.": "Մրցակցային տվյալներ չեն գտնվել։",
+    "No competitor data found for similar tours.": "Նման տուրերի համար մրցակցային տվյալներ չեն գտնվել։",
+    "No usable competitor offers; price is cost+margin only": (
+        "Գինը՝ ծախս × 1.25. մրցակիցների գները միայն տեղեկատվական են"
+    ),
+    "price = cost x 1.25; competitor prices are shown for reference only": (
+        "Գինը՝ ծախս × 1.25. մրցակիցների գները միայն տեղեկատվական են"
+    ),
+    "Meals and entrance fees are not included.": "Սնունդը և մուտքի տոմսերը ներառված չեն։",
+    "Meals and entrance fees are not included": "Սնունդը և մուտքի տոմսերը ներառված չեն",
+    "Web search returned few results": "Որոնումը քիչ արդյունք է տվել",
+    "Fewer than 2 useful search results after filtering": "Որոնումը քիչ արդյունք է տվել",
     "Not enough concrete places found; needs human research": (
         "Բավարար կոնկրետ վայրեր չեն գտնվել. հարկավոր է ձեռքով ստուգում"
     ),
@@ -34,6 +47,7 @@ VERIFY_NOTE_HY_PREFIXES = (
     ("Could not geocode stop:", "Չհաջողվեց գեոկոդավորել կանգառը:"),
     ("Web distance cross-check (not used for price):", "Հեռավորության համացանցային ստուգում (գնի համար չի օգտագործվում):"),
     ("Generic stop, no concrete place:", "Ընդհանուր կանգառ, կոնկրետ վայր չկա:"),
+    ("Fewer than 2 useful search results after filtering", "Որոնումը քիչ արդյունք է տվել"),
 )
 
 

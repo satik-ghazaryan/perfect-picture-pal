@@ -156,6 +156,7 @@ export type TourIdeaResearchHit = {
 
 export type TourIdeaPlaceCandidate = {
   name_en: string;
+  name_hy?: string;
   type?: string;
   source_url?: string;
   osm_url?: string;
@@ -196,6 +197,7 @@ export type TourIdeaResearch = {
     duration?: string;
     departure_city?: string;
     places?: string[];
+    matched?: boolean;
   }>;
 };
 

@@ -9,7 +9,10 @@ from agent.quality import (
     FORBIDDEN_CUSTOMER_PHRASES,
     GENERIC_STOP_NOTE,
     HY_REVIEW_FLAG,
+    NO_LIVE_RESULTS,
     NOT_ENOUGH_PLACES,
+    WEB_SEARCH_FEW,
+    has_live_data,
     classify_itinerary_stops,
     hy_copy_ok,
     is_generic_stop_title,
@@ -211,6 +214,16 @@ class QualityFixTests(unittest.TestCase):
         self.assertFalse(hy_copy_ok(idea))
         flagged = mark_hy_review(idea)
         self.assertIn(HY_REVIEW_FLAG, flagged["verify"])
+
+    def test_has_live_data_when_candidates_or_hits_exist(self) -> None:
+        self.assertFalse(has_live_data({"live": False, "results": [], "place_candidates": []}))
+        self.assertTrue(has_live_data({"useful_result_count": 1, "results": []}))
+        self.assertTrue(has_live_data({"place_candidates": [{"name_en": "Haghpat Monastery"}]}))
+        self.assertTrue(has_live_data({"onewaytour_tours": [{"name": "Garni day tour"}]}))
+        self.assertTrue(has_live_data({"wikipedia_ok": True, "results": [], "place_candidates": []}))
+        self.assertTrue(has_live_data({"overpass_ok": True}))
+        self.assertEqual(NO_LIVE_RESULTS, "No live web results; places and prices need human research")
+        self.assertEqual(WEB_SEARCH_FEW, "Web search returned few results")
 
     def test_thin_itinerary_is_flagged(self) -> None:
         idea = rewrite_copy_from_numbers(

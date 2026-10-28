@@ -27,10 +27,21 @@ const VERIFY_NOTE_HY_EXACT: Record<string, string> = {
   "price needs route distance": "Անհրաժեշտ է երթուղու հեռավորությունը",
   "Route km is an estimate": "Երթուղու կմ-ը գնահատական է",
   "Route km is a rough estimate; confirm": "Երթուղու կմ-ը կոպիտ գնահատական է. հաստատեք",
+  "Route km is an estimate; confirm driving distance": "Երթուղու կմ-ը գնահատական է. հաստատեք վարման հեռավորությունը",
   "OneWayTour data unavailable": "OneWayTour տվյալները անհասանելի են",
   "No live web results; places and prices need human research":
     "Կենդանի որոնման արդյունքներ չկան. վայրերն ու գները հարկավոր է ստուգել ձեռքով",
   "No competitor data was found": "Մրցակցային տվյալներ չեն գտնվել",
+  "No competitor data was found.": "Մրցակցային տվյալներ չեն գտնվել։",
+  "No competitor data found for similar tours.": "Նման տուրերի համար մրցակցային տվյալներ չեն գտնվել։",
+  "No usable competitor offers; price is cost+margin only":
+    "Գինը՝ ծախս × 1.25. մրցակիցների գները միայն տեղեկատվական են",
+  "price = cost x 1.25; competitor prices are shown for reference only":
+    "Գինը՝ ծախս × 1.25. մրցակիցների գները միայն տեղեկատվական են",
+  "Meals and entrance fees are not included.": "Սնունդը և մուտքի տոմսերը ներառված չեն։",
+  "Meals and entrance fees are not included": "Սնունդը և մուտքի տոմսերը ներառված չեն",
+  "Web search returned few results": "Որոնումը քիչ արդյունք է տվել",
+  "Fewer than 2 useful search results after filtering": "Որոնումը քիչ արդյունք է տվել",
   "Not enough concrete places found; needs human research":
     "Բավարար կոնկրետ վայրեր չեն գտնվել. հարկավոր է ձեռքով ստուգում",
   "Place data sources unavailable": "Վայրերի տվյալների աղբյուրները անհասանելի են",
@@ -43,6 +54,7 @@ const VERIFY_NOTE_HY_PREFIXES: Array<[string, string]> = [
   ["Could not geocode stop:", "Չհաջողվեց գեոկոդավորել կանգառը:"],
   ["Web distance cross-check (not used for price):", "Հեռավորության համացանցային ստուգում (գնի համար չի օգտագործվում):"],
   ["Generic stop, no concrete place:", "Ընդհանուր կանգառ, կոնկրետ վայր չկա:"],
+  ["Fewer than 2 useful search results after filtering", "Որոնումը քիչ արդյունք է տվել"],
 ];
 
 export function searchStatusNote(status: string | undefined, usefulCount = 0): string {
@@ -60,6 +72,39 @@ export function formatVerifyNoteHy(note: string): string {
     if (note.startsWith(english)) return armenian + note.slice(english.length);
   }
   return note;
+}
+
+const ACTIVITY_HY: Record<string, string> = {
+  departure: "մեկնում",
+  depart: "մեկնում",
+  arrival: "ժամանում",
+  arrive: "ժամանում",
+  visit: "այց",
+  visiting: "այց",
+  return: "վերադարձ",
+  returning: "վերադարձ",
+  lunch: "ճաշ",
+  meal: "ճաշ",
+};
+
+const ARMENIAN_RE = /[\u0531-\u0587]/;
+
+export function formatStopTitleHy(stop: TourIdeaStop): string {
+  const titleHy = String(stop.title_hy ?? "").trim();
+  if (titleHy && ARMENIAN_RE.test(titleHy)) return titleHy;
+  const activityHy = String(stop.activity_hy ?? "").trim();
+  const activityEn = String(stop.activity ?? "").trim().toLowerCase();
+  const mappedActivity = activityHy || ACTIVITY_HY[activityEn.split(/\s+/)[0] || ""] || activityEn;
+  const place = String(stop.place_name ?? "").trim();
+  if (activityEn === "lunch" || activityEn === "meal" || place.toLowerCase() === "lunch") {
+    return "Ճաշի ընդմիջում";
+  }
+  if (place.toLowerCase() === "armavir") {
+    return `Արմավիր — ${mappedActivity || "մեկնում"}`;
+  }
+  if (place && mappedActivity) return `${place} — ${mappedActivity}`;
+  if (place) return place;
+  return String(stop.title ?? "");
 }
 
 const LAST_RUN_KEY = "ari-gnank-last-idea-run";
@@ -274,6 +319,7 @@ export function normalizeResearch(value: unknown): TourIdeaResearch {
         if (!name) return [];
         return [{
           name_en: name,
+          name_hy: String(row["name_hy"] ?? ""),
           type: String(row["type"] ?? ""),
           source_url: asHttpUrl(row["source_url"]),
           osm_url: asHttpUrl(row["osm_url"]),
@@ -308,6 +354,7 @@ export function normalizeResearch(value: unknown): TourIdeaResearch {
           duration: String(row["duration"] ?? ""),
           departure_city: String(row["departure_city"] ?? ""),
           places,
+          matched: Boolean(row["matched"]),
         }];
       })
       : [],

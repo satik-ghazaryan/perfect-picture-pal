@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import threading
 import time
@@ -11,7 +12,7 @@ from typing import Any
 from urllib.parse import urljoin, urlparse
 from urllib.robotparser import RobotFileParser
 
-from agent.distance import armavir_distance_km, nominatim_coord
+from agent.distance import armavir_distance_km, names_fuzzy_match, nominatim_coord
 from agent.place_discovery import is_login_or_booking_url, is_public_http_url
 from agent.search import conversion_rate
 
@@ -19,6 +20,7 @@ USER_AGENT = "Mozilla/5.0 (compatible; AriGnank/1.0; +https://arignank.example)"
 BASE = "https://onewaytour.com"
 ROBOTS_URL = f"{BASE}/robots.txt"
 GROUP_TOURS_URL = f"{BASE}/group-tours"
+TOUR_XML_URL = f"{BASE}/tour.xml"
 TIMEOUT_SEC = 8.0
 MAX_PAGES = 6
 MIN_INTERVAL_SEC = 1.0
@@ -37,16 +39,45 @@ SKIP_PLACE = {
     "lavash baking",
     "master class",
 }
-MULTI_DAY_RE = re.compile(r"\b([2-9]|[1-9]\d)\s*-?\s*days?\b", re.I)
-DAY_TOUR_RE = re.compile(r"\bday tour\b|\bone[- ]day\b|\b1[- ]day\b", re.I)
-JSON_LD_RE = re.compile(r'<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>', re.I | re.S)
+MULTI_DAY_RE = re.compile(
+    r"\b(?:two|three|four|five|six|seven|eight|nine|ten|[2-9]|[1-9]\d)\s*-?\s*days?\b",
+    re.I,
+)
+DAY_TOUR_RE = re.compile(r"(?<![0-9-])\bday tour\b|\bone[- ]day\b|\b1[- ]day\b", re.I)
 DURATION_ISO_RE = re.compile(r"PT(?:(\d+)H)?(?:(\d+)M)?", re.I)
+DURATION_PERIOD_RE = re.compile(r"\bP(\d+)D\b", re.I)
+NIGHTS_RE = re.compile(r"\bovernight\b|\b([2-9]|[1-9]\d)\s*-?\s*nights?\b", re.I)
 PLACE_SPLIT_RE = re.compile(r"\s*,\s*|\s*&\s*|\s+and\s+", re.I)
 TITLE_JUNK_RE = re.compile(
     r"\b(day tour|group tour|private tour|tour|experience|package)\b",
     re.I,
 )
 FOREIGN_RE = re.compile(r"\b(tbilisi|georgia|signagi|mtskheta|iran|tehran)\b", re.I)
+LOC_RE = re.compile(r"<loc>\s*([^<]+)\s*</loc>", re.I)
+LANG_PATH_RE = re.compile(r"^/(hy|ru|fr|es|de|it|ar|zh|hi|pl)/")
+GENERIC_TOKENS = {
+    "tour",
+    "tours",
+    "day",
+    "group",
+    "private",
+    "the",
+    "and",
+    "with",
+    "from",
+    "armenia",
+    "armenian",
+    "package",
+    "packages",
+    "experience",
+    "monastery",
+    "church",
+    "temple",
+    "fortress",
+    "museum",
+    "lake",
+    "waterfall",
+}
 
 _MEM: dict[str, tuple[float, Any]] = {}
 _MEM_LOCK = threading.Lock()
@@ -211,9 +242,88 @@ def parse_robots(text: str) -> RobotFileParser:
     return parser
 
 
+def extract_english_tour_urls(xml: str) -> list[str]:
+    urls: list[str] = []
+    seen: set[str] = set()
+    for loc in LOC_RE.findall(xml or ""):
+        url = str(loc).strip()
+        if not url.startswith(f"{BASE}/"):
+            continue
+        path = urlparse(url).path or ""
+        if LANG_PATH_RE.match(path):
+            continue
+        if _path_blocked(url) or is_login_or_booking_url(url):
+            continue
+        if url in seen:
+            continue
+        seen.add(url)
+        urls.append(url)
+    return urls
+
+
+def urls_matching_names(urls: list[str], names: list[str] | None) -> list[str]:
+    tokens = match_tokens(names)
+    if not tokens:
+        return []
+    matched: list[str] = []
+    for url in urls:
+        path_tokens = match_tokens([str(url).replace("-", " ").replace("/", " ")])
+        if path_tokens & tokens:
+            matched.append(url)
+    return matched
+
+
+def fetch_sitemap_locs(robots: RobotFileParser | None, budget: dict[str, int]) -> list[str]:
+    cached = _cache_get(f"locs:{TOUR_XML_URL}")
+    if isinstance(cached, list):
+        return [str(item) for item in cached]
+    if budget["used"] >= budget["max"] or not _can_fetch(robots, TOUR_XML_URL):
+        return []
+    try:
+        import httpx
+    except ImportError:
+        return []
+    _wait_slot()
+    budget["used"] += 1
+    chunks: list[str] = []
+    total = 0
+    try:
+        with httpx.Client(timeout=TIMEOUT_SEC, follow_redirects=True, headers={"user-agent": USER_AGENT}) as client:
+            with client.stream("GET", TOUR_XML_URL) as response:
+                if response.status_code >= 400:
+                    return []
+                for piece in response.iter_text():
+                    chunks.append(piece)
+                    total += len(piece)
+                    if total > 6_000_000:
+                        break
+    except Exception:  # noqa: BLE001
+        return []
+    urls = extract_english_tour_urls("".join(chunks))
+    _cache_set(f"locs:{TOUR_XML_URL}", urls)
+    return urls
+
+
 def _json_ld_blocks(html: str) -> list[Any]:
     blocks: list[Any] = []
-    for raw in JSON_LD_RE.findall(html or ""):
+    text = html or ""
+    lower = text.lower()
+    idx = 0
+    marker = "application/ld+json"
+    while True:
+        pos = lower.find(marker, idx)
+        if pos < 0:
+            break
+        gt = text.find(">", pos)
+        if gt < 0:
+            break
+        end = lower.find("</script>", gt)
+        if end < 0:
+            break
+        raw = text[gt + 1 : end].strip()
+        idx = end + 9
+        if not raw:
+            continue
         try:
             data = json.loads(raw)
         except json.JSONDecodeError:
@@ -257,21 +367,32 @@ def _offer_price(offer: Any) -> tuple[float, str, int]:
 
 def _duration_days(blob: str, extra: Any = None) -> float | None:
     text = str(blob or "")
-    if extra:
-        text = f"{text} {extra}"
-    iso = str(extra or "")
-    match = DURATION_ISO_RE.search(iso) if iso else None
+    iso = extra if extra is not None else ""
+    if not isinstance(iso, str):
+        iso = json.dumps(iso, ensure_ascii=False)
+    hay = f"{text} {iso}"
+    period = DURATION_PERIOD_RE.search(iso) or DURATION_PERIOD_RE.search(text)
+    if period:
+        try:
+            days = float(period.group(1))
+        except (TypeError, ValueError):
+            days = None
+        if days is not None:
+            return days
+    match = DURATION_ISO_RE.search(iso)
     if match:
         hours = int(match.group(1) or 0) + int(match.group(2) or 0) / 60.0
         if hours:
             return 1.0 if hours <= 16 else round(hours / 8.0, 1)
-    multi = MULTI_DAY_RE.search(text)
+    multi = MULTI_DAY_RE.search(hay)
     if multi:
         try:
             return float(multi.group(1))
         except (TypeError, ValueError):
             return None
-    if DAY_TOUR_RE.search(text) or "/group-tours/" in text:
+    if NIGHTS_RE.search(hay):
+        return 2.0
+    if DAY_TOUR_RE.search(hay) or "/group-tours/" in hay:
         return 1.0
     return None
 
@@ -406,21 +527,94 @@ def parse_group_list_html(html: str) -> list[dict[str, Any]]:
     return tours
 
 
-def _relevant(tour: dict[str, Any], place_en: str, region_en: str) -> bool:
-    blob = f"{tour.get('name') or ''} {' '.join(tour.get('places') or [])}".lower()
-    needles = [part.lower() for part in (place_en, region_en) if part]
+def match_tokens(names: list[str] | tuple[str, ...] | None) -> set[str]:
+    tokens: set[str] = set()
+    for name in names or []:
+        for part in re.split(r"[^a-zA-Z]+", str(name or "").lower()):
+            if len(part) >= 4 and part not in GENERIC_TOKENS:
+                tokens.add(part)
+    return tokens
+
+
+def is_one_day_tour(tour: dict[str, Any]) -> bool:
+    url = str(tour.get("url") or "")
+    name = str(tour.get("name") or "")
+    blob = f"{name} {url} {tour.get('duration') or ''}"
+    if MULTI_DAY_RE.search(blob) or NIGHTS_RE.search(blob):
+        return False
+    days = tour.get("duration_days")
+    if days is not None:
+        try:
+            return float(days) <= 1.0
+        except (TypeError, ValueError):
+            pass
+    return True
+
+
+def tour_matches_names(tour: dict[str, Any], names: list[str] | None) -> bool:
+    needles = [str(item).strip() for item in (names or []) if str(item).strip()]
     if not needles:
+        return False
+    hay_parts = [str(tour.get("name") or "")] + [str(item) for item in (tour.get("places") or [])] + [str(tour.get("url") or "")]
+    hay_tokens = match_tokens(hay_parts)
+    if match_tokens(needles) & hay_tokens:
         return True
-    return any(needle in blob for needle in needles)
+    for needle in needles:
+        for part in hay_parts:
+            if names_fuzzy_match(needle, part):
+                return True
+    return False
+
+
+def partition_tours(
+    tours: list[dict[str, Any]],
+    names: list[str] | None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str]]:
+    matched: list[dict[str, Any]] = []
+    other: list[dict[str, Any]] = []
+    reasons: list[str] = []
+    for tour in tours or []:
+        if not isinstance(tour, dict):
+            continue
+        title = str(tour.get("name") or tour.get("url") or "")[:80]
+        if not is_one_day_tour(tour):
+            reasons.append(f"duration>1 day: {title}")
+            continue
+        if tour_matches_names(tour, names):
+            matched.append(tour)
+        else:
+            other.append(tour)
+            reasons.append(f"no place overlap: {title}")
+    return matched, other, reasons
+
+
+def idea_match_names(idea: dict[str, Any] | None, research: dict[str, Any] | None) -> list[str]:
+    names: list[str] = []
+    if isinstance(research, dict):
+        names.extend(str(research.get("place_en") or "").strip().split("\n")[:1])
+        names.append(str(research.get("region_en") or ""))
+        for row in research.get("place_candidates") or []:
+            if isinstance(row, dict):
+                names.append(str(row.get("name_en") or ""))
+    if isinstance(idea, dict):
+        names.append(str(idea.get("location_en") or ""))
+        for stop in idea.get("itinerary") or []:
+            if not isinstance(stop, dict):
+                continue
+            names.append(str(stop.get("place_name") or ""))
+            names.append(str(stop.get("title_en") or ""))
+    return [item for item in names if item.strip()]
+
+
+def _relevant(tour: dict[str, Any], place_en: str, region_en: str, extra_names: list[str] | None = None) -> bool:
+    return tour_matches_names(tour, [place_en, region_en, *(extra_names or [])])
 
 
 def _offer_from_tour(tour: dict[str, Any], retrieved_at: str) -> dict[str, Any] | None:
     amd = int(tour.get("price_amd") or 0)
     if amd <= 0:
         return None
-    if tour.get("duration_days") not in (None, 1, 1.0):
-        return None
-    if tour.get("duration_days") is None and "/group-tours/" not in str(tour.get("url") or ""):
+    if not is_one_day_tour(tour):
         return None
     currency = str(tour.get("observed_currency") or "AMD")
     amount = tour.get("observed_amount") or amd
@@ -468,7 +662,24 @@ def _resolve_place_coords(names: list[str], region: str, source_url: str) -> lis
     return out
 
 
-def collect_onewaytour(place_en: str = "", region_en: str = "") -> dict[str, Any]:
+def _public_tour(tour: dict[str, Any], *, matched: bool) -> dict[str, Any]:
+    return {
+        "name": tour.get("name"),
+        "url": tour.get("url"),
+        "price_amd": tour.get("price_amd"),
+        "duration": tour.get("duration"),
+        "departure_city": tour.get("departure_city"),
+        "places": list(tour.get("places") or []),
+        "matched": matched,
+        "duration_days": tour.get("duration_days"),
+    }
+
+
+def collect_onewaytour(
+    place_en: str = "",
+    region_en: str = "",
+    match_names: list[str] | None = None,
+) -> dict[str, Any]:
     retrieved_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     empty = {
         "unavailable": True,
@@ -478,7 +689,9 @@ def collect_onewaytour(place_en: str = "", region_en: str = "") -> dict[str, Any
         "verify": UNAVAILABLE,
         "retrieved_at": retrieved_at,
         "pages_fetched": 0,
+        "debug": {"fetched": 0, "one_day": 0, "matched": 0, "offers": 0, "reasons": ["unreachable"]},
     }
+    needles = [item for item in [place_en, region_en, *(match_names or [])] if str(item).strip()]
     budget = {"used": 0, "max": MAX_PAGES}
     robots_text = fetch_url(ROBOTS_URL, robots=None, budget=budget, force=True)
     if not robots_text:
@@ -490,43 +703,73 @@ def collect_onewaytour(place_en: str = "", region_en: str = "") -> dict[str, Any
     if not list_html:
         return empty
     tours = parse_group_list_html(list_html)
-    ranked = sorted(tours, key=lambda row: (0 if _relevant(row, place_en, region_en) else 1, row.get("name") or ""))
-    detail_budget = max(0, budget["max"] - budget["used"])
+    ranked = sorted(
+        tours,
+        key=lambda row: (0 if tour_matches_names(row, needles) else 1, row.get("name") or ""),
+    )
     picked: list[dict[str, Any]] = []
-    for tour in ranked:
-        if len(picked) >= 4 or detail_budget <= 0:
-            break
-        url = str(tour.get("url") or "")
-        if not url or not _can_fetch(robots, url):
-            continue
+    seen_urls: set[str] = set()
+
+    def _take_detail(url: str, fallback: dict[str, Any] | None = None) -> None:
+        if not url or url in seen_urls or not _can_fetch(robots, url):
+            return
+        if budget["used"] >= budget["max"]:
+            if fallback:
+                picked.append(fallback)
+                seen_urls.add(url)
+            return
         html = fetch_url(url, robots=robots, budget=budget)
-        detail_budget = budget["max"] - budget["used"]
+        seen_urls.add(url)
         if not html:
-            picked.append(tour)
-            continue
+            if fallback:
+                picked.append(fallback)
+            return
         parsed = parse_tour_html(html, url)
-        picked.append(parsed or tour)
-    if not picked:
-        picked = ranked[:4]
-    one_day = [
-        tour
-        for tour in picked
-        if tour.get("duration_days") in (None, 1, 1.0) and "/group-tours/" in str(tour.get("url") or "")
-    ]
+        picked.append(parsed or fallback or {"name": url, "url": url, "places": []})
+
+    for tour in ranked:
+        if not tour_matches_names(tour, needles):
+            continue
+        if len([row for row in picked if tour_matches_names(row, needles)]) >= 4:
+            break
+        _take_detail(str(tour.get("url") or ""), tour)
+    if needles and not any(tour_matches_names(row, needles) for row in picked) and budget["used"] < budget["max"]:
+        locs = fetch_sitemap_locs(robots, budget)
+        for url in urls_matching_names(locs, needles):
+            if budget["used"] >= budget["max"]:
+                break
+            if len([row for row in picked if tour_matches_names(row, needles)]) >= 3:
+                break
+            _take_detail(url, {"name": url.rsplit("/", 1)[-1].replace("-", " "), "url": url, "places": []})
+    for tour in tours:
+        url = str(tour.get("url") or "")
+        if url and url not in seen_urls:
+            picked.append(tour)
+            seen_urls.add(url)
+    one_day = [tour for tour in picked if is_one_day_tour(tour)]
+    matched, other, reasons = partition_tours(picked, needles)
+    if not needles:
+        other = list(one_day)
+        matched = []
+        reasons = ["no match names supplied"]
     offers = []
     seen_offer: set[str] = set()
-    for tour in one_day:
+    skipped_price = 0
+    for tour in matched:
         offer = _offer_from_tour(tour, retrieved_at)
         key = str((offer or {}).get("url") or "")
-        if not offer or not key or key in seen_offer:
+        if not offer:
+            skipped_price += 1
+            reasons.append(f"no price: {str(tour.get('name') or '')[:80]}")
+            continue
+        if not key or key in seen_offer:
             continue
         seen_offer.add(key)
         offers.append(offer)
     candidates: list[dict[str, Any]] = []
     seen_place: set[str] = set()
     region = region_en or place_en
-    place_tours = [tour for tour in one_day if _relevant(tour, place_en, region_en)]
-    for tour in place_tours:
+    for tour in matched:
         url = str(tour.get("url") or "")
         for row in _resolve_place_coords(list(tour.get("places") or []), region, url):
             key = str(row.get("name_en") or "").lower()
@@ -534,17 +777,26 @@ def collect_onewaytour(place_en: str = "", region_en: str = "") -> dict[str, Any
                 continue
             seen_place.add(key)
             candidates.append(row)
-    public_tours = [
-        {
-            "name": tour.get("name"),
-            "url": tour.get("url"),
-            "price_amd": tour.get("price_amd"),
-            "duration": tour.get("duration"),
-            "departure_city": tour.get("departure_city"),
-            "places": list(tour.get("places") or []),
-        }
-        for tour in one_day
+    public_tours = [_public_tour(tour, matched=True) for tour in matched] + [
+        _public_tour(tour, matched=False) for tour in other
     ]
+    debug = {
+        "fetched": len(picked),
+        "one_day": len(one_day),
+        "matched": len(matched),
+        "offers": len(offers),
+        "other_one_day": len(other),
+        "skipped_no_price": skipped_price,
+        "reasons": reasons[:12],
+        "pages_fetched": budget["used"],
+    }
+    if os.getenv("DEBUG_IDEAS", "").strip() == "1":
+        print(
+            f"onewaytour_debug fetched={debug['fetched']} one_day={debug['one_day']} "
+            f"matched={debug['matched']} offers={debug['offers']} other={debug['other_one_day']} "
+            f"reasons={debug['reasons']}",
+            flush=True,
+        )
     return {
         "unavailable": False,
         "tours": public_tours,
@@ -553,4 +805,5 @@ def collect_onewaytour(place_en: str = "", region_en: str = "") -> dict[str, Any
         "verify": "",
         "retrieved_at": retrieved_at,
         "pages_fetched": budget["used"],
+        "debug": debug,
     }

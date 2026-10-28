@@ -60,8 +60,20 @@ def _usable_prices(offers: list[dict[str, Any]]) -> list[int]:
     return prices
 
 
+def _position_vs_band(our_price: int, prices: list[int]) -> MarketPosition:
+    if not prices:
+        return "unknown"
+    band_min = min(prices)
+    band_max = max(prices)
+    if our_price < band_min:
+        return "below_market"
+    if our_price > band_max:
+        return "above_market"
+    return "in_range"
+
+
 def choose_suggested_price(cost_pp: int, offers: list[dict[str, Any]]) -> tuple[int, MarketPosition, dict[str, Any]]:
-    floor = min_price_amd(cost_pp)
+    suggested = min_price_amd(cost_pp)
     prices = _usable_prices(offers)
     market: dict[str, Any] = {
         "label": "market_reference",
@@ -71,29 +83,15 @@ def choose_suggested_price(cost_pp: int, offers: list[dict[str, Any]]) -> tuple[
         "price_max_amd": max(prices) if prices else None,
         "offers": offers,
     }
-    if not prices:
-        market["difference_amd"] = 0
-        return floor, "unknown", market
-    band_min = min(prices)
-    band_max = max(prices)
-    mid = int(round(median(prices)))
-    if floor > band_max:
-        suggested = floor
-        position: MarketPosition = "above_market"
-    else:
-        suggested = min(band_max, max(floor, mid, band_min))
-        suggested = max(suggested, floor)
-        if suggested < band_min:
-            position = "below_market"
-        elif suggested > band_max:
-            position = "above_market"
-        else:
-            position = "in_range"
-    market["difference_amd"] = suggested - (market["price_median_amd"] or suggested)
+    position = _position_vs_band(suggested, prices)
+    mid = market["price_median_amd"]
+    market["difference_amd"] = (suggested - mid) if mid is not None else 0
     return suggested, position, market
 
 
 PRICE_NEEDS_DISTANCE = "price needs route distance"
+PRICE_REFERENCE_NOTE = "price = cost x 1.25; competitor prices are shown for reference only"
+OLD_COST_MARGIN_VERIFY = "No usable competitor offers; price is cost+margin only"
 
 
 def apply_unit_economics(
@@ -133,23 +131,23 @@ def apply_unit_economics(
         cost_pp = cost_per_person_amd(transport_group)
         min_price = min_price_amd(cost_pp)
         suggested, position, market = choose_suggested_price(cost_pp, offers or [])
-        if suggested < min_price:
-            suggested = min_price
         profit_pp = suggested - cost_pp
         total_fixed = transport_group + GUIDE_FEE_GROUP_AMD
-        if position == "unknown" and "No usable competitor offers" not in verify:
-            verify.append("No usable competitor offers; price is cost+margin only")
+        verify = [item for item in verify if item != OLD_COST_MARGIN_VERIFY]
+        if PRICE_REFERENCE_NOTE not in verify:
+            verify.append(PRICE_REFERENCE_NOTE)
         if not km_sourced and "Route km is an estimate" not in verify:
             verify.append("Route km is an estimate")
         unit_note = (
             f"Estimated. Meals and entrance fees are not included. "
+            f"{PRICE_REFERENCE_NOTE}. "
             f"GROUP_SIZE={GROUP_SIZE}. Guide {GUIDE_FEE_GROUP_AMD} AMD for the group. "
             f"route_km={route_km:.1f} one-way (Armavir to last stop; no return leg; "
             f"{rate} AMD/km covers the day's vehicle). "
             f"transport_group={transport_group} AMD. "
             f"Cost per person = ({transport_group}+{GUIDE_FEE_GROUP_AMD})/{GROUP_SIZE} = {cost_pp} AMD. "
-            f"Minimum price (cost x {MIN_MARGIN_PCT}%) = {min_price} AMD. "
-            f"Suggested price = {suggested} AMD. Profit per person = {profit_pp} AMD."
+            f"Selling price = cost x 1.25 = {min_price} AMD. "
+            f"Profit per person = {profit_pp} AMD."
         )
     breakdown["guide_amd"] = GUIDE_FEE_GROUP_AMD
     breakdown["transport_amd"] = transport_group if not blocked else 0

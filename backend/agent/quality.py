@@ -250,6 +250,38 @@ GENERIC_STOP_WORDS = {
 }
 GENERIC_STOP_NOTE = "Generic stop, no concrete place:"
 NOT_ENOUGH_PLACES = "Not enough concrete places found; needs human research"
+NO_LIVE_RESULTS = "No live web results; places and prices need human research"
+WEB_SEARCH_FEW = "Web search returned few results"
+
+
+def has_live_data(research: dict[str, Any] | None) -> bool:
+    if not isinstance(research, dict):
+        return False
+    if int(research.get("useful_result_count") or 0) >= 1:
+        return True
+    results = [row for row in (research.get("results") or []) if isinstance(row, dict) and (row.get("url") or row.get("title"))]
+    if results:
+        return True
+    candidates = [row for row in (research.get("place_candidates") or []) if isinstance(row, dict) and str(row.get("name_en") or "").strip()]
+    if candidates:
+        return True
+    if any(isinstance(row, dict) for row in (research.get("onewaytour_tours") or [])):
+        return True
+    if any(isinstance(row, dict) for row in (research.get("onewaytour_offers") or [])):
+        return True
+    if any(isinstance(row, dict) for row in (research.get("market_offers") or [])):
+        return True
+    if int(research.get("pages_fetched") or 0) > 0:
+        return True
+    if research.get("live"):
+        return True
+    if research.get("wikipedia_ok") or research.get("overpass_ok"):
+        return True
+    if any(isinstance(row, dict) for row in (research.get("wikipedia_places") or [])):
+        return True
+    if any(isinstance(row, dict) for row in (research.get("overpass_places") or [])):
+        return True
+    return False
 
 
 def is_lunch_stop(title: str) -> bool:
@@ -383,7 +415,6 @@ def classify_itinerary_stops(idea: dict[str, Any], research: dict[str, Any]) -> 
 
 def ground_idea(idea: dict[str, Any], research: dict[str, Any]) -> dict[str, Any]:
     verify = [str(item) for item in (idea.get("verify") or []) if str(item).strip()]
-    live = bool(research.get("live"))
     corpus = _search_corpus(research)
     useful = int(research.get("useful_result_count") or len(research.get("results") or []))
     candidates = _candidate_rows(research)
@@ -392,14 +423,15 @@ def ground_idea(idea: dict[str, Any], research: dict[str, Any]) -> dict[str, Any
         flag = note or "Place data sources unavailable"
         if flag not in verify:
             verify.append(flag)
+    live_data = has_live_data(research)
     if useful < 2:
-        flag = "Fewer than 2 useful search results after filtering"
+        flag = WEB_SEARCH_FEW if live_data else NO_LIVE_RESULTS
         if flag not in verify:
             verify.append(flag)
-    if (not live or not corpus.strip() or useful < 2) and len(candidates) < 2:
-        flag = "No live web results; places and prices need human research"
-        if flag not in verify:
-            verify.append(flag)
+    verify = [item for item in verify if item != NO_LIVE_RESULTS or not live_data]
+    if not live_data:
+        if NO_LIVE_RESULTS not in verify:
+            verify.append(NO_LIVE_RESULTS)
         idea["verify"] = verify
         idea["needs_verification"] = True
         idea["source_urls"] = []

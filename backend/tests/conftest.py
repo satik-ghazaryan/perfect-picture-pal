@@ -9,6 +9,7 @@ import pytest
 def nominatim_disk_cache_tmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from agent import distance
     from agent.osm_places import clear_place_cache
+    from agent.hy_labels import clear_hy_label_cache
     from agent.onewaytour import clear_onewaytour_cache
 
     path = tmp_path / "nominatim_cache.json"
@@ -17,4 +18,9 @@ def nominatim_disk_cache_tmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     distance._LOOKUP_MEM.clear()
     clear_place_cache()
     clear_onewaytour_cache()
+    clear_hy_label_cache()
     monkeypatch.setattr("agent.onewaytour._DISK_PATH", tmp_path / "onewaytour_cache.json")
+    monkeypatch.setattr("agent.hy_labels._DISK_PATH", tmp_path / "hy_label_cache.json")
+    monkeypatch.setattr("agent.hy_labels._langlinks_hy", lambda titles: {})
+    monkeypatch.setattr("agent.hy_labels._wikidata_hy", lambda title: "")
+    monkeypatch.setattr("agent.hy_labels._hywiki_search", lambda title: "")

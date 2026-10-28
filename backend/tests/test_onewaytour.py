@@ -9,11 +9,15 @@ from agent.onewaytour import (
     COMPANY,
     UNAVAILABLE,
     collect_onewaytour,
+    extract_english_tour_urls,
+    is_one_day_tour,
     parse_group_list_html,
     parse_robots,
     parse_tour_html,
+    partition_tours,
+    tour_matches_names,
 )
-from agent.pricing import apply_unit_economics, choose_suggested_price
+from agent.pricing import apply_unit_economics, choose_suggested_price, min_price_amd
 
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "onewaytour_day_tour.html"
 
@@ -101,8 +105,8 @@ class TestOneWayTour:
         suggested, position, market = choose_suggested_price(5000, offers)
         assert market["offer_count"] == 1
         assert market["price_min_amd"] == 11500
-        assert suggested >= 5000
-        assert position in {"below_market", "in_range", "above_market"}
+        assert suggested == min_price_amd(5000)
+        assert position == "below_market"
 
     def test_hy_adapt_mangle_still_yields_km(self) -> None:
         original = [
@@ -261,3 +265,174 @@ class TestOneWayTour:
         assert UNAVAILABLE in idea["verify"]
         assert idea["price"] is not None
         assert idea["route_km"] > 0
+
+    def test_place_overlap_not_hardcoded_region_list(self) -> None:
+        garni = {
+            "name": "Garni, Geghard, Lake Sevan & Dilijan Day Tour",
+            "url": "https://onewaytour.com/group-tours/garni-geghard-lake-sevan-dilijan-day-tour",
+            "places": ["Garni Temple", "Geghard Monastery", "Lake Sevan"],
+            "duration_days": 1,
+            "price_amd": 11500,
+        }
+        haghpat = {
+            "name": "Haghpat and Sanahin day tour",
+            "url": "https://onewaytour.com/private-tours/haghpat-sanahin-day-tour",
+            "places": ["Haghpat Monastery", "Sanahin Monastery"],
+            "duration_days": 1,
+            "price_amd": 18000,
+        }
+        multi = {
+            "name": "Classic tour in Armenia 9 days",
+            "url": "https://onewaytour.com/private-tours/classic-tour-in-armenia-9-days-8-nights",
+            "places": ["Haghpat Monastery"],
+            "duration_days": 9,
+            "price_amd": 400000,
+        }
+        assert tour_matches_names(haghpat, ["Lori", "Haghpat Monastery"])
+        assert not tour_matches_names(garni, ["Lori", "Haghpat Monastery", "Sanahin Monastery"])
+        matched, other, reasons = partition_tours([garni, haghpat, multi], ["Lori", "Haghpat Monastery"])
+        assert [row["name"] for row in matched] == [haghpat["name"]]
+        assert garni in other
+        assert any("duration>1" in item for item in reasons)
+        offer = choose_suggested_price(8000, [
+            {
+                "title": haghpat["name"],
+                "url": haghpat["url"],
+                "observed_price_amd": 18000,
+                "company": COMPANY,
+                "duration_days": 1,
+            }
+        ])
+        assert offer[2]["offer_count"] == 1
+
+    def test_sitemap_urls_filter_language_and_match_place(self) -> None:
+        xml = """
+        <urlset>
+          <loc>https://onewaytour.com/private-tours/haghpat-sanahin-day-tour</loc>
+          <loc>https://onewaytour.com/hy/private-tours/haghpat-sanahin-day-tour</loc>
+          <loc>https://onewaytour.com/group-tours/garni-geghard-lake-sevan-dilijan-day-tour</loc>
+        </urlset>
+        """
+        urls = extract_english_tour_urls(xml)
+        assert "https://onewaytour.com/private-tours/haghpat-sanahin-day-tour" in urls
+        assert not any("/hy/" in url for url in urls)
+        from agent.onewaytour import urls_matching_names
+
+        matched = urls_matching_names(urls, ["Haghpat Monastery", "Lori"])
+        assert matched == ["https://onewaytour.com/private-tours/haghpat-sanahin-day-tour"]
+
+    def test_lori_collect_uses_sitemap_when_group_list_has_no_overlap(self, monkeypatch) -> None:
+        haghpat_html = """
+        <html><head>
+        <script type="application/ld+json">
+        {"@type":"TouristTrip","name":"Haghpat and Sanahin day tour","url":"https://onewaytour.com/private-tours/haghpat-sanahin-day-tour","duration":"PT10H","offers":{"price":18000,"priceCurrency":"AMD"},"itinerary":{"@type":"ItemList","itemListElement":[{"name":"Haghpat Monastery","item":{"@type":"Place","name":"Haghpat Monastery"}},{"name":"Sanahin Monastery","item":{"@type":"Place","name":"Sanahin Monastery"}}]}}
+        </script>
+        </head><body><h1>Haghpat and Sanahin day tour</h1></body></html>
+        """
+
+        def fake_fetch(url: str, *, robots=None, budget=None, force: bool = False) -> str:
+            if "robots.txt" in url:
+                return ROBOTS_ALLOW
+            if url.endswith("/group-tours"):
+                return LIST_HTML
+            if "haghpat" in url:
+                return haghpat_html
+            if "garni" in url:
+                return FIXTURE.read_text(encoding="utf-8")
+            return ""
+
+        monkeypatch.setattr("agent.onewaytour.fetch_url", fake_fetch)
+        monkeypatch.setattr(
+            "agent.onewaytour.fetch_sitemap_locs",
+            lambda robots, budget: ["https://onewaytour.com/private-tours/haghpat-sanahin-day-tour"],
+        )
+        with patch("agent.onewaytour.nominatim_coord", return_value=(41.09, 44.71)):
+            payload = collect_onewaytour("Lori", "Lori", match_names=["Haghpat Monastery", "Sanahin Monastery"])
+        assert payload["debug"]["matched"] >= 1
+        assert any("Haghpat" in str(offer["title"]) for offer in payload["offers"])
+        assert any(not tour.get("matched") for tour in payload["tours"])
+        assert payload["debug"]["other_one_day"] >= 1
+
+    def test_unlabeled_private_tour_counts_as_one_day(self) -> None:
+        unlabeled = {
+            "name": "Haghpat and Sanahin monastic complexes",
+            "url": "https://onewaytour.com/private-tours/haghpat-sanahin",
+            "places": ["Haghpat Monastery", "Sanahin Monastery"],
+            "duration": "",
+            "duration_days": None,
+            "price_amd": 52000,
+        }
+        garni = {
+            "name": "Garni, Geghard, Lake Sevan & Dilijan Day Tour",
+            "url": "https://onewaytour.com/group-tours/garni-geghard-lake-sevan-dilijan-day-tour",
+            "places": ["Garni Temple", "Geghard Monastery"],
+            "duration_days": 1,
+            "price_amd": 11500,
+        }
+        multi = {
+            "name": "Classic tour in Armenia 9 days",
+            "url": "https://onewaytour.com/private-tours/classic-tour-in-armenia-9-days-8-nights",
+            "places": ["Haghpat Monastery"],
+            "duration_days": 9,
+            "price_amd": 400000,
+        }
+        assert is_one_day_tour(unlabeled)
+        assert not is_one_day_tour(multi)
+        two_day = {
+            "name": "Two-Day Tour to Syunik | Meghri",
+            "url": "https://onewaytour.com/group-tours/two-day-tour-to-syunik-meghri",
+            "places": ["Meghri"],
+            "duration_days": 1,
+            "price_amd": 31000,
+        }
+        assert not is_one_day_tour(two_day)
+        matched, other, reasons = partition_tours(
+            [unlabeled, garni, multi],
+            ["Lori", "Haghpat Monastery", "Sanahin Monastery"],
+        )
+        assert matched == [unlabeled]
+        assert garni in other
+        assert any("duration>1" in item for item in reasons)
+        html = """
+        <html><head>
+        <script type="application/ld+json">
+        {"@type":"TouristTrip","name":"Haghpat and Sanahin monastic complexes","url":"https://onewaytour.com/private-tours/haghpat-sanahin","offers":{"price":52000,"priceCurrency":"AMD"},"itinerary":{"@type":"ItemList","itemListElement":[{"item":{"@type":"Place","name":"Haghpat Monastery"}},{"item":{"@type":"Place","name":"Sanahin Monastery"}}]}}
+        </script>
+        </head><body><h1>Haghpat and Sanahin monastic complexes</h1></body></html>
+        """
+        parsed = parse_tour_html(html, "https://onewaytour.com/private-tours/haghpat-sanahin")
+        assert parsed is not None
+        assert parsed["price_amd"] == 52000
+        assert is_one_day_tour(parsed)
+
+    def test_lori_collect_unlabeled_private_html_feeds_offers(self, monkeypatch) -> None:
+        haghpat_html = """
+        <html><head>
+        <script type="application/ld+json">
+        {"@type":"TouristTrip","name":"Haghpat and Sanahin monastic complexes","url":"https://onewaytour.com/private-tours/haghpat-sanahin","offers":{"price":52000,"priceCurrency":"AMD"},"itinerary":{"@type":"ItemList","itemListElement":[{"item":{"@type":"Place","name":"Haghpat Monastery"}}]}}
+        </script>
+        </head><body><h1>Haghpat and Sanahin monastic complexes</h1></body></html>
+        """
+
+        def fake_fetch(url: str, *, robots=None, budget=None, force: bool = False) -> str:
+            if "robots.txt" in url:
+                return ROBOTS_ALLOW
+            if url.endswith("/group-tours"):
+                return LIST_HTML
+            if "haghpat" in url:
+                return haghpat_html
+            if "garni" in url:
+                return FIXTURE.read_text(encoding="utf-8")
+            return ""
+
+        monkeypatch.setattr("agent.onewaytour.fetch_url", fake_fetch)
+        monkeypatch.setattr(
+            "agent.onewaytour.fetch_sitemap_locs",
+            lambda robots, budget: ["https://onewaytour.com/private-tours/haghpat-sanahin"],
+        )
+        with patch("agent.onewaytour.nominatim_coord", return_value=(41.09, 44.71)):
+            payload = collect_onewaytour("Lori", "Lori", match_names=["Haghpat Monastery", "Sanahin"])
+        assert payload["debug"]["matched"] >= 1
+        assert payload["debug"]["offers"] >= 1
+        assert any(offer["observed_price_amd"] == 52000 for offer in payload["offers"])
+        assert any(not tour.get("matched") for tour in payload["tours"])
