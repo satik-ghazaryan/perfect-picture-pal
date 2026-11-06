@@ -55,7 +55,7 @@ import {
   type SiteSettings,
 } from "@/lib/admin";
 import { CatalogTransferPanel } from "@/components/catalog-transfer-panel";
-import { formatAssignedDepartureDate, weekendScheduleLabel } from "@/lib/calendar-date";
+import { assignedWeekendDay, formatAssignedDepartureDate, weekendScheduleLabel } from "@/lib/calendar-date";
 import { getPortalServerSnapshot, getPortalSnapshot, subscribePortal, upcomingDepartureDate, type AssignedTour, type BookingRecord } from "@/lib/guide-api";
 import {
   adjustLoyaltyPoints,
@@ -397,7 +397,13 @@ export function AdminDashboard({ session }: { session: AdminSession }) {
             error={bookingError}
           />
         )}
-        {section === "transfer" && <CatalogTransferPanel remoteTours={catalog.tours} />}
+        {section === "transfer" && (
+          <CatalogTransferPanel
+            remoteTours={catalog.tours}
+            catalogStatus={catalog.catalogStatus}
+            catalogError={catalog.catalogError}
+          />
+        )}
         {section === "settings" && <SettingsSection settings={catalog.settings} loadError={catalog.settingsError} />}
       </div>
     </div>
@@ -803,11 +809,17 @@ function ToursSection({
                   <Input id="tour-return" type="time" value={draft.returnTime} onChange={(event) => update({ returnTime: event.target.value })} className="rounded-2xl" />
                 </Field>
                 <Field label="Օր" id="tour-day">
-                  <Select value={draft.day} onValueChange={(day) => update({ day: day === "sunday" ? "sunday" : "saturday" })}>
+                  <Select
+                    value={draft.day === "sunday" ? "sunday" : draft.day === "saturday" ? "saturday" : "unset"}
+                    onValueChange={(day) =>
+                      update({ day: day === "sunday" ? "sunday" : day === "saturday" ? "saturday" : "" })
+                    }
+                  >
                     <SelectTrigger id="tour-day" className="rounded-2xl">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="unset">Դեռ նշանակված չէ</SelectItem>
                       <SelectItem value="saturday">Շաբաթ</SelectItem>
                       <SelectItem value="sunday">Կիրակի</SelectItem>
                     </SelectContent>
@@ -1476,7 +1488,7 @@ function BookingsSection({
       departure: departureLabel(tour),
       guideName: staffName(users, tour.guideId, "guide"),
       driverName: staffName(users, tour.driverId, "driver"),
-      fileName: `Ուղևորներ-${tour.id}-${upcomingDepartureDate(tour.day)}.xlsx`,
+      fileName: `Ուղևորներ-${tour.id}-${assignedWeekendDay(tour.day) ? upcomingDepartureDate(assignedWeekendDay(tour.day) as "saturday" | "sunday") : "unassigned"}.xlsx`,
       rows: bookings.filter((booking) => booking.tourId === tour.id),
     })),
     ...[...new Set(bookings.map((booking) => booking.tourId))]

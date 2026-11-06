@@ -7,6 +7,7 @@ import {
   persistCatalogTour,
 } from "./catalog-persistence";
 import type { CatalogTour } from "./tour-catalog-record";
+import { mergeSelectedFields } from "./catalog-transfer";
 import {
   catalogAfterSave,
   serializeTourCatalog,
@@ -133,6 +134,90 @@ describe("catalog persistence", () => {
     assert.equal(remote.store.tours.length, 1);
     assert.equal(remote.store.tours[0]?.["title"], "Ֆիզիկական");
     assert.equal(remote.store.virtual[0]?.["title"], "Վիրտուալ");
+  });
+
+  it("loads a legacy sunday date when day is missing", async () => {
+    const remote = createMemoryCatalogRemote({
+      tours: [
+        {
+          id: "old-sunday",
+          title_hy: "Հին տուր",
+          day: null,
+          departure_date: "2026-11-08",
+          image_url: "https://example.com/old.jpg",
+          price: 10000,
+        },
+      ],
+    });
+    const loaded = await loadRemoteCatalog(remote, fallbackSettings);
+    assert.equal(loaded.status, "loaded");
+    if (loaded.status !== "loaded") return;
+    assert.equal(loaded.tours[0]?.day, "sunday");
+  });
+
+  it("does not treat a weekday legacy date as a confirmed saturday departure", async () => {
+    const remote = createMemoryCatalogRemote({
+      tours: [
+        {
+          id: "old-weekday",
+          title_hy: "Չորեքշաբթի",
+          day: null,
+          departure_date: "2026-11-11",
+          image_url: "https://example.com/old.jpg",
+          price: 10000,
+        },
+      ],
+    });
+    const loaded = await loadRemoteCatalog(remote, fallbackSettings);
+    assert.equal(loaded.status, "loaded");
+    if (loaded.status !== "loaded") return;
+    assert.equal(loaded.tours[0]?.day, "");
+    const row = serializeTourCatalog(loaded.tours[0]!);
+    assert.equal(row.day, null);
+  });
+
+  it("round-trips selected empty audio and panorama after save", async () => {
+    const remote = createMemoryCatalogRemote({
+      tours: [
+        serializeTourCatalog(
+          sampleTour({
+            hasAudioGuide: true,
+            audioChapters: [{ id: "ch-1", title: "Մեկնում", duration: 90, language: "hy" }],
+            has360: true,
+            panoramaUrl: "https://example.com/pano.jpg",
+            virtual_tour_url: "https://example.com/embed.jpg",
+            virtual_tour_id: "vr-keep",
+          }),
+        ) as unknown as Record<string, unknown>,
+      ],
+    });
+    const current = await loadRemoteCatalog(remote, fallbackSettings);
+    assert.equal(current.status, "loaded");
+    if (current.status !== "loaded") return;
+    const localEmpty = sampleTour({
+      hasAudioGuide: true,
+      audioChapters: [],
+      panoramaUrl: "",
+      virtual_tour_url: "",
+      virtual_tour_id: "vr-keep",
+    });
+    const mergedAudio = mergeSelectedFields(current.tours[0]!, localEmpty, ["audioChapters"]);
+    await persistCatalogTour(remote, mergedAudio);
+    const afterAudio = await loadRemoteCatalog(remote, fallbackSettings);
+    assert.equal(afterAudio.status, "loaded");
+    if (afterAudio.status !== "loaded") return;
+    assert.equal(afterAudio.tours[0]?.hasAudioGuide, false);
+    assert.equal(afterAudio.tours[0]?.audioChapters.length, 0);
+
+    const mergedPanorama = mergeSelectedFields(afterAudio.tours[0]!, localEmpty, ["panorama"]);
+    await persistCatalogTour(remote, mergedPanorama);
+    const afterPanorama = await loadRemoteCatalog(remote, fallbackSettings);
+    assert.equal(afterPanorama.status, "loaded");
+    if (afterPanorama.status !== "loaded") return;
+    assert.equal(afterPanorama.tours[0]?.panoramaUrl, "");
+    assert.equal(afterPanorama.tours[0]?.virtual_tour_url ?? "", "");
+    assert.equal(afterPanorama.tours[0]?.virtual_tour_id, "vr-keep");
+    assert.equal(afterPanorama.tours[0]?.has360, true);
   });
 
   it("keeps each tour departure place after settings save and reload", async () => {

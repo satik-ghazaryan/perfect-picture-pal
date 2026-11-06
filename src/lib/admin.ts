@@ -25,10 +25,9 @@ import {
   removeCatalogTour,
   type CatalogRemote,
 } from "@/lib/catalog-persistence";
+import { assignedWeekendDay } from "@/lib/calendar-date";
 import {
   deserializeSiteSettings,
-  deserializeTourCatalog,
-  deserializeVirtualTour,
   logRemoteError,
   normalizeCatalogTour,
   type CatalogTour,
@@ -249,46 +248,6 @@ function asManaged(tour: CatalogTour | null): ManagedTour | null {
   return tour;
 }
 
-function weekendFromLegacyDate(value: string | null | undefined): "saturday" | "sunday" | undefined {
-  if (!value) return undefined;
-  const day = new Date(`${value}T12:00:00`).getDay();
-  if (day === 0) return "sunday";
-  if (day === 6) return "saturday";
-  return undefined;
-}
-
-function managedFromLiveTour(row: Record<string, unknown>): ManagedTour | null {
-  const tour = deserializeTourCatalog(row);
-  if (!tour) return null;
-  const dayMissing = row["day"] == null || row["day"] === "";
-  const weekend = weekendFromLegacyDate(typeof row["departure_date"] === "string" ? row["departure_date"] : null);
-  if (dayMissing && weekend) tour.day = weekend;
-  return asManaged(tour);
-}
-
-function managedFromLiveVirtual(row: Record<string, unknown>): ManagedTour | null {
-  return asManaged(deserializeVirtualTour(row));
-}
-
-function applyDepartures(
-  catalog: ManagedTour[],
-  departures: { tour_id: string; available_seats: number; guide_id: string | null; driver_id: string | null }[],
-) {
-  if (departures.length === 0) return catalog;
-  const latest = new Map<string, (typeof departures)[number]>();
-  for (const row of departures) latest.set(row.tour_id, row);
-  return catalog.map((tour) => {
-    const assigned = latest.get(tour.id);
-    if (!assigned) return tour;
-    return {
-      ...tour,
-      seatsLeft: assigned.available_seats,
-      guideId: assigned.guide_id,
-      driverId: assigned.driver_id,
-    };
-  });
-}
-
 let liveCatalogRequest = 0;
 
 function userFromPublicStaff(staff: PublicStaffMember): StaffMember {
@@ -308,11 +267,6 @@ function userFromPublicStaff(staff: PublicStaffMember): StaffMember {
 async function loadCatalogStaff(): Promise<DirectoryUser[]> {
   const publicStaff = await loadPublicStaff();
   return publicStaff.map(userFromPublicStaff);
-}
-
-function throwRemote(action: string, fallback: string, error: unknown): never {
-  logRemoteError(action, error);
-  throw new Error(fallback);
 }
 
 function catalogRemote(): CatalogRemote | null {
@@ -649,12 +603,13 @@ export function resolveTour(id: string): Tour | null {
 }
 
 function syncPortal(tour: ManagedTour) {
+  const weekend = assignedWeekendDay(tour.day);
   upsertPortalTour({
     id: tour.id,
     title: tour.title_hy,
     departurePlace: tour.departurePlace,
     departureTime: tour.departureTime,
-    departureDate: upcomingDepartureDate(tour.day),
+    departureDate: weekend ? upcomingDepartureDate(weekend) : "",
     guideId: tour.guideId,
     driverId: tour.driverId,
   });
@@ -708,7 +663,9 @@ export async function assignStaff(tourId: string, guideId: string | null, driver
   setState({ tours: state.tours.map((item) => (item.id === tourId ? next : item)) });
   assignPortalStaff(tourId, guideId, driverId);
   if (!supabase) return;
-  const departureDate = upcomingDepartureDate(tour.day);
+  const weekend = assignedWeekendDay(tour.day);
+  if (!weekend) return;
+  const departureDate = upcomingDepartureDate(weekend);
   const payload = {
     tour_id: tourId,
     departure_date: departureDate,

@@ -1,4 +1,5 @@
 import type { AudioChapter, Hotspot, ItineraryStop, Tour } from "@/data/tours";
+import { catalogDayFromRow } from "@/lib/calendar-date";
 import { localized, type LocalizedText } from "@/lib/locale";
 
 export const TOUR_CATALOG_TYPES = ["Արշավային", "Մշակութային", "Էքստրեմալ"] as const;
@@ -126,7 +127,11 @@ function finiteNumber(value: unknown): number | null {
 function isStop(value: unknown): value is ItineraryStop {
   const row = asRecord(value);
   if (!row) return false;
-  return typeof row["time"] === "string" && typeof row["title"] === "string" && typeof row["description"] === "string";
+  return (
+    typeof row["time"] === "string" &&
+    typeof row["title"] === "string" &&
+    typeof row["description"] === "string"
+  );
 }
 
 function isHotspot(value: unknown): value is Hotspot {
@@ -147,7 +152,8 @@ function readChapter(value: unknown): AudioChapter | null {
   const id = chapter["id"];
   const title = chapter["title"];
   const duration = chapter["duration"];
-  if (typeof id !== "string" || typeof title !== "string" || typeof duration !== "number") return null;
+  if (typeof id !== "string" || typeof title !== "string" || typeof duration !== "number")
+    return null;
   const next: AudioChapter = { id, title, duration };
   const audioUrl = chapter["audioUrl"];
   if (typeof audioUrl === "string" && audioUrl.trim()) next.audioUrl = audioUrl.trim();
@@ -161,7 +167,11 @@ function stringsOf(value: unknown, fallback: string[]) {
   return value.filter((item): item is string => typeof item === "string");
 }
 
-function readLocalized(value: unknown, fallback: LocalizedText, fillFromSeed: boolean): LocalizedText {
+function readLocalized(
+  value: unknown,
+  fallback: LocalizedText,
+  fillFromSeed: boolean,
+): LocalizedText {
   if (value == null || value === "") return fallback;
   const next = localized(value);
   if (!next.hy.trim()) next.hy = fallback.hy;
@@ -196,16 +206,17 @@ function readTriplet(
 }
 
 function catalogTypeOf(value: unknown, fallback: TourCatalogType): TourCatalogType {
-  return value === "Արշավային" || value === "Մշակութային" || value === "Էքստրեմալ" ? value : fallback;
-}
-
-function weekendOf(value: unknown, fallback: "saturday" | "sunday"): "saturday" | "sunday" {
-  return value === "sunday" || value === "saturday" ? value : fallback;
+  return value === "Արշավային" || value === "Մշակութային" || value === "Էքստրեմալ"
+    ? value
+    : fallback;
 }
 
 export function serializeTourCatalog(tour: CatalogTour): TourCatalogRow {
   const virtualUrl = tour.virtual_tour_url?.trim() || tour.panoramaUrl.trim() || null;
-  const linked = tour.virtual_tour_id?.trim() && tour.virtual_tour_id.trim() !== tour.id ? tour.virtual_tour_id.trim() : null;
+  const linked =
+    tour.virtual_tour_id?.trim() && tour.virtual_tour_id.trim() !== tour.id
+      ? tour.virtual_tour_id.trim()
+      : null;
   return {
     id: tour.id,
     title: tour.title_hy,
@@ -224,7 +235,7 @@ export function serializeTourCatalog(tour: CatalogTour): TourCatalogRow {
     image_url: tour.image_url || null,
     category: tour.category || tour.location_hy || null,
     type: tour.type,
-    day: tour.day,
+    day: tour.day === "saturday" || tour.day === "sunday" ? tour.day : null,
     departure_place: tour.departurePlace,
     departure_time: tour.departureTime,
     return_time: tour.returnTime,
@@ -279,7 +290,10 @@ export function serializeSiteSettings(settings: SiteSettingsRecord): SiteSetting
   };
 }
 
-export function deserializeSiteSettings(row: unknown, fallback: SiteSettingsRecord): SiteSettingsRecord | null {
+export function deserializeSiteSettings(
+  row: unknown,
+  fallback: SiteSettingsRecord,
+): SiteSettingsRecord | null {
   const raw = asRecord(row);
   if (!raw) return null;
   const bannerTitle = textOf(raw["banner_title"] ?? raw["bannerTitle"]);
@@ -291,15 +305,22 @@ export function deserializeSiteSettings(row: unknown, fallback: SiteSettingsReco
     bannerTitle: bannerTitle || fallback.bannerTitle,
     bannerText: bannerText || fallback.bannerText,
     departurePlace: departurePlace || fallback.departurePlace,
-    cashbackPercent: cashback == null ? fallback.cashbackPercent : Math.min(100, Math.max(0, Math.round(cashback))),
+    cashbackPercent:
+      cashback == null
+        ? fallback.cashbackPercent
+        : Math.min(100, Math.max(0, Math.round(cashback))),
   };
 }
 
-export function normalizeCatalogTour(value: unknown, seedFallback: boolean, seed?: CatalogTour | null): CatalogTour | null {
+export function normalizeCatalogTour(
+  value: unknown,
+  seedFallback: boolean,
+  seed?: CatalogTour | null,
+): CatalogTour | null {
   const raw = asRecord(value);
   if (!raw || typeof raw["id"] !== "string") return null;
   const id = raw["id"];
-  const base = seedFallback ? seed ?? null : null;
+  const base = seedFallback ? (seed ?? null) : null;
   const title = readTriplet(
     raw,
     "title_hy",
@@ -316,7 +337,9 @@ export function normalizeCatalogTour(value: unknown, seedFallback: boolean, seed
     "description_en",
     "description_ru",
     "summary",
-    base ? { hy: base.description_hy, en: base.description_en, ru: base.description_ru } : emptyLocalized,
+    base
+      ? { hy: base.description_hy, en: base.description_en, ru: base.description_ru }
+      : emptyLocalized,
     seedFallback,
   );
   const location = readTriplet(
@@ -329,8 +352,12 @@ export function normalizeCatalogTour(value: unknown, seedFallback: boolean, seed
     seedFallback,
   );
   const imageRaw = raw["image_url"] ?? raw["image"];
-  const image = typeof imageRaw === "string" ? imageRaw : seedFallback ? (base?.image_url ?? "") : "";
-  const type = catalogTypeOf(raw["type"], seedFallback ? (base?.type ?? "Մշակութային") : "Մշակութային");
+  const image =
+    typeof imageRaw === "string" ? imageRaw : seedFallback ? (base?.image_url ?? "") : "";
+  const type = catalogTypeOf(
+    raw["type"],
+    seedFallback ? (base?.type ?? "Մշակութային") : "Մշակութային",
+  );
   const price = finiteNumber(raw["price"]);
   const seats = finiteNumber(raw["seatsLeft"] ?? raw["seats"]);
   const rating = finiteNumber(raw["rating"]);
@@ -359,25 +386,45 @@ export function normalizeCatalogTour(value: unknown, seedFallback: boolean, seed
     location_en: location.en,
     location_ru: location.ru,
     image_url: image,
-    category: typeof raw["category"] === "string" && raw["category"] ? raw["category"] : location.hy,
+    category:
+      typeof raw["category"] === "string" && raw["category"] ? raw["category"] : location.hy,
     type,
-    departurePlace: textOf(raw["departurePlace"] ?? raw["departure_place"]) || (seedFallback ? (base?.departurePlace ?? "") : ""),
-    departureTime: textOf(raw["departureTime"] ?? raw["departure_time"]) || (seedFallback ? (base?.departureTime ?? "08:30") : ""),
-    returnTime: textOf(raw["returnTime"] ?? raw["return_time"]) || (seedFallback ? (base?.returnTime ?? "19:00") : ""),
+    departurePlace:
+      textOf(raw["departurePlace"] ?? raw["departure_place"]) ||
+      (seedFallback ? (base?.departurePlace ?? "") : ""),
+    departureTime:
+      textOf(raw["departureTime"] ?? raw["departure_time"]) ||
+      (seedFallback ? (base?.departureTime ?? "08:30") : ""),
+    returnTime:
+      textOf(raw["returnTime"] ?? raw["return_time"]) ||
+      (seedFallback ? (base?.returnTime ?? "19:00") : ""),
     price: price ?? (seedFallback ? (base?.price ?? 0) : 0),
     seatsLeft: seats ?? (seedFallback ? (base?.seatsLeft ?? 0) : 0),
     rating: rating ?? (seedFallback ? (base?.rating ?? 5) : 5),
     reviews: reviews ?? (seedFallback ? (base?.reviews ?? 0) : 0),
-    has360: typeof raw["has360"] === "boolean" ? raw["has360"] : seedFallback ? (base?.has360 ?? false) : false,
+    has360:
+      typeof raw["has360"] === "boolean"
+        ? raw["has360"]
+        : seedFallback
+          ? (base?.has360 ?? false)
+          : false,
     hasAudioGuide:
       typeof raw["hasAudioGuide"] === "boolean" || typeof raw["has_audio_guide"] === "boolean"
         ? Boolean(raw["hasAudioGuide"] ?? raw["has_audio_guide"])
         : seedFallback
           ? (base?.hasAudioGuide ?? false)
           : false,
-    day: weekendOf(raw["day"], seedFallback ? (base?.day ?? "saturday") : "saturday"),
+    day: catalogDayFromRow(
+      raw,
+      seedFallback,
+      seedFallback ? (base?.day === "sunday" ? "sunday" : "saturday") : "saturday",
+    ),
     highlights: stringsOf(raw["highlights"], seedFallback ? (base?.highlights ?? []) : []),
-    itinerary: Array.isArray(raw["itinerary"]) ? raw["itinerary"].filter(isStop) : seedFallback ? (base?.itinerary ?? []) : [],
+    itinerary: Array.isArray(raw["itinerary"])
+      ? raw["itinerary"].filter(isStop)
+      : seedFallback
+        ? (base?.itinerary ?? [])
+        : [],
     included: stringsOf(raw["included"], seedFallback ? (base?.included ?? []) : []),
     excluded: stringsOf(raw["excluded"], seedFallback ? (base?.excluded ?? []) : []),
     audioChapters: Array.isArray(raw["audio_chapters"] ?? raw["audioChapters"])
@@ -388,9 +435,18 @@ export function normalizeCatalogTour(value: unknown, seedFallback: boolean, seed
       : seedFallback
         ? (base?.audioChapters ?? [])
         : [],
-    hotspots: Array.isArray(raw["hotspots"]) ? raw["hotspots"].filter(isHotspot) : seedFallback ? (base?.hotspots ?? []) : [],
+    hotspots: Array.isArray(raw["hotspots"])
+      ? raw["hotspots"].filter(isHotspot)
+      : seedFallback
+        ? (base?.hotspots ?? [])
+        : [],
     panoramaUrl: panorama,
-    is_virtual_only: typeof raw["is_virtual_only"] === "boolean" ? raw["is_virtual_only"] : seedFallback ? base?.is_virtual_only === true : false,
+    is_virtual_only:
+      typeof raw["is_virtual_only"] === "boolean"
+        ? raw["is_virtual_only"]
+        : seedFallback
+          ? base?.is_virtual_only === true
+          : false,
     guideId:
       typeof raw["guideId"] === "string" || raw["guideId"] === null
         ? (raw["guideId"] as string | null)
@@ -408,7 +464,8 @@ export function normalizeCatalogTour(value: unknown, seedFallback: boolean, seed
   else if (seedFallback && base?.oldPrice !== undefined) tour.oldPrice = base.oldPrice;
   if (virtualUrl) tour.virtual_tour_url = virtualUrl;
   tour.virtual_tour_id = linked && linked !== tour.id ? linked : null;
-  if (typeof raw["created_at"] === "string" && raw["created_at"]) tour.created_at = raw["created_at"];
+  if (typeof raw["created_at"] === "string" && raw["created_at"])
+    tour.created_at = raw["created_at"];
   return tour;
 }
 
@@ -451,7 +508,10 @@ export function deserializeVirtualTour(row: unknown): CatalogTour | null {
   );
 }
 
-export function mergeCatalogTours(physical: CatalogTour[], virtualRows: CatalogTour[]): CatalogTour[] {
+export function mergeCatalogTours(
+  physical: CatalogTour[],
+  virtualRows: CatalogTour[],
+): CatalogTour[] {
   const byId = new Map<string, CatalogTour>();
   for (const tour of physical) {
     if (tour.is_virtual_only === true) continue;
@@ -497,7 +557,12 @@ export function logRemoteError(action: string, error: unknown) {
 }
 
 export function userFacingRemoteError(fallback: string, error?: unknown) {
-  if (error instanceof Error && error.message && !error.message.includes("SQL") && !error.message.includes("select ")) {
+  if (
+    error instanceof Error &&
+    error.message &&
+    !error.message.includes("SQL") &&
+    !error.message.includes("select ")
+  ) {
     return error.message;
   }
   return fallback;

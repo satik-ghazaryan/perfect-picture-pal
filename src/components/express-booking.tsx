@@ -40,6 +40,7 @@ import {
   subscribeAdmin,
   subscribeTourist,
 } from "@/lib/admin";
+import { assignedWeekendDay } from "@/lib/calendar-date";
 import { upcomingDepartureDate } from "@/lib/guide-api";
 
 const methods = [
@@ -52,7 +53,9 @@ type MethodId = (typeof methods)[number]["id"];
 
 function nextDeparture(day: Tour["day"]) {
   const now = new Date();
-  const target = day === "saturday" ? 6 : 0;
+  const weekend = assignedWeekendDay(day);
+  if (!weekend) return now;
+  const target = weekend === "saturday" ? 6 : 0;
   const date = new Date(now);
   date.setDate(now.getDate() + ((target - now.getDay() + 7) % 7 || 7));
   return date;
@@ -566,7 +569,10 @@ export function BookingPanel({ tour }: { tour: Tour }) {
                 </div>
               </div>
               <DepartureCrew
-                departureDate={upcomingDepartureDate(tour.day)}
+                departureDate={(() => {
+                  const weekend = assignedWeekendDay(tour.day);
+                  return weekend ? upcomingDepartureDate(weekend) : "";
+                })()}
                 departureTime={tour.departureTime}
                 guideId={assigned?.guideId ?? null}
                 driverId={assigned?.driverId ?? null}

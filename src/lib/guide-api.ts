@@ -88,7 +88,7 @@ function seedTours(): AssignedTour[] {
     title: tour.title_hy,
     departurePlace: tour.departurePlace,
     departureTime: tour.departureTime,
-    departureDate: upcomingDate(tour.day),
+    departureDate: tour.day === "saturday" || tour.day === "sunday" ? upcomingDate(tour.day) : "",
     status: "scheduled",
     guideId: LOCAL_STAFF_ID,
     driverId: LOCAL_DRIVER_ID,

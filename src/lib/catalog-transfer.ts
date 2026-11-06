@@ -45,10 +45,16 @@ export type FieldDiff = {
 
 export type TourTransferRow = {
   id: string;
-  kind: "local-only" | "remote-only" | "both";
+  kind: "local-only" | "remote-only" | "both" | "type-conflict";
   title: string;
   diffs: FieldDiff[];
+  summary?: string;
+  conflictNote?: string;
 };
+
+export type TransferOperation =
+  | { id: string; action: "update-fields"; fields: TransferField[] }
+  | { id: string; action: "create" };
 
 const FIELD_LABELS: Record<TransferField, string> = {
   title: "Վերնագիր",
@@ -233,12 +239,8 @@ export function compareCatalogTours(
         id,
         kind: "local-only",
         title: localTour.title_hy,
-        diffs: TRANSFER_FIELDS.map((field) => ({
-          field,
-          local: preview(fieldValue(localTour, field)),
-          remote: "",
-          same: false,
-        })),
+        diffs: [],
+        summary: catalogTourSummary(localTour),
       });
       continue;
     }
@@ -252,6 +254,17 @@ export function compareCatalogTours(
       continue;
     }
     if (!localTour || !remoteTour) continue;
+    if (Boolean(localTour.is_virtual_only) !== Boolean(remoteTour.is_virtual_only)) {
+      rows.push({
+        id,
+        kind: "type-conflict",
+        title: localTour.title_hy || remoteTour.title_hy,
+        diffs: [],
+        conflictNote:
+          "Նույն ID-ով սովորական և վիրտուալ տուրերը չեն փոխարկվում։ Ընտրեք այլ ID կամ խմբագրեք առանձին։",
+      });
+      continue;
+    }
     const diffs = TRANSFER_FIELDS.map((field) => {
       const localText = preview(fieldValue(localTour, field));
       const remoteText = preview(fieldValue(remoteTour, field));
@@ -262,12 +275,48 @@ export function compareCatalogTours(
   return rows.sort((a, b) => a.id.localeCompare(b.id));
 }
 
+function catalogHas360(tour: CatalogTour) {
+  return Boolean(
+    tour.panoramaUrl.trim() ||
+    (tour.virtual_tour_url ?? "").trim() ||
+    (tour.virtual_tour_id ?? "").trim(),
+  );
+}
+
+export function catalogTourSummary(tour: CatalogTour) {
+  const dayLabel =
+    tour.day === "sunday" ? "կիրակի" : tour.day === "saturday" ? "շաբաթ" : "օրը նշանակված չէ";
+  return [
+    tour.title_hy,
+    tour.is_virtual_only === true ? "վիրտուալ" : `${tour.price} ֏`,
+    dayLabel,
+    `ծրագիր՝ ${tour.itinerary.length}`,
+    `աուդիո՝ ${tour.audioChapters.length}`,
+  ].join(" · ");
+}
+
+export function validateCatalogTourForCreate(tour: CatalogTour): string | null {
+  if (tour.title_hy.trim().length < 2) return "Հայերեն վերնագիրը պարտադիր է։";
+  if (!tour.image_url.trim()) return "Ավելացրեք նկարի հղում։";
+  if (tour.is_virtual_only !== true) {
+    if (!tour.departurePlace.trim()) return "Նշեք տուրի մեկնման վայրը։";
+    if (!(tour.price > 0)) return "Գինը պետք է դրական թիվ լինի։";
+  }
+  return null;
+}
+
+export function createTourFromLocal(localTour: CatalogTour): CatalogTour {
+  const message = validateCatalogTourForCreate(localTour);
+  if (message) throw new Error(message);
+  return { ...localTour, guideId: null, driverId: null };
+}
+
 export function mergeSelectedFields(
-  remoteTour: CatalogTour | null,
+  remoteTour: CatalogTour,
   localTour: CatalogTour,
   fields: TransferField[],
 ): CatalogTour {
-  const base: CatalogTour = remoteTour ? { ...remoteTour } : { ...localTour };
+  const base: CatalogTour = { ...remoteTour };
   for (const field of fields) {
     switch (field) {
       case "title":
@@ -321,22 +370,92 @@ export function mergeSelectedFields(
         break;
       case "audioChapters":
         base.audioChapters = [...localTour.audioChapters];
+        base.hasAudioGuide = base.audioChapters.length > 0;
         break;
       case "hotspots":
         base.hotspots = [...localTour.hotspots];
         break;
-      case "panorama":
+      case "panorama": {
         base.panoramaUrl = localTour.panoramaUrl;
-        if (localTour.virtual_tour_url) base.virtual_tour_url = localTour.virtual_tour_url;
+        const embed = (localTour.virtual_tour_url ?? "").trim();
+        if (embed) base.virtual_tour_url = embed;
+        else delete base.virtual_tour_url;
+        base.has360 = catalogHas360(base);
         break;
+      }
       case "virtualLink":
         base.virtual_tour_id = localTour.virtual_tour_id ?? null;
+        if (fields.includes("panorama")) base.has360 = catalogHas360(base);
         break;
       default:
         break;
     }
   }
   return base;
+}
+
+export function fieldPreview(tour: CatalogTour, field: TransferField) {
+  return preview(fieldValue(tour, field));
+}
+
+export function staleTransferFields(
+  fields: TransferField[],
+  previousRemote: CatalogTour,
+  currentRemote: CatalogTour,
+): TransferField[] {
+  return fields.filter(
+    (field) => fieldPreview(previousRemote, field) !== fieldPreview(currentRemote, field),
+  );
+}
+
+export async function applyTransferOperations(
+  operations: TransferOperation[],
+  context: {
+    localById: Map<string, CatalogTour>;
+    remoteById: Map<string, CatalogTour>;
+    save: (tour: CatalogTour) => Promise<void>;
+  },
+): Promise<{
+  saved: TransferOperation[];
+  failed: { operation: TransferOperation; message: string }[];
+}> {
+  const saved: TransferOperation[] = [];
+  const failed: { operation: TransferOperation; message: string }[] = [];
+  for (const operation of operations) {
+    try {
+      const localTour = context.localById.get(operation.id);
+      if (!localTour) throw new Error("Տեղային տուրը չկա։");
+      if (operation.action === "create") {
+        if (context.remoteById.has(operation.id)) {
+          throw new Error("Հեռավար տուրն արդեն կա։ Ընտրեք դաշտերը, ոչ թե ամբողջ ստեղծումը։");
+        }
+        await context.save(createTourFromLocal(localTour));
+      } else {
+        if (!operation.fields.length) continue;
+        const remoteTour = context.remoteById.get(operation.id);
+        if (!remoteTour) throw new Error("Հեռավար տուրը չկա։ Ստեղծեք ամբողջ տուրը։");
+        if (Boolean(remoteTour.is_virtual_only) !== Boolean(localTour.is_virtual_only)) {
+          throw new Error("Նույն ID-ով սովորական և վիրտուալ տուրերը չեն փոխարկվում։");
+        }
+        await context.save(mergeSelectedFields(remoteTour, localTour, operation.fields));
+      }
+      saved.push(operation);
+    } catch (error) {
+      failed.push({
+        operation,
+        message: error instanceof Error ? error.message : "Չպահպանվեց։",
+      });
+    }
+  }
+  return { saved, failed };
+}
+
+export function remainingTransferOperations(
+  operations: TransferOperation[],
+  saved: TransferOperation[],
+): TransferOperation[] {
+  const done = new Set(saved.map((item) => `${item.action}:${item.id}`));
+  return operations.filter((item) => !done.has(`${item.action}:${item.id}`));
 }
 
 export const TRANSFER_INSTRUCTIONS = [

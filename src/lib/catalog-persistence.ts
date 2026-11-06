@@ -168,6 +168,7 @@ type MemoryTables = {
   virtual: Record<string, unknown>[];
   settings: Record<string, unknown> | null;
   failTourUpsert?: boolean;
+  failUpsertIds?: string[];
   failLoad?: boolean;
 };
 
@@ -251,6 +252,7 @@ export function createMemoryCatalogRemote(
     virtual: seed.virtual ? [...seed.virtual] : [],
     settings: seed.settings ?? null,
     failTourUpsert: seed.failTourUpsert ?? false,
+    failUpsertIds: seed.failUpsertIds ? [...seed.failUpsertIds] : [],
     failLoad: seed.failLoad ?? false,
   };
   const ok = <T>(data: T): RemoteResult<T> => ({ data, error: null });
@@ -275,8 +277,8 @@ export function createMemoryCatalogRemote(
       return ok(store.settings);
     },
     async upsertTour(row) {
-      if (store.failTourUpsert) return err("upsert failed");
       const id = String(row["id"]);
+      if (store.failTourUpsert || store.failUpsertIds?.includes(id)) return err("upsert failed");
       store.tours = [...store.tours.filter((item) => item["id"] !== id), row];
       return ok(null);
     },

@@ -43,7 +43,7 @@ export type Tour = LocalizedTour & {
   reviews: number;
   has360: boolean;
   hasAudioGuide: boolean;
-  day: "saturday" | "sunday";
+  day: "saturday" | "sunday" | "";
   highlights: string[];
   itinerary: ItineraryStop[];
   included: string[];

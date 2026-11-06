@@ -1,32 +1,67 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { CatalogStatusPanel } from "@/components/catalog-status-panel";
 import {
+  applyTransferOperations,
   compareCatalogTours,
   exportPublicCatalog,
-  mergeSelectedFields,
   parseCatalogBackup,
   readLocalPublicCatalog,
+  remainingTransferOperations,
+  staleTransferFields,
   TRANSFER_INSTRUCTIONS,
   transferFieldLabel,
+  validateCatalogTourForCreate,
   type CatalogBackup,
   type TransferField,
+  type TransferOperation,
   type TourTransferRow,
 } from "@/lib/catalog-transfer";
-import { getAdminSnapshot, saveTour, type ManagedTour } from "@/lib/admin";
+import {
+  catalogIsPending,
+  getAdminSnapshot,
+  retryLiveCatalog,
+  saveTour,
+  type CatalogStatus,
+  type ManagedTour,
+} from "@/lib/admin";
+import { isSupabaseConfigured } from "@/lib/supabase";
 
 const STORAGE_KEY = "ari-gnank-catalog";
 
-export function CatalogTransferPanel({ remoteTours }: { remoteTours: ManagedTour[] }) {
+export function CatalogTransferPanel({
+  remoteTours,
+  catalogStatus,
+  catalogError,
+}: {
+  remoteTours: ManagedTour[];
+  catalogStatus: CatalogStatus;
+  catalogError: string | null;
+}) {
   const [backup, setBackup] = useState<CatalogBackup | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [rows, setRows] = useState<TourTransferRow[]>([]);
   const [selected, setSelected] = useState<Record<string, TransferField[]>>({});
+  const [creates, setCreates] = useState<Record<string, boolean>>({});
+  const [remoteSnapshot, setRemoteSnapshot] = useState(remoteTours);
   const [applying, setApplying] = useState(false);
   const [results, setResults] = useState<{
-    saved: string[];
-    failed: { id: string; message: string }[];
+    saved: TransferOperation[];
+    failed: { operation: TransferOperation; message: string }[];
+    stale: { id: string; message: string }[];
   } | null>(null);
+
+  const refreshRows = (localTours: ManagedTour[], nextRemote: ManagedTour[]) => {
+    setRows(compareCatalogTours(localTours, nextRemote));
+    setRemoteSnapshot(nextRemote);
+  };
+
+  useEffect(() => {
+    if (!backup || catalogStatus !== "loaded") return;
+    setRows(compareCatalogTours(backup.tours, remoteTours));
+    setRemoteSnapshot(remoteTours);
+  }, [backup, catalogStatus, remoteTours]);
 
   const exportCurrent = () => {
     const snapshot = getAdminSnapshot();
@@ -46,22 +81,24 @@ export function CatalogTransferPanel({ remoteTours }: { remoteTours: ManagedTour
   };
 
   const onFile = async (file: File | null) => {
-    if (!file) return;
+    if (!file || applying) return;
     const text = await file.text();
     const parsed = parseCatalogBackup(text);
     setWarnings(parsed.warnings);
     setBackup(parsed.backup);
     setResults(null);
+    setCreates({});
+    setSelected({});
     if (!parsed.backup) {
       setRows([]);
       toast.error(parsed.warnings[0] ?? "Ֆայլը չկարդացվեց։");
       return;
     }
-    setRows(compareCatalogTours(parsed.backup.tours, remoteTours));
-    setSelected({});
+    refreshRows(parsed.backup.tours, getAdminSnapshot().tours);
   };
 
   const toggleField = (id: string, field: TransferField) => {
+    if (applying) return;
     setSelected((current) => {
       const fields = current[id] ?? [];
       const next = fields.includes(field)
@@ -71,30 +108,98 @@ export function CatalogTransferPanel({ remoteTours }: { remoteTours: ManagedTour
     });
   };
 
-  const apply = async () => {
-    if (!backup) return;
-    setApplying(true);
-    const saved: string[] = [];
-    const failed: { id: string; message: string }[] = [];
-    const localById = new Map(backup.tours.map((tour) => [tour.id, tour]));
-    const remoteById = new Map(remoteTours.map((tour) => [tour.id, tour]));
-    for (const [id, fields] of Object.entries(selected)) {
-      if (!fields.length) continue;
-      const localTour = localById.get(id);
-      if (!localTour) continue;
-      const merged = mergeSelectedFields(remoteById.get(id) ?? null, localTour, fields);
-      try {
-        await saveTour(merged as ManagedTour);
-        saved.push(id);
-      } catch (error) {
-        failed.push({ id, message: error instanceof Error ? error.message : "Չպահպանվեց։" });
-      }
+  const pendingOperations = (): TransferOperation[] => {
+    const operations: TransferOperation[] = [];
+    for (const [id, chosen] of Object.entries(creates)) {
+      if (chosen) operations.push({ id, action: "create" });
     }
-    setResults({ saved, failed });
-    setApplying(false);
-    if (failed.length === 0 && saved.length > 0) toast.success("Ընտրված դաշտերը պահվեցին։");
-    else if (failed.length > 0) toast.error("Մասնակի ձախողում։ Կարող եք կրկնել չպահված տուրերը։");
+    for (const [id, fields] of Object.entries(selected)) {
+      if (fields.length > 0) operations.push({ id, action: "update-fields", fields });
+    }
+    return operations;
   };
+
+  const apply = async (operations = pendingOperations()) => {
+    if (!backup || applying) return;
+    if (catalogStatus !== "loaded") {
+      toast.error("Կիրառումը հասանելի է միայն հաջող բեռնված կատալոգի դեպքում։");
+      return;
+    }
+    setApplying(true);
+    try {
+      if (isSupabaseConfigured) {
+        await retryLiveCatalog();
+        const live = getAdminSnapshot();
+        if (live.catalogStatus !== "loaded") {
+          toast.error(live.catalogError || "Հեռավար կատալոգը չբեռնվեց։");
+          return;
+        }
+      }
+      const currentRemote = getAdminSnapshot().tours;
+      const currentById = new Map(currentRemote.map((tour) => [tour.id, tour]));
+      const previousById = new Map(remoteSnapshot.map((tour) => [tour.id, tour]));
+      const ready: TransferOperation[] = [];
+      const stale: { id: string; message: string }[] = [];
+      for (const operation of operations) {
+        if (operation.action !== "update-fields") {
+          ready.push(operation);
+          continue;
+        }
+        const previous = previousById.get(operation.id);
+        const current = currentById.get(operation.id);
+        if (!previous || !current) {
+          stale.push({ id: operation.id, message: "Հեռավար տուրը փոխվել է։ Կրկին համեմատեք։" });
+          continue;
+        }
+        const changed = staleTransferFields(operation.fields, previous, current);
+        if (changed.length > 0) {
+          stale.push({
+            id: operation.id,
+            message: `Հեռավար դաշտերը փոխվել են՝ ${changed.map((field) => transferFieldLabel(field)).join(", ")}։`,
+          });
+          continue;
+        }
+        ready.push(operation);
+      }
+      const outcome = await applyTransferOperations(ready, {
+        localById: new Map(backup.tours.map((tour) => [tour.id, tour])),
+        remoteById: currentById,
+        save: async (tour) => {
+          await saveTour(tour as ManagedTour);
+        },
+      });
+      const leftover = remainingTransferOperations(ready, outcome.saved);
+      const nextSelected: Record<string, TransferField[]> = {};
+      const nextCreates: Record<string, boolean> = {};
+      for (const operation of leftover) {
+        if (operation.action === "create") nextCreates[operation.id] = true;
+        else nextSelected[operation.id] = operation.fields;
+      }
+      for (const item of stale) {
+        const operation = operations.find(
+          (entry) => entry.id === item.id && entry.action === "update-fields",
+        );
+        if (operation && operation.action === "update-fields")
+          nextSelected[item.id] = operation.fields;
+      }
+      setSelected(nextSelected);
+      setCreates(nextCreates);
+      const latest = getAdminSnapshot().tours;
+      refreshRows(backup.tours, latest);
+      setResults({ saved: outcome.saved, failed: outcome.failed, stale });
+      if (outcome.failed.length === 0 && stale.length === 0 && outcome.saved.length > 0) {
+        toast.success("Ընտրված գործողությունները պահվեցին։");
+      } else if (outcome.failed.length > 0 || stale.length > 0) {
+        toast.error("Մասնակի ձախողում կամ վերանայման կարիք։ Կարող եք կրկնել չպահվածները։");
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Կիրառումը չհաջողվեց։");
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  const catalogReady = catalogStatus === "loaded";
 
   return (
     <section className="space-y-4">
@@ -102,16 +207,33 @@ export function CatalogTransferPanel({ remoteTours }: { remoteTours: ManagedTour
         <h1 className="text-2xl font-black tracking-tight">Տեղային տեղափոխում</h1>
         <p className="mt-2 text-sm text-muted-foreground">{TRANSFER_INSTRUCTIONS}</p>
       </div>
+      {(catalogIsPending(catalogStatus) || catalogStatus === "error") && (
+        <CatalogStatusPanel
+          status={catalogStatus}
+          error={catalogError}
+          onRetry={() => void retryLiveCatalog()}
+        />
+      )}
       <div className="flex flex-wrap gap-2">
-        <Button type="button" className="rounded-full font-bold" onClick={exportCurrent}>
+        <Button
+          type="button"
+          className="rounded-full font-bold"
+          onClick={exportCurrent}
+          disabled={applying}
+        >
           Արտահանել պահուստ
         </Button>
-        <label className="inline-flex h-10 cursor-pointer items-center rounded-full border border-border px-4 text-sm font-bold">
+        <label
+          className={`inline-flex h-10 items-center rounded-full border border-border px-4 text-sm font-bold ${
+            applying ? "pointer-events-none opacity-50" : "cursor-pointer"
+          }`}
+        >
           Ներմուծել JSON
           <input
             type="file"
             accept="application/json"
             className="sr-only"
+            disabled={applying}
             onChange={(event) => void onFile(event.target.files?.[0] ?? null)}
           />
         </label>
@@ -134,14 +256,43 @@ export function CatalogTransferPanel({ remoteTours }: { remoteTours: ManagedTour
                     ? "միայն տեղային"
                     : row.kind === "remote-only"
                       ? "միայն հեռավար"
-                      : "երկուսում էլ"}
+                      : row.kind === "type-conflict"
+                        ? "տեսակի կոնֆլիկտ"
+                        : "երկուսում էլ"}
                 </span>
               </h2>
-              {row.kind === "remote-only" ? (
+              {row.kind === "remote-only" && (
                 <p className="mt-2 text-sm text-muted-foreground">
                   Հեռավար գրառումը չի վերագրվում առանց տեղային պատճենի։
                 </p>
-              ) : (
+              )}
+              {row.kind === "type-conflict" && (
+                <p className="mt-2 text-sm text-destructive">{row.conflictNote}</p>
+              )}
+              {row.kind === "local-only" && backup && (
+                <div className="mt-3 space-y-2 text-sm">
+                  <p className="rounded-2xl bg-muted px-3 py-2">{row.summary}</p>
+                  {(() => {
+                    const localTour = backup.tours.find((tour) => tour.id === row.id);
+                    const invalid = localTour
+                      ? validateCatalogTourForCreate(localTour)
+                      : "Տուրը չկա։";
+                    return invalid ? <p className="text-destructive">{invalid}</p> : null;
+                  })()}
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      disabled={applying || !catalogReady}
+                      checked={Boolean(creates[row.id])}
+                      onChange={(event) =>
+                        setCreates((current) => ({ ...current, [row.id]: event.target.checked }))
+                      }
+                    />
+                    Ստեղծել ամբողջ տուրը
+                  </label>
+                </div>
+              )}
+              {row.kind === "both" && (
                 <ul className="mt-3 space-y-2 text-sm">
                   {row.diffs
                     .filter((diff) => !diff.same)
@@ -150,6 +301,7 @@ export function CatalogTransferPanel({ remoteTours }: { remoteTours: ManagedTour
                         <label className="flex items-start gap-2">
                           <input
                             type="checkbox"
+                            disabled={applying || !catalogReady}
                             checked={(selected[row.id] ?? []).includes(diff.field)}
                             onChange={() => toggleField(row.id, diff.field)}
                           />
@@ -175,31 +327,56 @@ export function CatalogTransferPanel({ remoteTours }: { remoteTours: ManagedTour
           <Button
             type="button"
             className="rounded-full font-bold"
-            disabled={applying}
+            disabled={applying || !catalogReady || pendingOperations().length === 0}
             onClick={() => void apply()}
           >
-            {applying ? "Պահվում է" : "Կիրառել ընտրված դաշտերը"}
+            {applying ? "Պահվում է" : "Կիրառել ընտրված գործողությունները"}
           </Button>
         </div>
       )}
       {results && (
         <div className="rounded-2xl border border-border px-4 py-3 text-sm">
           <p>Պահվեց՝ {results.saved.length}</p>
+          {results.saved.map((item) => (
+            <p key={`saved-${item.action}-${item.id}`} className="text-muted-foreground">
+              {item.id}: {item.action === "create" ? "ստեղծվեց" : "դաշտերը պահվեցին"}
+            </p>
+          ))}
           {results.failed.length > 0 && (
             <ul className="mt-2 text-destructive">
               {results.failed.map((item) => (
-                <li key={item.id}>
+                <li key={`failed-${item.operation.action}-${item.operation.id}`}>
+                  {item.operation.id}: {item.message}
+                </li>
+              ))}
+            </ul>
+          )}
+          {results.stale.length > 0 && (
+            <ul className="mt-2 text-amber-700">
+              {results.stale.map((item) => (
+                <li key={`stale-${item.id}`}>
                   {item.id}: {item.message}
                 </li>
               ))}
             </ul>
+          )}
+          {(results.failed.length > 0 || results.stale.length > 0) && (
+            <Button
+              type="button"
+              variant="outline"
+              className="mt-3 rounded-full font-bold"
+              disabled={applying || !catalogReady || pendingOperations().length === 0}
+              onClick={() => void apply()}
+            >
+              Կրկնել չպահվածները
+            </Button>
           )}
         </div>
       )}
       {!backup && (
         <p className="text-sm text-muted-foreground">
           Այս գործիքը չի գործարկում իրական տվյալներ ինքնաբերաբար։ Նախ արտահանեք, ապա ներմուծեք և
-          ընտրեք դաշտերը։
+          ընտրեք գործողությունները։
         </p>
       )}
     </section>
