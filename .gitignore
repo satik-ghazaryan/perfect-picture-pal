@@ -19,6 +19,7 @@ dist-ssr
 .env.*
 .env.local
 !.env.example
+!.env.local-test
 supabase/.temp/
 supabase/backup-*.sql
 supabase/apply-now.sql
@@ -40,6 +41,8 @@ supabase/apply-now.sql
 
 .vercel
 .env*
+!.env.example
+!.env.local-test
 
 # Python agent service
 venv/
