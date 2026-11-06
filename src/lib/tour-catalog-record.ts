@@ -52,14 +52,20 @@ export type TourCatalogRow = {
 
 export type VirtualTourRow = {
   id: string;
+  title: string;
   title_hy: string;
   title_en: string;
   title_ru: string;
   description_hy: string;
   description_en: string;
   description_ru: string;
+  summary: string;
   embed_url: string | null;
   thumbnail_url: string | null;
+  image_url: string | null;
+  panorama_url: string | null;
+  virtual_tour_url: string | null;
+  hotspots: Hotspot[];
 };
 
 export type SiteSettingsRecord = {
@@ -242,16 +248,24 @@ export function serializeTourCatalog(tour: CatalogTour): TourCatalogRow {
 }
 
 export function serializeVirtualTour(tour: CatalogTour): VirtualTourRow {
+  const embed = tour.virtual_tour_url?.trim() || tour.panoramaUrl.trim() || null;
+  const title = tour.title_hy.trim() || tour.id;
   return {
     id: tour.id,
+    title,
     title_hy: tour.title_hy,
     title_en: tour.title_en,
     title_ru: tour.title_ru,
     description_hy: tour.description_hy,
     description_en: tour.description_en,
     description_ru: tour.description_ru,
-    embed_url: tour.virtual_tour_url || tour.panoramaUrl || null,
+    summary: tour.description_hy,
+    embed_url: embed,
     thumbnail_url: tour.image_url || null,
+    image_url: tour.image_url || null,
+    panorama_url: tour.panoramaUrl || embed,
+    virtual_tour_url: embed,
+    hotspots: tour.hotspots,
   };
 }
 
@@ -405,21 +419,30 @@ export function deserializeTourCatalog(row: unknown): CatalogTour | null {
 export function deserializeVirtualTour(row: unknown): CatalogTour | null {
   const raw = asRecord(row);
   if (!raw) return null;
-  const embed = textOf(raw["embed_url"]).trim();
-  const thumb = textOf(raw["thumbnail_url"]).trim();
+  const titleHy = textOf(raw["title_hy"]) || textOf(raw["title"]);
+  const descriptionHy = textOf(raw["description_hy"]) || textOf(raw["summary"]);
+  const embed =
+    textOf(raw["embed_url"]).trim() ||
+    textOf(raw["panorama_url"]).trim() ||
+    textOf(raw["virtual_tour_url"]).trim() ||
+    textOf(raw["panoramaUrl"]).trim();
+  const thumb = textOf(raw["thumbnail_url"]).trim() || textOf(raw["image_url"]).trim();
   return normalizeCatalogTour(
     {
       ...raw,
-      location_hy: raw["location_hy"] ?? raw["title_hy"],
+      title_hy: titleHy,
+      description_hy: descriptionHy,
+      location_hy: raw["location_hy"] ?? titleHy,
       location_en: raw["location_en"] ?? raw["title_en"],
       location_ru: raw["location_ru"] ?? raw["title_ru"],
       price: raw["price"] ?? 0,
-      image_url: raw["image_url"] ?? thumb,
-      category: raw["category"] ?? raw["title_hy"],
+      image_url: thumb,
+      category: raw["category"] ?? titleHy,
       is_virtual_only: true,
-      panoramaUrl: raw["panoramaUrl"] ?? embed,
-      panorama_url: raw["panorama_url"] ?? embed,
-      virtual_tour_url: raw["virtual_tour_url"] ?? embed,
+      panoramaUrl: embed,
+      panorama_url: embed,
+      virtual_tour_url: embed,
+      hotspots: raw["hotspots"],
       guideId: null,
       driverId: null,
     },
@@ -457,15 +480,6 @@ export function mergeCatalogTours(physical: CatalogTour[], virtualRows: CatalogT
 export function catalogAfterSave(current: CatalogTour[], saved: CatalogTour[]): CatalogTour[] {
   const next = current.filter((tour) => !saved.some((item) => item.id === tour.id));
   return [...next, ...saved];
-}
-
-export function remoteCatalogShouldUseSeeds(configured: boolean, loadFailed: boolean, rowCount: number) {
-  if (configured) return false;
-  return loadFailed || rowCount === 0;
-}
-
-export function remoteWriteCommitsLocally(remoteSucceeded: boolean) {
-  return remoteSucceeded;
 }
 
 export function remoteErrorParts(error: unknown): RemoteErrorParts {

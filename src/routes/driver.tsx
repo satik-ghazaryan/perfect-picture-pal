@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useSyncExternalStore } from "react";
-import { format, parseISO } from "date-fns";
-import { hy } from "date-fns/locale";
+import { formatAssignedDepartureDate } from "@/lib/calendar-date";
 import { SiteHeader } from "@/components/site-header";
 import {
   getAdminServerSnapshot,
@@ -19,7 +18,6 @@ import {
   getPortalSnapshot,
   loadTourManifest,
   subscribePortal,
-  upcomingDepartureDate,
 } from "@/lib/guide-api";
 
 export const Route = createFileRoute("/driver")({
@@ -87,10 +85,7 @@ function DriverPage() {
                 const details = catalog.tours.find((item) => item.id === tour.id);
                 const passengers = portal.bookings.filter((booking) => booking.tourId === tour.id);
                 const count = passengers.reduce((sum, booking) => sum + booking.adults + booking.children, 0);
-                const date = parseISO(details ? upcomingDepartureDate(details.day) : tour.departureDate);
-                const when = Number.isNaN(date.getTime())
-                  ? tour.departureDate
-                  : format(date, "d MMMM yyyy", { locale: hy });
+                const when = formatAssignedDepartureDate(tour.departureDate);
                 return (
                   <article key={tour.id} className="space-y-2 rounded-3xl border border-border bg-card p-4 sm:p-5">
                     <h2 className="text-lg font-black leading-snug">{tour.title}</h2>

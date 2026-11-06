@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useSyncExternalStore } from "react";
 import { SiteHeader } from "@/components/site-header";
 import { TourPanorama } from "@/components/tour-panorama";
-import { getAdminServerSnapshot, getAdminSnapshot, hydrateAdmin, subscribeAdmin } from "@/lib/admin";
+import { CatalogStatusPanel } from "@/components/catalog-status-panel";
+import { catalogIsPending, getAdminServerSnapshot, getAdminSnapshot, hydrateAdmin, retryLiveCatalog, subscribeAdmin } from "@/lib/admin";
 import { tourDescription, tourLocation, tourTitle, useSiteLocale } from "@/lib/locale";
 
 export const Route = createFileRoute("/virtual")({
@@ -22,21 +23,20 @@ export const Route = createFileRoute("/virtual")({
 function VirtualToursPage() {
   const catalog = useSyncExternalStore(subscribeAdmin, getAdminSnapshot, getAdminServerSnapshot);
   const lang = useSiteLocale();
-  const [ready, setReady] = useState(false);
   const tours = catalog.tours.filter((tour) => tour.is_virtual_only === true);
   const tourIds = tours.map((tour) => tour.id).join("|");
+  const pending = catalogIsPending(catalog.catalogStatus);
 
   useEffect(() => {
     hydrateAdmin();
-    setReady(true);
   }, []);
 
   useEffect(() => {
-    if (!ready || tourIds.length === 0) return;
+    if (catalog.catalogStatus !== "loaded" || tourIds.length === 0) return;
     const id = window.location.hash.replace("#", "");
     if (!id || !tourIds.split("|").includes(id)) return;
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [ready, tourIds]);
+  }, [catalog.catalogStatus, tourIds]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -47,8 +47,12 @@ function VirtualToursPage() {
         <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
           Դիտեք վայրերը համայնապատկերով և կարդացեք դրանց մասին։ Այստեղ մեկնում և ամրագրում չկա։
         </p>
-        {!ready ? (
-          <p className="mt-8 text-sm text-muted-foreground">Բեռնվում է...</p>
+        {pending || catalog.catalogStatus === "error" ? (
+          <CatalogStatusPanel
+            status={catalog.catalogStatus}
+            error={catalog.catalogError}
+            onRetry={() => void retryLiveCatalog()}
+          />
         ) : tours.length === 0 ? (
           <p className="mt-8 rounded-3xl border border-border bg-card px-4 py-6 text-sm text-muted-foreground">
             Վիրտուալ տուրեր դեռ չկան։

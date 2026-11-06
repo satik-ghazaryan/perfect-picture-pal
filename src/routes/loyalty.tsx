@@ -3,6 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useSyncExternalStore } from "react";
 import { format } from "date-fns";
 import { hy } from "date-fns/locale";
+import { formatAssignedDepartureDate } from "@/lib/calendar-date";
 import { Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { DepartureCrew } from "@/components/departure-crew";
@@ -21,7 +22,7 @@ import {
 } from "@/lib/loyalty";
 import { getAdminServerSnapshot, getAdminSnapshot, hydrateAdmin, subscribeAdmin } from "@/lib/admin";
 import { tourTitle, useSiteLocale } from "@/lib/locale";
-import { getPortalServerSnapshot, getPortalSnapshot, subscribePortal, upcomingDepartureDate } from "@/lib/guide-api";
+import { getPortalServerSnapshot, getPortalSnapshot, subscribePortal } from "@/lib/guide-api";
 import { notificationsForPhone, hydrateNotifications } from "@/lib/notifications";
 
 export const Route = createFileRoute("/loyalty")({
@@ -176,13 +177,14 @@ function LoyaltyPage() {
                       (item) => item.id === booking.tourId && item.is_virtual_only !== true,
                     );
                     if (!tour) return null;
-                    const departureDate = upcomingDepartureDate(tour.day);
+                    const assigned = portal.tours.find((item) => item.id === booking.tourId);
+                    const departureDate = assigned?.departureDate ?? "";
                     return (
                       <article key={booking.id} className="space-y-3">
                         <div className="rounded-3xl border border-border bg-card px-4 py-3">
                           <p className="text-sm font-bold">{tourTitle(tour, lang)}</p>
                           <p className="mt-1 text-xs text-muted-foreground">
-                            {format(new Date(`${departureDate}T12:00:00`), "d MMMM", { locale: hy })} · {tour.departureTime}
+                            {formatAssignedDepartureDate(departureDate)} · {tour.departureTime}
                             {" · "}
                             {booking.ticketCode}
                           </p>

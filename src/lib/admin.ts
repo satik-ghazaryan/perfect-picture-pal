@@ -17,18 +17,20 @@ import {
 } from "@/lib/guide-api";
 import { loadPublicStaff, type PublicStaffMember } from "@/lib/crew";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
-import type { Database } from "@/types/supabase";
+import {
+  createSupabaseCatalogRemote,
+  loadRemoteCatalog,
+  persistCatalogSettings,
+  persistCatalogTour,
+  removeCatalogTour,
+  type CatalogRemote,
+} from "@/lib/catalog-persistence";
 import {
   deserializeSiteSettings,
   deserializeTourCatalog,
   deserializeVirtualTour,
   logRemoteError,
-  mergeCatalogTours,
   normalizeCatalogTour,
-  remoteWriteCommitsLocally,
-  serializeSiteSettings,
-  serializeTourCatalog,
-  serializeVirtualTour,
   type CatalogTour,
 } from "@/lib/tour-catalog-record";
 
@@ -67,11 +69,18 @@ export type DirectoryUser = {
 
 export type StaffMember = DirectoryUser & { role: "guide" | "driver" };
 
+export type CatalogStatus = "idle" | "loading" | "loaded" | "error";
+
+export function catalogIsPending(status: CatalogStatus) {
+  return status === "idle" || status === "loading";
+}
+
 type AdminState = {
   tours: ManagedTour[];
   settings: SiteSettings;
   users: DirectoryUser[];
   session: AdminSession | null;
+  catalogStatus: CatalogStatus;
   catalogError: string | null;
   settingsError: string | null;
 };
@@ -199,6 +208,7 @@ const serverSnapshot: AdminState = {
   settings: defaultSettings,
   users: seedUsers(),
   session: null,
+  catalogStatus: canUseLocalDevSeeds() ? "loaded" : "idle",
   catalogError: null,
   settingsError: null,
 };
@@ -305,58 +315,35 @@ function throwRemote(action: string, fallback: string, error: unknown): never {
   throw new Error(fallback);
 }
 
+function catalogRemote(): CatalogRemote | null {
+  if (!supabase) return null;
+  return createSupabaseCatalogRemote(supabase as never);
+}
+
 async function refreshLiveCatalog() {
-  if (!isSupabaseConfigured || !supabase) return;
+  const remote = catalogRemote();
+  if (!isSupabaseConfigured || !remote) return;
   const request = ++liveCatalogRequest;
   try {
-    const [toursResult, virtualResult, departuresResult, settingsResult, staff] = await Promise.all([
-      supabase.from("tours").select("*").order("id"),
-      supabase.from("virtual_tours").select("*").order("id"),
-      supabase.from("departures").select("tour_id, available_seats, guide_id, driver_id, departure_date").order("departure_date"),
-      supabase.from("site_settings").select("id, banner_title, banner_text, departure_place, cashback_percent").eq("id", 1).maybeSingle(),
-      loadCatalogStaff(),
-    ]);
+    const [outcome, staff] = await Promise.all([loadRemoteCatalog(remote, defaultSettings), loadCatalogStaff()]);
     if (request !== liveCatalogRequest) return;
-    if (toursResult.error) {
-      logRemoteError("tours.select", toursResult.error);
+    if (outcome.status === "error") {
       setState({
         users: staff,
-        catalogError: "Տուրերը չբեռնվեցին Supabase-ից։ Ցանկը չի փոխարինվել տեղային օրինակով։",
+        catalogStatus: "error",
+        catalogError: outcome.message,
       });
       return;
     }
-    if (virtualResult.error) {
-      logRemoteError("virtual_tours.select", virtualResult.error);
-      setState({
-        users: staff,
-        catalogError: "Վիրտուալ տուրերը չբեռնվեցին Supabase-ից։ Ցանկը ամբողջությամբ չթարմացվեց։",
-      });
-      return;
-    }
-    const physical = (toursResult.data ?? [])
-      .map((row) => managedFromLiveTour(row as Record<string, unknown>))
-      .filter((tour): tour is ManagedTour => tour !== null);
-    const virtualTours = (virtualResult.data ?? [])
-      .map((row) => managedFromLiveVirtual(row as Record<string, unknown>))
-      .filter((tour): tour is ManagedTour => tour !== null);
-    let next = mergeCatalogTours(physical, virtualTours);
-    if (!departuresResult.error && departuresResult.data) {
-      next = applyDepartures(next, departuresResult.data);
-    } else if (departuresResult.error) {
-      logRemoteError("departures.select", departuresResult.error);
-    }
-    next = clearBrokenLinks(next);
-    let settings = state.settings;
-    let settingsError: string | null = null;
-    if (settingsResult.error) {
-      logRemoteError("site_settings.select", settingsResult.error);
-      settingsError = "Կայքի կարգավորումները չբեռնվեցին Supabase-ից։";
-    } else if (!settingsResult.data) {
-      settings = defaultSettings;
-    } else {
-      settings = deserializeSiteSettings(settingsResult.data, defaultSettings) ?? defaultSettings;
-    }
-    setState({ tours: next, users: staff, settings, catalogError: null, settingsError });
+    const next = clearBrokenLinks(outcome.tours.map((tour) => asManaged(tour)).filter((tour): tour is ManagedTour => tour !== null));
+    setState({
+      tours: next,
+      users: staff,
+      settings: outcome.settings,
+      catalogStatus: "loaded",
+      catalogError: null,
+      settingsError: outcome.settingsError,
+    });
     next.forEach((tour) => {
       if (tour.is_virtual_only !== true) syncPortal(tour);
     });
@@ -364,9 +351,16 @@ async function refreshLiveCatalog() {
     if (request !== liveCatalogRequest) return;
     logRemoteError("catalog.refresh", error);
     setState({
+      catalogStatus: "error",
       catalogError: "Տուրերը չբեռնվեցին Supabase-ից։ Ցանկը չի փոխարինվել տեղային օրինակով։",
     });
   }
+}
+
+export async function retryLiveCatalog() {
+  if (!isSupabaseConfigured) return;
+  setState({ catalogStatus: "loading", catalogError: null });
+  await refreshLiveCatalog();
 }
 
 export function subscribeAdmin(listener: () => void) {
@@ -614,6 +608,7 @@ export function hydrateAdmin() {
       settings: defaultSettings,
       users: [],
       session: null,
+      catalogStatus: "loading",
       catalogError: null,
       settingsError: null,
     };
@@ -625,9 +620,13 @@ export function hydrateAdmin() {
       settings: stored?.settings ?? state.settings,
       users,
       session: session?.role === "admin" ? session : null,
+      catalogStatus: "loaded",
       catalogError: null,
       settingsError: null,
     };
+    emit();
+  } else {
+    state = { ...state, catalogStatus: "loaded" };
     emit();
   }
   const nextTourist = readTourist(state.users);
@@ -666,49 +665,6 @@ function asUuid(value: string | null) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value) ? value : null;
 }
 
-function tourWritePayload(tour: ManagedTour): Database["public"]["Tables"]["tours"]["Insert"] {
-  const row = serializeTourCatalog(tour);
-  return {
-    id: row.id,
-    title: row.title,
-    title_hy: row.title_hy,
-    title_en: row.title_en,
-    title_ru: row.title_ru,
-    description_hy: row.description_hy,
-    description_en: row.description_en,
-    description_ru: row.description_ru,
-    location_hy: row.location_hy,
-    location_en: row.location_en,
-    location_ru: row.location_ru,
-    summary: row.summary,
-    region: row.region,
-    price: row.price,
-    image_url: row.image_url,
-    category: row.category,
-    type: row.type,
-    day: row.day,
-    departure_place: row.departure_place,
-    departure_time: row.departure_time,
-    return_time: row.return_time,
-    old_price: row.old_price,
-    rating: row.rating,
-    reviews: row.reviews,
-    has360: row.has360,
-    has_audio_guide: row.has_audio_guide,
-    highlights: row.highlights,
-    itinerary: row.itinerary,
-    included: row.included,
-    excluded: row.excluded,
-    audio_chapters: row.audio_chapters,
-    hotspots: row.hotspots,
-    panorama_url: row.panorama_url,
-    virtual_tour_url: row.virtual_tour_url,
-    is_virtual_only: false,
-    virtual_tour_id: row.virtual_tour_id,
-    seats: row.seats,
-  };
-}
-
 function commitSavedTour(saved: ManagedTour) {
   const replaced = state.tours.some((item) => item.id === saved.id)
     ? state.tours.map((item) => (item.id === saved.id ? saved : item))
@@ -721,34 +677,16 @@ function commitSavedTour(saved: ManagedTour) {
   else syncPortal(saved);
 }
 
-async function pushVirtualRecord(tour: ManagedTour) {
-  if (!supabase || tour.is_virtual_only !== true) return;
-  const { error } = await supabase.from("virtual_tours").upsert(serializeVirtualTour(tour));
-  if (error) throwRemote("virtual_tours.upsert", "Վիրտուալ տուրը Supabase-ում չպահպանվեց։", error);
-}
-
 async function pushTour(tour: ManagedTour) {
-  if (!supabase) return;
-  if (tour.is_virtual_only) {
-    await pushVirtualRecord(tour);
-    const { error: leftoverError } = await supabase.from("tours").delete().eq("id", tour.id);
-    if (leftoverError) throwRemote("tours.delete leftover", "Վիրտուալ տուրը պահվեց, բայց կատալոգի կրկնօրինակը չհեռացվեց։", leftoverError);
-    return;
-  }
-  const { error } = await supabase.from("tours").upsert(tourWritePayload(tour));
-  if (error) throwRemote("tours.upsert", "Տուրը Supabase-ում չպահպանվեց։", error);
-  const { error: dropError } = await supabase.from("virtual_tours").delete().eq("id", tour.id);
-  if (dropError) throwRemote("virtual_tours.delete leftover", "Տուրը պահվեց, բայց նույն համարի վիրտուալ կրկնօրինակը չհեռացվեց։", dropError);
+  const remote = catalogRemote();
+  if (!remote) return;
+  await persistCatalogTour(remote, tour);
 }
 
 export async function saveTour(tour: ManagedTour) {
   const saved: ManagedTour = tour.is_virtual_only ? { ...tour, virtual_tour_id: null } : tour;
-  if (supabase) {
-    await pushTour(saved);
-    if (!remoteWriteCommitsLocally(true)) return;
-    commitSavedTour(saved);
-    return;
-  }
+  const remote = catalogRemote();
+  if (remote) await pushTour(saved);
   commitSavedTour(saved);
 }
 
@@ -757,19 +695,8 @@ export async function deleteTour(tourId: string) {
   const remaining = state.tours
     .filter((tour) => tour.id !== tourId)
     .map((tour) => (tour.virtual_tour_id === tourId ? { ...tour, virtual_tour_id: null } : tour));
-  if (supabase) {
-    if (existing?.is_virtual_only === true) {
-      const { error: virtualError } = await supabase.from("virtual_tours").delete().eq("id", tourId);
-      if (virtualError) throwRemote("virtual_tours.delete", "Վիրտուալ տուրը Supabase-ից չջնջվեց։", virtualError);
-      const { error: leftoverError } = await supabase.from("tours").delete().eq("id", tourId);
-      if (leftoverError) throwRemote("tours.delete leftover", "Վիրտուալ տուրը ջնջվեց, բայց կատալոգի կրկնօրինակը մնաց։", leftoverError);
-    } else {
-      const { error } = await supabase.from("tours").delete().eq("id", tourId);
-      if (error) throwRemote("tours.delete", "Տուրը Supabase-ից չջնջվեց։", error);
-      const { error: leftoverVirtual } = await supabase.from("virtual_tours").delete().eq("id", tourId);
-      if (leftoverVirtual) throwRemote("virtual_tours.delete leftover", "Տուրը ջնջվեց, բայց նույն համարի վիրտուալ գրառումը մնաց։", leftoverVirtual);
-    }
-  }
+  const remote = catalogRemote();
+  if (remote && existing) await removeCatalogTour(remote, existing);
   setState({ tours: remaining });
   removePortalTour(tourId);
 }
@@ -807,17 +734,9 @@ export async function saveSettings(settings: SiteSettings) {
     ...settings,
     cashbackPercent: Math.min(100, Math.max(0, Math.round(settings.cashbackPercent))),
   };
-  if (supabase) {
-    const { error } = await supabase.from("site_settings").upsert(serializeSiteSettings(next));
-    if (error) throwRemote("site_settings.upsert", "Կարգավորումները Supabase-ում չպահպանվեցին։", error);
-  }
-  const toursNext = state.tours.map((tour) =>
-    tour.is_virtual_only === true ? tour : { ...tour, departurePlace: next.departurePlace },
-  );
-  setState({ settings: next, tours: toursNext, settingsError: null });
-  toursNext.forEach((tour) => {
-    if (tour.is_virtual_only !== true) syncPortal(tour);
-  });
+  const remote = catalogRemote();
+  if (remote) await persistCatalogSettings(remote, next);
+  setState({ settings: next, settingsError: null });
 }
 
 function userFromRow(row: {

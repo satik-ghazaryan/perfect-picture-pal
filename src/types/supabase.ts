@@ -162,37 +162,55 @@ export type Database = {
       virtual_tours: {
         Row: {
           id: string;
+          title: string;
           title_hy: string;
           title_en: string;
           title_ru: string;
           description_hy: string;
           description_en: string;
           description_ru: string;
+          summary: string | null;
           embed_url: string | null;
           thumbnail_url: string | null;
+          image_url: string | null;
+          panorama_url: string | null;
+          virtual_tour_url: string | null;
+          hotspots: unknown;
           created_at: string;
         };
         Insert: {
           id: string;
+          title?: string;
           title_hy?: string;
           title_en?: string;
           title_ru?: string;
           description_hy?: string;
           description_en?: string;
           description_ru?: string;
+          summary?: string | null;
           embed_url?: string | null;
           thumbnail_url?: string | null;
+          image_url?: string | null;
+          panorama_url?: string | null;
+          virtual_tour_url?: string | null;
+          hotspots?: unknown;
           created_at?: string;
         };
         Update: {
+          title?: string;
           title_hy?: string;
           title_en?: string;
           title_ru?: string;
           description_hy?: string;
           description_en?: string;
           description_ru?: string;
+          summary?: string | null;
           embed_url?: string | null;
           thumbnail_url?: string | null;
+          image_url?: string | null;
+          panorama_url?: string | null;
+          virtual_tour_url?: string | null;
+          hotspots?: unknown;
         };
         Relationships: [];
       };

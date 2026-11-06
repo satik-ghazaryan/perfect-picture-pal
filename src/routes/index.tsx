@@ -36,7 +36,8 @@ import { SiteHeader } from "@/components/site-header";
 import { TourCard } from "@/components/tour-card";
 import { regions, tourTypeLabels, tourTypes } from "@/data/tours";
 import { pickLocale, tourTitle, useSiteLocale } from "@/lib/locale";
-import { getAdminServerSnapshot, getAdminSnapshot, hydrateAdmin, subscribeAdmin } from "@/lib/admin";
+import { CatalogStatusPanel } from "@/components/catalog-status-panel";
+import { catalogIsPending, getAdminServerSnapshot, getAdminSnapshot, hydrateAdmin, retryLiveCatalog, subscribeAdmin } from "@/lib/admin";
 import heroImage from "@/assets/hero-armenia.jpg";
 
 export const Route = createFileRoute("/")({
@@ -109,7 +110,10 @@ function Index() {
   const [policyId, setPolicyId] = useState<(typeof policies)[number]["id"] | null>(null);
   const lang = useSiteLocale();
   const policy = policies.find((item) => item.id === policyId);
-  const tourList = catalog.tours.filter((tour) => tour.is_virtual_only !== true);
+  const tourList =
+    catalog.catalogStatus === "loaded"
+      ? catalog.tours.filter((tour) => tour.is_virtual_only !== true)
+      : [];
 
   useEffect(() => {
     hydrateAdmin();
@@ -123,8 +127,12 @@ function Index() {
   return (
     <div id="top" className="min-h-screen bg-background font-sans">
       <SiteHeader />
-      {catalog.catalogError && (
-        <p className="mx-auto max-w-7xl px-4 pt-4 text-sm text-destructive sm:px-6">{catalog.catalogError}</p>
+      {(catalogIsPending(catalog.catalogStatus) || catalog.catalogStatus === "error") && (
+        <CatalogStatusPanel
+          status={catalog.catalogStatus}
+          error={catalog.catalogError}
+          onRetry={() => void retryLiveCatalog()}
+        />
       )}
 
       {/* Hero */}
@@ -275,7 +283,7 @@ function Index() {
               Առաջարկվող մեկօրյա տուրեր
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Գտնվել է {filtered.length} տուր
+              {catalog.catalogStatus === "loaded" ? `Գտնվել է ${filtered.length} տուր` : catalog.catalogStatus === "error" ? "Ցանկը չբեռնվեց" : "Բեռնվում է..."}
             </p>
           </div>
           <div className="hidden shrink-0 items-center gap-3 text-xs text-muted-foreground sm:flex">

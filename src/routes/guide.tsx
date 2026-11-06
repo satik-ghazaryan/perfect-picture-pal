@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useSyncExternalStore } from "react";
-import { format, parseISO } from "date-fns";
-import { hy } from "date-fns/locale";
+import { formatAssignedDepartureDate } from "@/lib/calendar-date";
 import { LogOut } from "lucide-react";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
@@ -254,7 +253,7 @@ function GuideHome({
               <button type="button" className="w-full text-left" aria-expanded={open} onClick={() => setOpenId(tour.id)}>
                 <h2 className="text-lg font-black leading-snug">{tour.title}</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  {format(parseISO(tour.departureDate), "d MMMM yyyy", { locale: hy })} · մեկնում {tour.departureTime}
+                  {formatAssignedDepartureDate(tour.departureDate)} · մեկնում {tour.departureTime}
                 </p>
                 <p className="mt-1 text-sm font-semibold">Ամրագրված ուղևորներ՝ {passengers.length}</p>
               </button>

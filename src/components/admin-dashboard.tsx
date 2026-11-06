@@ -43,6 +43,7 @@ import {
   createStaffAccount,
   updateDirectoryUser,
   loadDirectory,
+  retryLiveCatalog,
   saveSettings,
   saveTour,
   signOutAdmin,
@@ -53,6 +54,8 @@ import {
   type ManagedTour,
   type SiteSettings,
 } from "@/lib/admin";
+import { CatalogTransferPanel } from "@/components/catalog-transfer-panel";
+import { formatAssignedDepartureDate, weekendScheduleLabel } from "@/lib/calendar-date";
 import { getPortalServerSnapshot, getPortalSnapshot, subscribePortal, upcomingDepartureDate, type AssignedTour, type BookingRecord } from "@/lib/guide-api";
 import {
   adjustLoyaltyPoints,
@@ -75,6 +78,7 @@ const sections = [
   { id: "staff", label: "Զբոսավարներ և Վարորդներ", icon: Users },
   { id: "tourists", label: "Զբոսաշրջիկներ", icon: UserRound },
   { id: "bookings", label: "Ամրագրումներ", icon: Ticket },
+  { id: "transfer", label: "Տեղային տեղափոխում", icon: FileSpreadsheet },
   { id: "settings", label: "Կարգավորումներ", icon: Settings },
 ] as const;
 
@@ -125,6 +129,7 @@ type Draft = {
   itinerary: string;
   chapters: ChapterDraft[];
   highlights: string[];
+  departurePlace: string;
 };
 
 const chapterLanguages: { value: AudioLanguage; label: string }[] = [
@@ -153,6 +158,7 @@ function emptyDraft(virtualOnly = false): Draft {
     itinerary: "",
     chapters: [],
     highlights: [],
+    departurePlace: virtualOnly ? "" : getAdminSnapshot().settings.departurePlace,
   };
 }
 
@@ -175,6 +181,7 @@ function draftFromTour(tour: ManagedTour): Draft {
     isVirtualOnly: tour.is_virtual_only === true,
     itinerary: tour.itinerary.map((stop) => `${stop.time} | ${stop.title} | ${stop.description}`).join("\n"),
     highlights: [...tour.highlights],
+    departurePlace: tour.departurePlace,
     chapters: tour.audioChapters.map((chapter) => ({
       id: chapter.id,
       title: chapter.title,
@@ -342,9 +349,17 @@ export function AdminDashboard({ session }: { session: AdminSession }) {
             seedDraft={publishDraft}
             onSeedApplied={() => setPublishDraft(null)}
             loadError={catalog.catalogError}
+            catalogStatus={catalog.catalogStatus}
           />
         )}
-        {section === "virtual" && <ToursSection tours={catalog.tours} mode="virtual" loadError={catalog.catalogError} />}
+        {section === "virtual" && (
+          <ToursSection
+            tours={catalog.tours}
+            mode="virtual"
+            loadError={catalog.catalogError}
+            catalogStatus={catalog.catalogStatus}
+          />
+        )}
         {section === "ideas" && (
           <IdeasSection
             createdBy={session.id}
@@ -382,6 +397,7 @@ export function AdminDashboard({ session }: { session: AdminSession }) {
             error={bookingError}
           />
         )}
+        {section === "transfer" && <CatalogTransferPanel remoteTours={catalog.tours} />}
         {section === "settings" && <SettingsSection settings={catalog.settings} loadError={catalog.settingsError} />}
       </div>
     </div>
@@ -499,12 +515,14 @@ function ToursSection({
   seedDraft,
   onSeedApplied,
   loadError,
+  catalogStatus,
 }: {
   tours: ManagedTour[];
   mode: "departures" | "virtual";
   seedDraft?: Draft | null;
   onSeedApplied?: () => void;
   loadError?: string | null;
+  catalogStatus?: "idle" | "loading" | "loaded" | "error";
 }) {
   const listed = tours.filter((tour) => (mode === "virtual" ? tour.is_virtual_only === true : tour.is_virtual_only !== true));
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -537,6 +555,10 @@ function ToursSection({
     }
     if (!virtualOnly && (!Number.isFinite(price) || price <= 0 || !Number.isFinite(seats) || seats <= 0)) {
       toast.error("Գինը և տեղերը պետք է դրական թիվ լինեն։");
+      return;
+    }
+    if (!virtualOnly && !draft.departurePlace.trim()) {
+      toast.error("Նշեք տուրի մեկնման վայրը։");
       return;
     }
     const existing = draft.id ? tours.find((tour) => tour.id === draft.id) : undefined;
@@ -575,7 +597,7 @@ function ToursSection({
       image_url: image,
       category: location.hy,
       type: draft.type,
-      departurePlace: virtualOnly ? "" : getAdminSnapshot().settings.departurePlace,
+      departurePlace: virtualOnly ? "" : draft.departurePlace.trim(),
       departureTime: virtualOnly ? "" : draft.departureTime || "08:30",
       returnTime: virtualOnly ? "" : draft.returnTime || "19:00",
       price,
@@ -644,10 +666,19 @@ function ToursSection({
       </div>
 
       {loadError && (
-        <p className="rounded-2xl bg-destructive/10 px-4 py-3 text-sm text-destructive">{loadError}</p>
+        <div className="space-y-2 rounded-2xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          <p>{loadError}</p>
+          <Button type="button" variant="outline" className="rounded-full font-bold" onClick={() => void retryLiveCatalog()}>
+            Կրկին փորձել
+          </Button>
+        </div>
       )}
 
-      {listed.length === 0 && !loadError && (
+      {(catalogStatus === "idle" || catalogStatus === "loading") && (
+        <p className="rounded-2xl bg-muted px-4 py-3 text-sm text-muted-foreground">Բեռնվում է...</p>
+      )}
+
+      {listed.length === 0 && !loadError && catalogStatus === "loaded" && (
         <p className="rounded-2xl bg-muted px-4 py-3 text-sm text-muted-foreground">
           {mode === "virtual" ? "Վիրտուալ տուրեր դեռ չկան։" : "Մեկնող տուրեր դեռ չկան։"}
         </p>
@@ -781,6 +812,14 @@ function ToursSection({
                       <SelectItem value="sunday">Կիրակի</SelectItem>
                     </SelectContent>
                   </Select>
+                </Field>
+                <Field label="Մեկնման վայր" id="tour-departure-place">
+                  <Input
+                    id="tour-departure-place"
+                    value={draft.departurePlace}
+                    onChange={(event) => update({ departurePlace: event.target.value })}
+                    className="rounded-2xl"
+                  />
                 </Field>
               </>
             )}
@@ -1354,14 +1393,14 @@ function TouristsSection({
                   {bookingsOf(selected.phone).map((booking) => {
                     const tour = tours.find((item) => item.id === booking.tourId && item.is_virtual_only !== true);
                     const portalTour = portalTours.find((item) => item.id === booking.tourId);
-                    const departureDate = portalTour?.departureDate ?? (tour ? upcomingDepartureDate(tour.day) : "");
+                    const departureDate = portalTour?.departureDate ?? "";
                     const departureTime = tour?.departureTime || portalTour?.departureTime || "—";
                     const seats = booking.adults + booking.children;
                     return (
                       <article key={booking.id} className="space-y-1 rounded-2xl border border-border p-4 text-sm">
                         <p className="font-bold">{tour ? tourTitle(tour) : portalTour?.title ?? booking.tourId}</p>
                         <p className="text-muted-foreground">
-                          {formatProfileDate(departureDate)} · մեկնում {departureTime}
+                          {formatAssignedDepartureDate(departureDate)} · մեկնում {departureTime}
                         </p>
                         <p>
                           {seats} տեղ · {bookingStatusText(booking)}
@@ -1387,10 +1426,7 @@ function staffName(users: DirectoryUser[], id: string | null, role: "guide" | "d
 }
 
 function departureLabel(tour: ManagedTour) {
-  const date = upcomingDepartureDate(tour.day);
-  const parsed = parseISO(date);
-  const pretty = Number.isNaN(parsed.getTime()) ? date : format(parsed, "d MMMM yyyy", { locale: hy });
-  return `${pretty}, ${tour.departureTime}`;
+  return `${weekendScheduleLabel(tour.day)}, ${tour.departureTime}`;
 }
 
 function emailForPhone(users: DirectoryUser[], phone: string) {
@@ -1587,7 +1623,9 @@ function SettingsSection({ settings, loadError }: { settings: SiteSettings; load
     <section className="space-y-4">
       <div>
         <h1 className="text-2xl font-black tracking-tight">Կարգավորումներ</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Գլխավոր էջի տեքստ, մեկնման վայր և հետվճար</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Գլխավոր էջի տեքստ, նոր տուրերի լռելյայն մեկնման վայր և հետվճար։ Արդեն պահված տուրերի հասցեն չի փոխվում։
+        </p>
       </div>
       {loadError && (
         <p className="rounded-2xl bg-destructive/10 px-4 py-3 text-sm text-destructive">{loadError}</p>

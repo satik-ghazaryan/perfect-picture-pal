@@ -7,8 +7,6 @@ import {
   deserializeVirtualTour,
   mergeCatalogTours,
   normalizeCatalogTour,
-  remoteCatalogShouldUseSeeds,
-  remoteWriteCommitsLocally,
   serializeSiteSettings,
   serializeTourCatalog,
   serializeVirtualTour,
@@ -103,7 +101,11 @@ describe("tour catalog mapping", () => {
     assert.deepEqual(loaded.highlights, []);
     assert.deepEqual(loaded.itinerary, []);
     assert.equal(loaded.virtual_tour_id, null);
-    const omitted = normalizeCatalogTour({ id: "garni", title_hy: "Գառնի" }, true, sampleTour({ id: "garni", price: 22000 }));
+    const omitted = normalizeCatalogTour(
+      { id: "garni", title_hy: "Գառնի" },
+      true,
+      sampleTour({ id: "garni", price: 22000 }),
+    );
     assert.ok(omitted);
     assert.ok((omitted.price ?? 0) > 0);
   });
@@ -131,14 +133,26 @@ describe("tour catalog mapping", () => {
     assert.equal(merged.find((tour) => tour.id === "garni-new")?.virtual_tour_id, "vr-garni");
     const virtualRow = serializeVirtualTour(virtual);
     assert.equal(virtualRow.embed_url, "https://example.com/pano.jpg");
+    assert.equal(virtualRow.title, "Գառնի 360");
+    assert.equal(virtualRow.panorama_url, "https://example.com/pano.jpg");
   });
 
-  it("does not treat a remote error or empty remote catalog as local demo success", () => {
-    assert.equal(remoteCatalogShouldUseSeeds(true, true, 0), false);
-    assert.equal(remoteCatalogShouldUseSeeds(true, false, 0), false);
-    assert.equal(remoteWriteCommitsLocally(false), false);
-    assert.equal(remoteWriteCommitsLocally(true), true);
-    assert.equal(remoteCatalogShouldUseSeeds(false, true, 0), true);
+  it("loads legacy virtual rows with empty localized and embed fields", () => {
+    const loaded = deserializeVirtualTour({
+      id: "legacy-vr",
+      title: "Հին վիրտուալ",
+      summary: "Հին նկարագրություն",
+      panorama_url: "https://example.com/old.jpg",
+      hotspots: [{ id: "hs-1", x: 1, y: 2, title: "Կետ", description: "Նկար" }],
+    });
+    assert.ok(loaded);
+    assert.equal(loaded.title_hy, "Հին վիրտուալ");
+    assert.equal(loaded.description_hy, "Հին նկարագրություն");
+    assert.equal(loaded.panoramaUrl, "https://example.com/old.jpg");
+    assert.equal(loaded.hotspots[0]?.id, "hs-1");
+    const payload = serializeVirtualTour(loaded);
+    assert.equal(payload.title, "Հին վիրտուալ");
+    assert.ok(payload.title.length > 0);
   });
 
   it("round-trips site settings including cashback 0", () => {

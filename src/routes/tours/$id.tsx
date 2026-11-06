@@ -9,7 +9,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { packingList, tourTypeLabels } from "@/data/tours";
 import { pickLocale, tourDescription, tourLocation, tourTitle, useSiteLocale } from "@/lib/locale";
-import { getAdminServerSnapshot, getAdminSnapshot, hydrateAdmin, resolveTour, subscribeAdmin } from "@/lib/admin";
+import { CatalogStatusPanel } from "@/components/catalog-status-panel";
+import { catalogIsPending, getAdminServerSnapshot, getAdminSnapshot, hydrateAdmin, resolveTour, retryLiveCatalog, subscribeAdmin } from "@/lib/admin";
 
 export const Route = createFileRoute("/tours/$id")({
   validateSearch: (search: Record<string, unknown>): { ticket?: string } => {
@@ -57,16 +58,16 @@ function TourNotFound() {
 function TourDetailPage() {
   const { id, tour: loaded } = Route.useLoaderData();
   const catalog = useSyncExternalStore(subscribeAdmin, getAdminSnapshot, getAdminServerSnapshot);
-  const [ready, setReady] = useState(false);
-  const live = ready ? catalog.tours.find((item) => item.id === id) : undefined;
-  const tour = live ?? loaded;
+  const pending = catalogIsPending(catalog.catalogStatus);
+  const live = catalog.tours.find((item) => item.id === id);
+  const tour = catalog.catalogStatus === "loaded" ? (live ?? loaded) : undefined;
   const { ticket: shownTicket = "" } = Route.useSearch();
   const linkedId = tour?.is_virtual_only ? "" : tour?.virtual_tour_id?.trim() ?? "";
   const linkedTour = linkedId
     ? catalog.tours.find((item) => item.id === linkedId && item.is_virtual_only === true)
     : undefined;
   const showPanorama = linkedId.length > 0 && Boolean(linkedTour);
-  const [tab, setTab] = useState(tour?.hasAudioGuide ? "audio" : "overview");
+  const [tab, setTab] = useState("overview");
   const opened = useRef(false);
   const lang = useSiteLocale();
   const title = tour ? tourTitle(tour, lang) : "";
@@ -76,11 +77,10 @@ function TourDetailPage() {
 
   useEffect(() => {
     hydrateAdmin();
-    setReady(true);
   }, []);
 
   useEffect(() => {
-    if (!ready || opened.current) return;
+    if (catalog.catalogStatus !== "loaded" || opened.current) return;
     if (linkedId && !linkedTour) return;
     opened.current = true;
     if (!tour) {
@@ -90,22 +90,27 @@ function TourDetailPage() {
     document.title = `${tourTitle(tour, lang)} — Արի Գնանք`;
     if (window.location.hash === "#audio" && tour.hasAudioGuide) setTab("audio");
     else if (linkedTour) setTab("panorama");
-  }, [ready, tour, linkedId, linkedTour, lang]);
+  }, [catalog.catalogStatus, tour, linkedId, linkedTour, lang]);
 
   useEffect(() => {
-    if (!ready || !tour) return;
+    if (catalog.catalogStatus !== "loaded" || !tour) return;
     document.title = `${tourTitle(tour, lang)} — Արի Գնանք`;
-  }, [ready, tour, lang]);
+  }, [catalog.catalogStatus, tour, lang]);
+
+  if (pending || catalog.catalogStatus === "error") {
+    return (
+      <div className="min-h-screen bg-background">
+        <SiteHeader />
+        <CatalogStatusPanel
+          status={catalog.catalogStatus}
+          error={catalog.catalogError}
+          onRetry={() => void retryLiveCatalog()}
+        />
+      </div>
+    );
+  }
 
   if (!tour) {
-    if (!ready) {
-      return (
-        <div className="min-h-screen bg-background">
-          <SiteHeader />
-          <p className="px-4 py-16 text-center text-sm text-muted-foreground">Բեռնվում է...</p>
-        </div>
-      );
-    }
     return <TourNotFound />;
   }
 

@@ -43,9 +43,9 @@ import {
   getPortalServerSnapshot,
   getPortalSnapshot,
   subscribePortal,
-  upcomingDepartureDate,
   type BookingRecord,
 } from "@/lib/guide-api";
+import { formatAssignedDepartureDate } from "@/lib/calendar-date";
 
 export const Route = createFileRoute("/profile")({
   head: () => ({
@@ -65,10 +65,7 @@ function formatBirth(value: string) {
 }
 
 function formatDeparture(date: string) {
-  if (!date) return "—";
-  const parsed = parseISO(`${date}T12:00:00`);
-  if (Number.isNaN(parsed.getTime())) return date;
-  return format(parsed, "d MMMM yyyy", { locale: hy });
+  return formatAssignedDepartureDate(date);
 }
 
 function bookingStatusText(booking: BookingRecord) {
@@ -151,7 +148,7 @@ function ProfilePage() {
     const tour = catalog.tours.find((item) => item.id === booking.tourId && item.is_virtual_only !== true);
     const assigned = portal.tours.find((item) => item.id === booking.tourId);
     if (!tour && !assigned) return [];
-    const departureDate = assigned?.departureDate || (tour ? upcomingDepartureDate(tour.day) : "");
+    const departureDate = assigned?.departureDate || "";
     return [
       {
         id: booking.id,
