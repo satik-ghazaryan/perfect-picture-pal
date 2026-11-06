@@ -1,6 +1,4 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { format } from "date-fns";
-import { hy } from "date-fns/locale";
 import { Check, CreditCard, Minus, Plus, Smartphone, Ticket, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -40,8 +38,14 @@ import {
   subscribeAdmin,
   subscribeTourist,
 } from "@/lib/admin";
-import { assignedWeekendDay } from "@/lib/calendar-date";
-import { upcomingDepartureDate } from "@/lib/guide-api";
+import {
+  bookingCrewDepartureDate,
+  bookingDayAssigned,
+  bookingDepartureLabel,
+  bookingTicketDateLabel,
+  confirmBookingIfDayAssigned,
+  UNASSIGNED_SCHEDULE_LABEL,
+} from "@/lib/booking-departure";
 
 const methods = [
   { id: "idram", label: "Idram", hint: "Էլեկտրոնային դրամապանակ", icon: Wallet },
@@ -50,16 +54,6 @@ const methods = [
 ] as const;
 
 type MethodId = (typeof methods)[number]["id"];
-
-function nextDeparture(day: Tour["day"]) {
-  const now = new Date();
-  const weekend = assignedWeekendDay(day);
-  if (!weekend) return now;
-  const target = weekend === "saturday" ? 6 : 0;
-  const date = new Date(now);
-  date.setDate(now.getDate() + ((target - now.getDay() + 7) % 7 || 7));
-  return date;
-}
 
 function validPhone(value: string) {
   const digits = value.replace(/\D/g, "");
@@ -83,13 +77,18 @@ function TicketQr({ value }: { value: string }) {
 
   return (
     <span className="grid h-24 w-24 shrink-0 place-items-center rounded-xl bg-white p-1">
-      {src ? <img src={src} alt="" className="h-full w-full" /> : <span className="h-full w-full" />}
+      {src ? (
+        <img src={src} alt="" className="h-full w-full" />
+      ) : (
+        <span className="h-full w-full" />
+      )}
     </span>
   );
 }
 
 export function BookingPanel({ tour }: { tour: Tour }) {
-  const departure = nextDeparture(tour.day);
+  const dayReady = bookingDayAssigned(tour.day);
+  const departureLabel = bookingDepartureLabel(tour.day);
   const title = tourTitle(tour, useSiteLocale());
   const [party, setParty] = useState({ adults: tour.seatsLeft > 0 ? 1 : 0, children: 0 });
   const [open, setOpen] = useState(false);
@@ -104,11 +103,23 @@ export function BookingPanel({ tour }: { tour: Tour }) {
   const [usePoints, setUsePoints] = useState(false);
   const [notify, setNotify] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [quoteHold, setQuoteHold] = useState<{ balance: number; credit: number; usePoints: boolean } | null>(null);
+  const [quoteHold, setQuoteHold] = useState<{
+    balance: number;
+    credit: number;
+    usePoints: boolean;
+  } | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
-  const wallet = useSyncExternalStore(subscribeLoyalty, getLoyaltySnapshot, getLoyaltyServerSnapshot);
+  const wallet = useSyncExternalStore(
+    subscribeLoyalty,
+    getLoyaltySnapshot,
+    getLoyaltyServerSnapshot,
+  );
   const catalog = useSyncExternalStore(subscribeAdmin, getAdminSnapshot, getAdminServerSnapshot);
-  const tourist = useSyncExternalStore(subscribeTourist, getTouristSnapshot, getTouristServerSnapshot);
+  const tourist = useSyncExternalStore(
+    subscribeTourist,
+    getTouristSnapshot,
+    getTouristServerSnapshot,
+  );
   const cashback = catalog.settings.cashbackPercent;
   const assigned = catalog.tours.find((item) => item.id === tour.id);
 
@@ -129,7 +140,9 @@ export function BookingPanel({ tour }: { tour: Tour }) {
   const liveCredit = signedInTourist ? Math.min(activeCreditTotal(phone), total) : 0;
   const balance = quoteHold?.balance ?? liveBalance;
   const creditApplied = quoteHold?.credit ?? liveCredit;
-  const pointsOn = quoteHold ? quoteHold.usePoints : signedInTourist && usePoints && liveBalance > 0;
+  const pointsOn = quoteHold
+    ? quoteHold.usePoints
+    : signedInTourist && usePoints && liveBalance > 0;
   const quote = quoteCheckout(balance, total - creditApplied, pointsOn, cashback / 100);
   const coveredByPoints = quote.payable === 0 && (pointsOn || creditApplied > 0);
   const soldOut = tour.seatsLeft < 1;
@@ -161,6 +174,11 @@ export function BookingPanel({ tour }: { tour: Tour }) {
   };
 
   const continueDetails = async () => {
+    if (!bookingDayAssigned(tour.day)) {
+      setError(UNASSIGNED_SCHEDULE_LABEL);
+      toast.error(UNASSIGNED_SCHEDULE_LABEL);
+      return;
+    }
     if (name.trim().length < 2) {
       setError("Գրեք ձեր անունը։");
       toast.error("Գրեք ձեր անունը։");
@@ -181,6 +199,11 @@ export function BookingPanel({ tour }: { tour: Tour }) {
   };
 
   const confirmPayment = async () => {
+    if (!bookingDayAssigned(tour.day)) {
+      setError(UNASSIGNED_SCHEDULE_LABEL);
+      toast.error(UNASSIGNED_SCHEDULE_LABEL);
+      return;
+    }
     if (!coveredByPoints && !method) {
       setError("Ընտրեք վճարման եղանակը։");
       toast.error("Ընտրեք վճարման եղանակը։");
@@ -189,23 +212,33 @@ export function BookingPanel({ tour }: { tour: Tour }) {
     setError("");
     setQuoteHold({ balance: liveBalance, credit: creditApplied, usePoints: pointsOn });
     setSaving(true);
-    const toastId = toast.loading(coveredByPoints ? "Տոմսը ձևավորվում է…" : "Վճարումը սպասման մեջ է…");
+    const toastId = toast.loading(
+      coveredByPoints ? "Տոմսը ձևավորվում է…" : "Վճարումը սպասման մեջ է…",
+    );
     try {
-      const result = await completeCheckout({
-        provider: method,
-        tourId: tour.id,
-        tourTitle: tour.title_hy,
-        passengerName: name.trim(),
-        phone: phone.trim(),
-        adults: party.adults,
-        children: party.children,
-        total,
-        usePoints: pointsOn,
-        balance,
-        credit: creditApplied,
-        notify,
-        departureTime: tour.departureTime,
-      });
+      const allowed = await confirmBookingIfDayAssigned(tour.day, () =>
+        completeCheckout({
+          provider: method,
+          tourId: tour.id,
+          tourTitle: tour.title_hy,
+          passengerName: name.trim(),
+          phone: phone.trim(),
+          adults: party.adults,
+          children: party.children,
+          total,
+          usePoints: pointsOn,
+          balance,
+          credit: creditApplied,
+          notify,
+          departureTime: tour.departureTime,
+        }),
+      );
+      if (!allowed.ok) {
+        setError(allowed.message);
+        toast.error(allowed.message, { id: toastId });
+        return;
+      }
+      const result = allowed.result;
       if (!result.ok) {
         setError(result.message);
         toast.error(result.message, { id: toastId });
@@ -239,7 +272,10 @@ export function BookingPanel({ tour }: { tour: Tour }) {
 
   return (
     <>
-      <aside id="book" className="fixed inset-x-0 bottom-0 z-40 scroll-mt-24 p-3 lg:static lg:z-auto lg:p-0">
+      <aside
+        id="book"
+        className="fixed inset-x-0 bottom-0 z-40 scroll-mt-24 p-3 lg:static lg:z-auto lg:p-0"
+      >
         <div className="rounded-3xl border border-border bg-card p-4 shadow-float lg:sticky lg:top-24">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -259,7 +295,7 @@ export function BookingPanel({ tour }: { tour: Tour }) {
           </div>
 
           <p className="mt-3 text-xs text-muted-foreground">
-            {format(departure, "d MMMM, EEEE", { locale: hy })} · {tour.departureTime}
+            {dayReady ? `${departureLabel} · ${tour.departureTime}` : departureLabel}
           </p>
 
           <div className="mt-4 grid grid-cols-2 gap-2">
@@ -288,8 +324,12 @@ export function BookingPanel({ tour }: { tour: Tour }) {
 
           <Button
             className="mt-4 h-11 w-full rounded-full font-bold"
-            disabled={soldOut || guests < 1}
+            disabled={soldOut || guests < 1 || !dayReady}
             onClick={() => {
+              if (!bookingDayAssigned(tour.day)) {
+                toast.error(UNASSIGNED_SCHEDULE_LABEL);
+                return;
+              }
               setError("");
               setOpen(true);
             }}
@@ -308,9 +348,7 @@ export function BookingPanel({ tour }: { tour: Tour }) {
       >
         <DialogContent className="max-h-[90vh] overflow-y-auto rounded-3xl sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>
-              {step === 3 ? "Ամրագրումը հաստատված է" : "Արագ ամրագրում"}
-            </DialogTitle>
+            <DialogTitle>{step === 3 ? "Ամրագրումը հաստատված է" : "Արագ ամրագրում"}</DialogTitle>
             <DialogDescription>
               {step === 1 && "Քայլ 1 / 3 · Կոնտակտային տվյալներ"}
               {step === 2 && "Քայլ 2 / 3 · Վճարման եղանակ"}
@@ -322,7 +360,10 @@ export function BookingPanel({ tour }: { tour: Tour }) {
             {[1, 2, 3].map((item) => (
               <span
                 key={item}
-                className={cn("h-1.5 flex-1 rounded-full", item <= step ? "bg-primary" : "bg-muted")}
+                className={cn(
+                  "h-1.5 flex-1 rounded-full",
+                  item <= step ? "bg-primary" : "bg-muted",
+                )}
               />
             ))}
           </div>
@@ -339,13 +380,20 @@ export function BookingPanel({ tour }: { tour: Tour }) {
                 {party.adults} մեծահասակ · {party.children} երեխա · {formatAmd(total)}
               </p>
               {tourist ? (
-                <p className="text-xs text-muted-foreground">Անունը և հեռախոսը լրացված են ձեր հաշվից։</p>
+                <p className="text-xs text-muted-foreground">
+                  Անունը և հեռախոսը լրացված են ձեր հաշվից։
+                </p>
               ) : (
                 <div className="space-y-2 rounded-2xl border border-border px-3 py-3">
                   <p className="text-xs leading-relaxed text-muted-foreground">
                     Ամրագրումը շարունակելու համար խնդրում ենք մուտք գործել կամ լրացնել տվյալները
                   </p>
-                  <Button type="button" variant="outline" className="h-9 rounded-full font-bold" onClick={() => setAuthOpen(true)}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-9 rounded-full font-bold"
+                    onClick={() => setAuthOpen(true)}
+                  >
                     Մուտք
                   </Button>
                 </div>
@@ -432,7 +480,10 @@ export function BookingPanel({ tour }: { tour: Tour }) {
                     }}
                   />
                   <div className="min-w-0">
-                    <Label htmlFor="use-points" className="cursor-pointer text-sm font-medium leading-snug">
+                    <Label
+                      htmlFor="use-points"
+                      className="cursor-pointer text-sm font-medium leading-snug"
+                    >
                       Օգտագործել իմ միավորները (Հասանելի է՝ {balance} միավոր)
                     </Label>
                     <p className="text-[11px] text-muted-foreground">1 միավոր = 1 ֏</p>
@@ -446,7 +497,10 @@ export function BookingPanel({ tour }: { tour: Tour }) {
                   disabled={saving}
                   onCheckedChange={(checked) => setNotify(checked === true)}
                 />
-                <Label htmlFor="send-ticket" className="cursor-pointer text-sm font-medium leading-snug">
+                <Label
+                  htmlFor="send-ticket"
+                  className="cursor-pointer text-sm font-medium leading-snug"
+                >
                   Ուղարկել տոմսը WhatsApp-ով / SMS-ով
                 </Label>
               </div>
@@ -473,8 +527,8 @@ export function BookingPanel({ tour }: { tour: Tour }) {
                 </p>
                 {coveredByPoints ? (
                   <p className="text-muted-foreground">
-                    Տուրն ամբողջությամբ ծածկված է միավորներով։ Վճարման դարպասը բաց է թողնվում։ Հետվճար՝ 0,
-                    որովհետև կանխիկ վճարում չկա։
+                    Տուրն ամբողջությամբ ծածկված է միավորներով։ Վճարման դարպասը բաց է թողնվում։
+                    Հետվճար՝ 0, որովհետև կանխիկ վճարում չկա։
                   </p>
                 ) : (
                   <p className="text-muted-foreground">
@@ -488,10 +542,20 @@ export function BookingPanel({ tour }: { tour: Tour }) {
               {error && <p className="text-xs font-medium text-destructive">{error}</p>}
               <TestModeNotice className="rounded-2xl" />
               <div className="grid grid-cols-2 gap-2 pt-1">
-                <Button type="button" variant="outline" className="rounded-full" onClick={() => setStep(1)}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="rounded-full"
+                  onClick={() => setStep(1)}
+                >
                   Հետ
                 </Button>
-                <Button type="button" className="rounded-full font-bold" disabled={saving} onClick={() => void confirmPayment()}>
+                <Button
+                  type="button"
+                  className="rounded-full font-bold"
+                  disabled={saving || !bookingDayAssigned(tour.day)}
+                  onClick={() => void confirmPayment()}
+                >
                   {saving ? "Հաստատվում է" : coveredByPoints ? "Ստանալ տոմսը" : "Հաստատել"}
                 </Button>
               </div>
@@ -512,7 +576,10 @@ export function BookingPanel({ tour }: { tour: Tour }) {
                   <div>
                     <p className="text-sm font-bold leading-snug">{title}</p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {format(departure, "d MMMM", { locale: hy })} · {tour.departureTime}–{tour.returnTime}
+                      {bookingTicketDateLabel(tour.day)}
+                      {bookingDayAssigned(tour.day)
+                        ? ` · ${tour.departureTime}–${tour.returnTime}`
+                        : ""}
                     </p>
                     <p className="text-xs text-muted-foreground">{tour.departurePlace}</p>
                   </div>
@@ -548,7 +615,9 @@ export function BookingPanel({ tour }: { tour: Tour }) {
                         <p className="mt-1 text-[11px] text-muted-foreground">Նստատեղ {seat}</p>
                       )}
                       {receipt?.notified && (
-                        <p className="mt-1 text-[11px] text-muted-foreground">SMS և WhatsApp ուղարկված է</p>
+                        <p className="mt-1 text-[11px] text-muted-foreground">
+                          SMS և WhatsApp ուղարկված է
+                        </p>
                       )}
                       {receipt?.pointsSaved && receipt.redeemed > 0 && (
                         <p className="mt-1 text-[11px] text-muted-foreground">
@@ -557,11 +626,14 @@ export function BookingPanel({ tour }: { tour: Tour }) {
                       )}
                       {receipt?.pointsSaved && (
                         <p className="mt-1 text-[11px] text-muted-foreground">
-                          {receipt.earned > 0 ? `+${receipt.earned} հետվճար · ` : ""}մնացորդ {receipt.points}
+                          {receipt.earned > 0 ? `+${receipt.earned} հետվճար · ` : ""}մնացորդ{" "}
+                          {receipt.points}
                         </p>
                       )}
                       {receipt && !receipt.pointsSaved && (
-                        <p className="mt-1 text-[11px] text-muted-foreground">Միավորները չգրանցվեցին</p>
+                        <p className="mt-1 text-[11px] text-muted-foreground">
+                          Միավորները չգրանցվեցին
+                        </p>
                       )}
                     </div>
                     <TicketQr value={code} />
@@ -569,15 +641,16 @@ export function BookingPanel({ tour }: { tour: Tour }) {
                 </div>
               </div>
               <DepartureCrew
-                departureDate={(() => {
-                  const weekend = assignedWeekendDay(tour.day);
-                  return weekend ? upcomingDepartureDate(weekend) : "";
-                })()}
+                departureDate={bookingCrewDepartureDate(tour.day)}
                 departureTime={tour.departureTime}
                 guideId={assigned?.guideId ?? null}
                 driverId={assigned?.driverId ?? null}
               />
-              <Button type="button" className="h-11 w-full rounded-full font-bold" onClick={() => setOpen(false)}>
+              <Button
+                type="button"
+                className="h-11 w-full rounded-full font-bold"
+                onClick={() => setOpen(false)}
+              >
                 Փակել
               </Button>
             </div>

@@ -9,7 +9,8 @@ import {
   parseCatalogBackup,
   readLocalPublicCatalog,
   remainingTransferOperations,
-  staleTransferFields,
+  selectionAfterTransferApply,
+  splitTransferApplyPlan,
   TRANSFER_INSTRUCTIONS,
   transferFieldLabel,
   validateCatalogTourForCreate,
@@ -138,59 +139,25 @@ export function CatalogTransferPanel({
       const currentRemote = getAdminSnapshot().tours;
       const currentById = new Map(currentRemote.map((tour) => [tour.id, tour]));
       const previousById = new Map(remoteSnapshot.map((tour) => [tour.id, tour]));
-      const ready: TransferOperation[] = [];
-      const stale: { id: string; message: string }[] = [];
-      for (const operation of operations) {
-        if (operation.action !== "update-fields") {
-          ready.push(operation);
-          continue;
-        }
-        const previous = previousById.get(operation.id);
-        const current = currentById.get(operation.id);
-        if (!previous || !current) {
-          stale.push({ id: operation.id, message: "Հեռավար տուրը փոխվել է։ Կրկին համեմատեք։" });
-          continue;
-        }
-        const changed = staleTransferFields(operation.fields, previous, current);
-        if (changed.length > 0) {
-          stale.push({
-            id: operation.id,
-            message: `Հեռավար դաշտերը փոխվել են՝ ${changed.map((field) => transferFieldLabel(field)).join(", ")}։`,
-          });
-          continue;
-        }
-        ready.push(operation);
-      }
-      const outcome = await applyTransferOperations(ready, {
+      const plan = splitTransferApplyPlan(operations, previousById, currentById);
+      const outcome = await applyTransferOperations(plan.ready, {
         localById: new Map(backup.tours.map((tour) => [tour.id, tour])),
         remoteById: currentById,
         save: async (tour) => {
           await saveTour(tour as ManagedTour);
         },
       });
-      const leftover = remainingTransferOperations(ready, outcome.saved);
-      const nextSelected: Record<string, TransferField[]> = {};
-      const nextCreates: Record<string, boolean> = {};
-      for (const operation of leftover) {
-        if (operation.action === "create") nextCreates[operation.id] = true;
-        else nextSelected[operation.id] = operation.fields;
-      }
-      for (const item of stale) {
-        const operation = operations.find(
-          (entry) => entry.id === item.id && entry.action === "update-fields",
-        );
-        if (operation && operation.action === "update-fields")
-          nextSelected[item.id] = operation.fields;
-      }
-      setSelected(nextSelected);
-      setCreates(nextCreates);
+      const leftover = remainingTransferOperations(plan.ready, outcome.saved);
+      const next = selectionAfterTransferApply(leftover);
+      setSelected(next.selected);
+      setCreates(next.creates);
       const latest = getAdminSnapshot().tours;
       refreshRows(backup.tours, latest);
-      setResults({ saved: outcome.saved, failed: outcome.failed, stale });
-      if (outcome.failed.length === 0 && stale.length === 0 && outcome.saved.length > 0) {
+      setResults({ saved: outcome.saved, failed: outcome.failed, stale: plan.conflicts });
+      if (outcome.failed.length === 0 && plan.conflicts.length === 0 && outcome.saved.length > 0) {
         toast.success("Ընտրված գործողությունները պահվեցին։");
-      } else if (outcome.failed.length > 0 || stale.length > 0) {
-        toast.error("Մասնակի ձախողում կամ վերանայման կարիք։ Կարող եք կրկնել չպահվածները։");
+      } else if (outcome.failed.length > 0 || plan.conflicts.length > 0) {
+        toast.error("Մասնակի ձախողում կամ վերանայման կարիք։ Կոնֆլիկտները պետք է նորից ընտրել։");
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Կիրառումը չհաջողվեց։");
@@ -360,13 +327,13 @@ export function CatalogTransferPanel({
               ))}
             </ul>
           )}
-          {(results.failed.length > 0 || results.stale.length > 0) && (
+          {results.failed.length > 0 && (
             <Button
               type="button"
               variant="outline"
               className="mt-3 rounded-full font-bold"
-              disabled={applying || !catalogReady || pendingOperations().length === 0}
-              onClick={() => void apply()}
+              disabled={applying || !catalogReady}
+              onClick={() => void apply(results.failed.map((item) => item.operation))}
             >
               Կրկնել չպահվածները
             </Button>

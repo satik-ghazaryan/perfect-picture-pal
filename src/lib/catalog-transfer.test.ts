@@ -8,6 +8,8 @@ import {
   mergeSelectedFields,
   parseCatalogBackup,
   remainingTransferOperations,
+  selectionAfterTransferApply,
+  splitTransferApplyPlan,
 } from "./catalog-transfer";
 import type { CatalogTour } from "./tour-catalog-record";
 
@@ -222,5 +224,62 @@ describe("catalog transfer", () => {
     assert.equal(second.saved.length, 0);
     assert.equal(second.failed[0]?.operation.id, "tour-b");
     assert.equal(threw, true);
+  });
+
+  it("does not let retry overwrite a changed remote field without a new selection", async () => {
+    const local = sampleTour({ id: "garni-new", title_hy: "Տեղային վերնագիր" });
+    const remoteAtSelect = sampleTour({ id: "garni-new", title_hy: "Հին հեռավար" });
+    const remoteChanged = sampleTour({ id: "garni-new", title_hy: "Նոր հեռավար" });
+    const written: string[] = [];
+    const save = async (tour: CatalogTour) => {
+      written.push(tour.title_hy);
+    };
+    const selected = [
+      { id: "garni-new", action: "update-fields" as const, fields: ["title" as const] },
+    ];
+    const firstPlan = splitTransferApplyPlan(
+      selected,
+      new Map([["garni-new", remoteAtSelect]]),
+      new Map([["garni-new", remoteChanged]]),
+    );
+    assert.equal(firstPlan.ready.length, 0);
+    assert.equal(firstPlan.conflicts[0]?.id, "garni-new");
+    const first = await applyTransferOperations(firstPlan.ready, {
+      localById: new Map([["garni-new", local]]),
+      remoteById: new Map([["garni-new", remoteChanged]]),
+      save,
+    });
+    assert.equal(written.length, 0);
+    const leftover = remainingTransferOperations(firstPlan.ready, first.saved);
+    const afterConflict = selectionAfterTransferApply(leftover);
+    assert.equal(afterConflict.selected["garni-new"], undefined);
+    const retryOps = leftover;
+    const retryPlan = splitTransferApplyPlan(
+      retryOps,
+      new Map([["garni-new", remoteChanged]]),
+      new Map([["garni-new", remoteChanged]]),
+    );
+    const retry = await applyTransferOperations(retryPlan.ready, {
+      localById: new Map([["garni-new", local]]),
+      remoteById: new Map([["garni-new", remoteChanged]]),
+      save,
+    });
+    assert.equal(retry.saved.length, 0);
+    assert.equal(written.length, 0);
+    const reselected = [
+      { id: "garni-new", action: "update-fields" as const, fields: ["title" as const] },
+    ];
+    const reviewPlan = splitTransferApplyPlan(
+      reselected,
+      new Map([["garni-new", remoteChanged]]),
+      new Map([["garni-new", remoteChanged]]),
+    );
+    const reviewed = await applyTransferOperations(reviewPlan.ready, {
+      localById: new Map([["garni-new", local]]),
+      remoteById: new Map([["garni-new", remoteChanged]]),
+      save,
+    });
+    assert.equal(reviewed.saved.length, 1);
+    assert.deepEqual(written, ["Տեղային վերնագիր"]);
   });
 });

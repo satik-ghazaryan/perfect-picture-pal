@@ -458,6 +458,55 @@ export function remainingTransferOperations(
   return operations.filter((item) => !done.has(`${item.action}:${item.id}`));
 }
 
+export type TransferConflict = { id: string; message: string };
+
+export function splitTransferApplyPlan(
+  operations: TransferOperation[],
+  previousById: Map<string, CatalogTour>,
+  currentById: Map<string, CatalogTour>,
+): { ready: TransferOperation[]; conflicts: TransferConflict[] } {
+  const ready: TransferOperation[] = [];
+  const conflicts: TransferConflict[] = [];
+  for (const operation of operations) {
+    if (operation.action !== "update-fields") {
+      ready.push(operation);
+      continue;
+    }
+    const previous = previousById.get(operation.id);
+    const current = currentById.get(operation.id);
+    if (!previous || !current) {
+      conflicts.push({
+        id: operation.id,
+        message: "Հեռավար տուրը փոխվել է։ Կրկին համեմատեք և նորից ընտրեք դաշտերը։",
+      });
+      continue;
+    }
+    const changed = staleTransferFields(operation.fields, previous, current);
+    if (changed.length > 0) {
+      conflicts.push({
+        id: operation.id,
+        message: `Հեռավար դաշտերը փոխվել են՝ ${changed.map((field) => transferFieldLabel(field)).join(", ")}։ Կրկին ընտրեք թարմ համեմատությունից։`,
+      });
+      continue;
+    }
+    ready.push(operation);
+  }
+  return { ready, conflicts };
+}
+
+export function selectionAfterTransferApply(leftoverFailed: TransferOperation[]): {
+  selected: Record<string, TransferField[]>;
+  creates: Record<string, boolean>;
+} {
+  const selected: Record<string, TransferField[]> = {};
+  const creates: Record<string, boolean> = {};
+  for (const operation of leftoverFailed) {
+    if (operation.action === "create") creates[operation.id] = true;
+    else selected[operation.id] = operation.fields;
+  }
+  return { selected, creates };
+}
+
 export const TRANSFER_INSTRUCTIONS = [
   "Նախքան նոր կոդը բացելը այս դիտարկիչից արտահանեք տեղային կատալոգը։",
   "Այնուհետև կիրառեք SQL միգրացիան staging բազայում։",
