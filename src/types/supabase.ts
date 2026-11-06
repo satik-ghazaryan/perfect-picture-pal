@@ -11,8 +11,11 @@ import type {
   UserRole,
 } from "@/types";
 
+type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
+
 type LocalizedTourRow = {
   id: string;
+  title: string | null;
   title_hy: string;
   title_en: string;
   title_ru: string;
@@ -22,9 +25,30 @@ type LocalizedTourRow = {
   location_hy: string;
   location_en: string;
   location_ru: string;
+  summary: string | null;
+  region: string | null;
   price: number;
   image_url: string | null;
   category: string | null;
+  type: string | null;
+  day: string | null;
+  return_time: string | null;
+  old_price: number | null;
+  rating: number | null;
+  reviews: number;
+  has360: boolean;
+  has_audio_guide: boolean;
+  highlights: Json;
+  itinerary: Json;
+  included: Json;
+  excluded: Json;
+  audio_chapters: Json;
+  hotspots: Json;
+  panorama_url: string | null;
+  virtual_tour_url: string | null;
+  is_virtual_only: boolean;
+  virtual_tour_id: string | null;
+  seats: number;
   created_at: string;
   departure_place: string | null;
   departure_time: string | null;
@@ -36,6 +60,7 @@ type LocalizedTourRow = {
 
 type LocalizedTourInsert = {
   id: string;
+  title?: string | null;
   title_hy?: string;
   title_en?: string;
   title_ru?: string;
@@ -45,9 +70,30 @@ type LocalizedTourInsert = {
   location_hy?: string;
   location_en?: string;
   location_ru?: string;
+  summary?: string | null;
+  region?: string | null;
   price?: number;
   image_url?: string | null;
   category?: string | null;
+  type?: string | null;
+  day?: string | null;
+  return_time?: string | null;
+  old_price?: number | null;
+  rating?: number | null;
+  reviews?: number;
+  has360?: boolean;
+  has_audio_guide?: boolean;
+  highlights?: Json;
+  itinerary?: Json;
+  included?: Json;
+  excluded?: Json;
+  audio_chapters?: Json;
+  hotspots?: Json;
+  panorama_url?: string | null;
+  virtual_tour_url?: string | null;
+  is_virtual_only?: boolean;
+  virtual_tour_id?: string | null;
+  seats?: number;
   created_at?: string;
   departure_place?: string | null;
   departure_time?: string | null;

@@ -1,7 +1,7 @@
 import garniPhoto from "@/assets/tour-garni.jpg";
 import sevanPhoto from "@/assets/tour-sevan.jpg";
 import tatevPhoto from "@/assets/tour-tatev.jpg";
-import { getTourById, regions, tours, type AudioChapter, type Hotspot, type ItineraryStop, type Tour } from "@/data/tours";
+import { getTourById, tours, type Tour } from "@/data/tours";
 import type { PaymentProviderName, PaymentState, UserRole } from "@/lib/database.types";
 import {
   assignPortalStaff,
@@ -15,9 +15,22 @@ import {
   upsertPortalTour,
   type BookingRecord,
 } from "@/lib/guide-api";
-import { columnsToLocalized, localized, type LocalizedText } from "@/lib/locale";
 import { loadPublicStaff, type PublicStaffMember } from "@/lib/crew";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
+import type { Database } from "@/types/supabase";
+import {
+  deserializeSiteSettings,
+  deserializeTourCatalog,
+  deserializeVirtualTour,
+  logRemoteError,
+  mergeCatalogTours,
+  normalizeCatalogTour,
+  remoteWriteCommitsLocally,
+  serializeSiteSettings,
+  serializeTourCatalog,
+  serializeVirtualTour,
+  type CatalogTour,
+} from "@/lib/tour-catalog-record";
 
 export type ManagedTour = Tour & {
   panoramaUrl: string;
@@ -59,6 +72,8 @@ type AdminState = {
   settings: SiteSettings;
   users: DirectoryUser[];
   session: AdminSession | null;
+  catalogError: string | null;
+  settingsError: string | null;
 };
 
 function canUseLocalDevSeeds() {
@@ -170,8 +185,6 @@ export const defaultSettings: SiteSettings = {
   cashbackPercent: 5,
 };
 
-const fallbackImage = tours[0]?.image_url ?? "";
-
 function seedManaged(): ManagedTour[] {
   return tours.map((tour) => ({
     ...tour,
@@ -182,10 +195,12 @@ function seedManaged(): ManagedTour[] {
 }
 
 const serverSnapshot: AdminState = {
-  tours: seedManaged(),
+  tours: canUseLocalDevSeeds() ? seedManaged() : [],
   settings: defaultSettings,
   users: seedUsers(),
   session: null,
+  catalogError: null,
+  settingsError: null,
 };
 
 let state: AdminState = serverSnapshot;
@@ -203,14 +218,15 @@ function emitTourist() {
 }
 
 function persist() {
-  if (typeof localStorage === "undefined") return;
+  if (typeof sessionStorage !== "undefined") {
+    if (!state.session) sessionStorage.removeItem(SESSION_KEY);
+    else sessionStorage.setItem(SESSION_KEY, JSON.stringify(state.session));
+  }
+  if (isSupabaseConfigured || typeof localStorage === "undefined") return;
   localStorage.setItem(
     CATALOG_KEY,
     JSON.stringify({ tours: state.tours, settings: state.settings, users: state.users }),
   );
-  if (typeof sessionStorage === "undefined") return;
-  if (!state.session) sessionStorage.removeItem(SESSION_KEY);
-  else sessionStorage.setItem(SESSION_KEY, JSON.stringify(state.session));
 }
 
 function setState(patch: Partial<AdminState>) {
@@ -219,99 +235,29 @@ function setState(patch: Partial<AdminState>) {
   emit();
 }
 
-function textOrEmpty(value: string | null | undefined) {
-  return typeof value === "string" ? value : "";
+function asManaged(tour: CatalogTour | null): ManagedTour | null {
+  return tour;
 }
 
-function managedFromLiveTour(row: {
-  id: string;
-  title_hy: string;
-  title_en: string;
-  title_ru: string;
-  description_hy: string;
-  description_en: string;
-  description_ru: string;
-  location_hy: string;
-  location_en: string;
-  location_ru: string;
-  price: number;
-  image_url: string | null;
-  category: string | null;
-  created_at?: string;
-  departure_place?: string | null;
-  departure_time?: string | null;
-  departure_date?: string | null;
-  guide_id?: string | null;
-  driver_id?: string | null;
-}): ManagedTour | null {
-  const weekend: "saturday" | "sunday" | undefined = (() => {
-    if (!row.departure_date) return undefined;
-    const day = new Date(`${row.departure_date}T12:00:00`).getDay();
-    if (day === 0) return "sunday";
-    if (day === 6) return "saturday";
-    return undefined;
-  })();
-  const raw: Record<string, unknown> = {
-    id: row.id,
-    title_hy: row.title_hy,
-    title_en: row.title_en,
-    title_ru: row.title_ru,
-    description_hy: row.description_hy,
-    description_en: row.description_en,
-    description_ru: row.description_ru,
-    location_hy: row.location_hy,
-    location_en: row.location_en,
-    location_ru: row.location_ru,
-    price: row.price,
-    image_url: row.image_url,
-    category: row.category,
-    departurePlace: row.departure_place,
-    departureTime: row.departure_time,
-    is_virtual_only: false,
-    guideId: row.guide_id,
-    driverId: row.driver_id,
-  };
-  if (weekend) raw["day"] = weekend;
-  if (row.created_at) raw["created_at"] = row.created_at;
-  return sanitizeTour(raw);
+function weekendFromLegacyDate(value: string | null | undefined): "saturday" | "sunday" | undefined {
+  if (!value) return undefined;
+  const day = new Date(`${value}T12:00:00`).getDay();
+  if (day === 0) return "sunday";
+  if (day === 6) return "saturday";
+  return undefined;
 }
 
-function managedFromLiveVirtual(row: {
-  id: string;
-  title_hy: string;
-  title_en: string;
-  title_ru: string;
-  description_hy: string;
-  description_en: string;
-  description_ru: string;
-  embed_url: string | null;
-  thumbnail_url: string | null;
-  created_at?: string;
-}): ManagedTour | null {
-  const embed = textOrEmpty(row.embed_url).trim();
-  const thumb = textOrEmpty(row.thumbnail_url).trim();
-  const raw: Record<string, unknown> = {
-    id: row.id,
-    title_hy: row.title_hy,
-    title_en: row.title_en,
-    title_ru: row.title_ru,
-    description_hy: row.description_hy,
-    description_en: row.description_en,
-    description_ru: row.description_ru,
-    location_hy: row.title_hy,
-    location_en: row.title_en,
-    location_ru: row.title_ru,
-    price: 0,
-    image_url: thumb || undefined,
-    category: row.title_hy,
-    is_virtual_only: true,
-    panoramaUrl: embed,
-    virtual_tour_url: embed,
-    guideId: null,
-    driverId: null,
-  };
-  if (row.created_at) raw["created_at"] = row.created_at;
-  return sanitizeTour(raw);
+function managedFromLiveTour(row: Record<string, unknown>): ManagedTour | null {
+  const tour = deserializeTourCatalog(row);
+  if (!tour) return null;
+  const dayMissing = row["day"] == null || row["day"] === "";
+  const weekend = weekendFromLegacyDate(typeof row["departure_date"] === "string" ? row["departure_date"] : null);
+  if (dayMissing && weekend) tour.day = weekend;
+  return asManaged(tour);
+}
+
+function managedFromLiveVirtual(row: Record<string, unknown>): ManagedTour | null {
+  return asManaged(deserializeVirtualTour(row));
 }
 
 function applyDepartures(
@@ -354,65 +300,72 @@ async function loadCatalogStaff(): Promise<DirectoryUser[]> {
   return publicStaff.map(userFromPublicStaff);
 }
 
+function throwRemote(action: string, fallback: string, error: unknown): never {
+  logRemoteError(action, error);
+  throw new Error(fallback);
+}
+
 async function refreshLiveCatalog() {
   if (!isSupabaseConfigured || !supabase) return;
   const request = ++liveCatalogRequest;
   try {
-    const [toursResult, virtualResult, departuresResult, staff] = await Promise.all([
-      supabase
-        .from("tours")
-        .select(
-          "id, title_hy, title_en, title_ru, description_hy, description_en, description_ru, location_hy, location_en, location_ru, price, image_url, category, created_at, departure_place, departure_time, departure_date, guide_id, driver_id",
-        )
-        .order("id"),
-      supabase
-        .from("virtual_tours")
-        .select("id, title_hy, title_en, title_ru, description_hy, description_en, description_ru, embed_url, thumbnail_url, created_at")
-        .order("id"),
+    const [toursResult, virtualResult, departuresResult, settingsResult, staff] = await Promise.all([
+      supabase.from("tours").select("*").order("id"),
+      supabase.from("virtual_tours").select("*").order("id"),
       supabase.from("departures").select("tour_id, available_seats, guide_id, driver_id, departure_date").order("departure_date"),
+      supabase.from("site_settings").select("id, banner_title, banner_text, departure_place, cashback_percent").eq("id", 1).maybeSingle(),
       loadCatalogStaff(),
     ]);
     if (request !== liveCatalogRequest) return;
-    if (toursResult.error && virtualResult.error) {
-      setState({ tours: seedManaged(), users: staff });
+    if (toursResult.error) {
+      logRemoteError("tours.select", toursResult.error);
+      setState({
+        users: staff,
+        catalogError: "Տուրերը չբեռնվեցին Supabase-ից։ Ցանկը չի փոխարինվել տեղային օրինակով։",
+      });
+      return;
+    }
+    if (virtualResult.error) {
+      logRemoteError("virtual_tours.select", virtualResult.error);
+      setState({
+        users: staff,
+        catalogError: "Վիրտուալ տուրերը չբեռնվեցին Supabase-ից։ Ցանկը ամբողջությամբ չթարմացվեց։",
+      });
       return;
     }
     const physical = (toursResult.data ?? [])
-      .map(managedFromLiveTour)
+      .map((row) => managedFromLiveTour(row as Record<string, unknown>))
       .filter((tour): tour is ManagedTour => tour !== null);
-    const virtualRows = virtualResult.data ?? [];
-    const byId = new Map(physical.map((tour) => [tour.id, tour]));
-    for (const row of virtualRows) {
-      const embed = textOrEmpty(row.embed_url).trim();
-      const existing = byId.get(row.id);
-      if (existing) {
-        byId.set(row.id, {
-          ...existing,
-          has360: existing.has360 || Boolean(embed),
-          panoramaUrl: existing.panoramaUrl || embed,
-          ...(embed ? { virtual_tour_url: existing.virtual_tour_url || embed } : {}),
-        });
-        continue;
-      }
-      const virtualTour = managedFromLiveVirtual(row);
-      if (virtualTour) byId.set(virtualTour.id, virtualTour);
-    }
-    let next = [...byId.values()];
-    if (next.length === 0) {
-      setState({ tours: seedManaged(), users: staff });
-      return;
-    }
+    const virtualTours = (virtualResult.data ?? [])
+      .map((row) => managedFromLiveVirtual(row as Record<string, unknown>))
+      .filter((tour): tour is ManagedTour => tour !== null);
+    let next = mergeCatalogTours(physical, virtualTours);
     if (!departuresResult.error && departuresResult.data) {
       next = applyDepartures(next, departuresResult.data);
+    } else if (departuresResult.error) {
+      logRemoteError("departures.select", departuresResult.error);
     }
     next = clearBrokenLinks(next);
-    setState({ tours: next, users: staff });
+    let settings = state.settings;
+    let settingsError: string | null = null;
+    if (settingsResult.error) {
+      logRemoteError("site_settings.select", settingsResult.error);
+      settingsError = "Կայքի կարգավորումները չբեռնվեցին Supabase-ից։";
+    } else if (!settingsResult.data) {
+      settings = defaultSettings;
+    } else {
+      settings = deserializeSiteSettings(settingsResult.data, defaultSettings) ?? defaultSettings;
+    }
+    setState({ tours: next, users: staff, settings, catalogError: null, settingsError });
     next.forEach((tour) => {
       if (tour.is_virtual_only !== true) syncPortal(tour);
     });
-  } catch {
+  } catch (error) {
     if (request !== liveCatalogRequest) return;
-    setState({ tours: seedManaged() });
+    logRemoteError("catalog.refresh", error);
+    setState({
+      catalogError: "Տուրերը չբեռնվեցին Supabase-ից։ Ցանկը չի փոխարինվել տեղային օրինակով։",
+    });
   }
 }
 
@@ -454,182 +407,21 @@ export function getCashbackRate() {
   return Math.min(1, Math.max(0, state.settings.cashbackPercent / 100));
 }
 
-function isStop(value: unknown): value is ItineraryStop {
-  if (!value || typeof value !== "object") return false;
-  const stop = value as ItineraryStop;
-  return typeof stop.time === "string" && typeof stop.title === "string" && typeof stop.description === "string";
-}
-
-function readChapter(value: unknown): AudioChapter | null {
-  if (!value || typeof value !== "object") return null;
-  const chapter = value as Partial<AudioChapter>;
-  if (typeof chapter.id !== "string" || typeof chapter.title !== "string" || typeof chapter.duration !== "number") {
-    return null;
-  }
-  const next: AudioChapter = {
-    id: chapter.id,
-    title: chapter.title,
-    duration: chapter.duration,
-  };
-  if (typeof chapter.audioUrl === "string" && chapter.audioUrl.trim()) next.audioUrl = chapter.audioUrl.trim();
-  if (chapter.language === "hy" || chapter.language === "en" || chapter.language === "ru") {
-    next.language = chapter.language;
-  }
-  return next;
-}
-
-function isHotspot(value: unknown): value is Hotspot {
-  if (!value || typeof value !== "object") return false;
-  const hotspot = value as Hotspot;
-  return (
-    typeof hotspot.id === "string" &&
-    typeof hotspot.title === "string" &&
-    typeof hotspot.description === "string" &&
-    typeof hotspot.x === "number" &&
-    typeof hotspot.y === "number"
-  );
-}
-
-function stringsOf(value: unknown, fallback: string[]) {
-  if (!Array.isArray(value)) return fallback;
-  const items = value.filter((item): item is string => typeof item === "string");
-  return items;
-}
-
-function readLocalized(value: unknown, fallback: LocalizedText, fillFromSeed = false): LocalizedText {
-  if (value == null || value === "") return fallback;
-  const next = localized(value);
-  if (!next.hy.trim()) next.hy = fallback.hy;
-  if (fillFromSeed && typeof value === "string") {
-    if (!next.en.trim()) next.en = fallback.en;
-    if (!next.ru.trim()) next.ru = fallback.ru;
-  }
-  return next;
-}
-
-function readColumn(value: unknown, fallback: string) {
-  return typeof value === "string" && value.trim() ? value : fallback;
-}
-
-function readTriplet(
-  raw: Record<string, unknown>,
-  hyKey: string,
-  enKey: string,
-  ruKey: string,
-  objectKey: string,
-  fallback: LocalizedText,
-) {
-  const fromObject = readLocalized(raw[objectKey], fallback, true);
+function seedCatalog(id: string): CatalogTour | null {
+  const base = getTourById(id);
+  if (!base) return null;
   return {
-    hy: readColumn(raw[hyKey], fromObject.hy || fallback.hy),
-    en: readColumn(raw[enKey], fromObject.en || fallback.en),
-    ru: readColumn(raw[ruKey], fromObject.ru || fallback.ru),
+    ...base,
+    panoramaUrl: base.panoramaUrl ?? "",
+    guideId: LOCAL_STAFF_ID,
+    driverId: LOCAL_DRIVER_ID,
   };
 }
 
 function sanitizeTour(value: unknown): ManagedTour | null {
-  if (!value || typeof value !== "object") return null;
-  const raw = value as Partial<ManagedTour> & Record<string, unknown>;
-  if (typeof raw.id !== "string") return null;
-  const base = getTourById(raw.id);
-  const title = readTriplet(
-    raw,
-    "title_hy",
-    "title_en",
-    "title_ru",
-    "title",
-    base ? columnsToLocalized(base.title_hy, base.title_en, base.title_ru) : localized(""),
-  );
-  if (!title.hy.trim()) return null;
-  const description = readTriplet(
-    raw,
-    "description_hy",
-    "description_en",
-    "description_ru",
-    "summary",
-    base ? columnsToLocalized(base.description_hy, base.description_en, base.description_ru) : localized(""),
-  );
-  const location = readTriplet(
-    raw,
-    "location_hy",
-    "location_en",
-    "location_ru",
-    "region",
-    base
-      ? columnsToLocalized(base.location_hy, base.location_en, base.location_ru)
-      : regions[0] ?? localized("Արմավիր"),
-  );
-  const image =
-    typeof raw.image_url === "string" && raw.image_url
-      ? raw.image_url
-      : typeof raw["image"] === "string" && raw["image"]
-        ? raw["image"]
-        : base?.image_url ?? fallbackImage;
-  if (!image) return null;
-  const type = raw.type === "Արշավային" || raw.type === "Մշակութային" || raw.type === "Էքստրեմալ"
-    ? raw.type
-    : base?.type ?? "Մշակութային";
-  const tour: ManagedTour = {
-    id: raw.id,
-    title_hy: title.hy,
-    title_en: title.en,
-    title_ru: title.ru,
-    description_hy: description.hy,
-    description_en: description.en,
-    description_ru: description.ru,
-    location_hy: location.hy,
-    location_en: location.en,
-    location_ru: location.ru,
-    image_url: image,
-    category: typeof raw.category === "string" && raw.category ? raw.category : location.hy,
-    type,
-    departurePlace: typeof raw.departurePlace === "string" && raw.departurePlace
-      ? raw.departurePlace
-      : base?.departurePlace ?? defaultSettings.departurePlace,
-    departureTime: typeof raw.departureTime === "string" && raw.departureTime ? raw.departureTime : base?.departureTime ?? "08:30",
-    returnTime: typeof raw.returnTime === "string" && raw.returnTime ? raw.returnTime : base?.returnTime ?? "19:00",
-    price: (() => {
-      if (typeof raw.price === "number" && Number.isFinite(raw.price)) return raw.price;
-      if (typeof raw.price === "string") {
-        const digits = raw.price.replace(/[^\d]/g, "");
-        const parsed = digits ? Number.parseInt(digits, 10) : Number.NaN;
-        if (Number.isFinite(parsed)) return parsed;
-      }
-      return base?.price ?? 0;
-    })(),
-    seatsLeft: typeof raw.seatsLeft === "number" ? raw.seatsLeft : base?.seatsLeft ?? 0,
-    rating: typeof raw.rating === "number" ? raw.rating : base?.rating ?? 5,
-    reviews: typeof raw.reviews === "number" ? raw.reviews : base?.reviews ?? 0,
-    has360: typeof raw.has360 === "boolean" ? raw.has360 : base?.has360 ?? false,
-    hasAudioGuide: typeof raw.hasAudioGuide === "boolean" ? raw.hasAudioGuide : base?.hasAudioGuide ?? false,
-    day: raw.day === "sunday" ? "sunday" : base?.day ?? "saturday",
-    highlights: stringsOf(raw.highlights, base?.highlights ?? []),
-    itinerary: Array.isArray(raw.itinerary) ? raw.itinerary.filter(isStop) : base?.itinerary ?? [],
-    included: stringsOf(raw.included, base?.included ?? []),
-    excluded: stringsOf(raw.excluded, base?.excluded ?? []),
-    audioChapters: Array.isArray(raw.audioChapters)
-      ? raw.audioChapters.flatMap((item) => {
-          const chapter = readChapter(item);
-          return chapter ? [chapter] : [];
-        })
-      : base?.audioChapters ?? [],
-    hotspots: Array.isArray(raw.hotspots) ? raw.hotspots.filter(isHotspot) : base?.hotspots ?? [],
-    panoramaUrl: typeof raw.panoramaUrl === "string" ? raw.panoramaUrl : "",
-    is_virtual_only: typeof raw.is_virtual_only === "boolean" ? raw.is_virtual_only : base?.is_virtual_only === true,
-    guideId: typeof raw.guideId === "string" || raw.guideId === null ? raw.guideId : base ? LOCAL_STAFF_ID : null,
-    driverId: typeof raw.driverId === "string" || raw.driverId === null ? raw.driverId : base ? LOCAL_DRIVER_ID : null,
-  };
-  if (typeof raw.oldPrice === "number") tour.oldPrice = raw.oldPrice;
-  else if (base?.oldPrice !== undefined) tour.oldPrice = base.oldPrice;
-  const virtualUrl = typeof raw.virtual_tour_url === "string" ? raw.virtual_tour_url.trim() : base?.virtual_tour_url ?? "";
-  if (virtualUrl) tour.virtual_tour_url = virtualUrl;
-  const linked = typeof raw.virtual_tour_id === "string"
-    ? raw.virtual_tour_id.trim()
-    : raw.virtual_tour_id === null
-      ? ""
-      : base?.virtual_tour_id?.trim() ?? "";
-  tour.virtual_tour_id = linked && linked !== tour.id ? linked : null;
-  return tour;
+  const raw = value && typeof value === "object" ? (value as { id?: unknown }) : null;
+  const id = typeof raw?.id === "string" ? raw.id : "";
+  return asManaged(normalizeCatalogTour(value, canUseLocalDevSeeds(), id ? seedCatalog(id) : null));
 }
 
 function clearBrokenLinks(tours: ManagedTour[]) {
@@ -644,16 +436,7 @@ function clearBrokenLinks(tours: ManagedTour[]) {
 }
 
 function readSettings(value: unknown): SiteSettings | null {
-  if (!value || typeof value !== "object") return null;
-  const raw = value as Partial<SiteSettings>;
-  if (typeof raw.bannerTitle !== "string" || typeof raw.bannerText !== "string") return null;
-  if (typeof raw.departurePlace !== "string" || typeof raw.cashbackPercent !== "number") return null;
-  return {
-    bannerTitle: raw.bannerTitle,
-    bannerText: raw.bannerText,
-    departurePlace: raw.departurePlace,
-    cashbackPercent: Math.min(100, Math.max(0, Math.round(raw.cashbackPercent))),
-  };
+  return deserializeSiteSettings(value, defaultSettings);
 }
 
 function isUserRole(value: unknown): value is UserRole {
@@ -827,10 +610,12 @@ export function hydrateAdmin() {
   const users = canUseLocalDevSeeds() ? (stored?.users ?? seedUsers()) : [];
   if (isSupabaseConfigured) {
     state = {
-      tours: seedManaged(),
-      settings: stored?.settings ?? state.settings,
+      tours: [],
+      settings: defaultSettings,
       users: [],
       session: null,
+      catalogError: null,
+      settingsError: null,
     };
     emit();
     void refreshLiveCatalog();
@@ -840,6 +625,8 @@ export function hydrateAdmin() {
       settings: stored?.settings ?? state.settings,
       users,
       session: session?.role === "admin" ? session : null,
+      catalogError: null,
+      settingsError: null,
     };
     emit();
   }
@@ -854,6 +641,7 @@ export function hydrateAdmin() {
 export function resolveTour(id: string): Tour | null {
   const current = state.tours.find((tour) => tour.id === id);
   if (current) return current;
+  if (isSupabaseConfigured) return null;
   if (typeof localStorage !== "undefined") {
     const stored = readCatalog();
     if (stored) return stored.tours.find((tour) => tour.id === id) ?? null;
@@ -878,81 +666,112 @@ function asUuid(value: string | null) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value) ? value : null;
 }
 
-function virtualRecord(tour: ManagedTour) {
+function tourWritePayload(tour: ManagedTour): Database["public"]["Tables"]["tours"]["Insert"] {
+  const row = serializeTourCatalog(tour);
   return {
-    id: tour.id,
-    title_hy: tour.title_hy,
-    title_en: tour.title_en,
-    title_ru: tour.title_ru,
-    description_hy: tour.description_hy,
-    description_en: tour.description_en,
-    description_ru: tour.description_ru,
-    embed_url: tour.virtual_tour_url || tour.panoramaUrl || null,
-    thumbnail_url: tour.image_url || null,
+    id: row.id,
+    title: row.title,
+    title_hy: row.title_hy,
+    title_en: row.title_en,
+    title_ru: row.title_ru,
+    description_hy: row.description_hy,
+    description_en: row.description_en,
+    description_ru: row.description_ru,
+    location_hy: row.location_hy,
+    location_en: row.location_en,
+    location_ru: row.location_ru,
+    summary: row.summary,
+    region: row.region,
+    price: row.price,
+    image_url: row.image_url,
+    category: row.category,
+    type: row.type,
+    day: row.day,
+    departure_place: row.departure_place,
+    departure_time: row.departure_time,
+    return_time: row.return_time,
+    old_price: row.old_price,
+    rating: row.rating,
+    reviews: row.reviews,
+    has360: row.has360,
+    has_audio_guide: row.has_audio_guide,
+    highlights: row.highlights,
+    itinerary: row.itinerary,
+    included: row.included,
+    excluded: row.excluded,
+    audio_chapters: row.audio_chapters,
+    hotspots: row.hotspots,
+    panorama_url: row.panorama_url,
+    virtual_tour_url: row.virtual_tour_url,
+    is_virtual_only: false,
+    virtual_tour_id: row.virtual_tour_id,
+    seats: row.seats,
   };
 }
 
-async function pushVirtualRecord(tour: ManagedTour) {
-  if (!supabase || tour.is_virtual_only !== true) return;
-  const { error } = await supabase.from("virtual_tours").upsert(virtualRecord(tour));
-  if (error) throw new Error("Supabase-ում վիրտուալ տուրը չպահպանվեց։ Տեղային պատճենը թարմացվեց։");
-}
-
-async function pushTour(tour: ManagedTour) {
-  if (!supabase) return;
-  if (tour.is_virtual_only) {
-    await pushVirtualRecord(tour);
-  } else {
-    const { error: dropError } = await supabase.from("virtual_tours").delete().eq("id", tour.id);
-    if (dropError) throw new Error("Supabase-ում չպահպանվեց։ Տեղային պատճենը թարմացվեց։");
-  }
-  if (!tour.is_virtual_only && tour.virtual_tour_id) {
-    const linked = state.tours.find((item) => item.id === tour.virtual_tour_id && item.is_virtual_only === true);
-    if (linked) await pushVirtualRecord(linked);
-  }
-  const { error } = await supabase.from("tours").upsert({
-    id: tour.id,
-    title_hy: tour.title_hy,
-    title_en: tour.title_en,
-    title_ru: tour.title_ru,
-    description_hy: tour.description_hy,
-    description_en: tour.description_en,
-    description_ru: tour.description_ru,
-    location_hy: tour.location_hy,
-    location_en: tour.location_en,
-    location_ru: tour.location_ru,
-    price: tour.price,
-    image_url: tour.image_url,
-    category: tour.category,
-  });
-  if (error) throw new Error("Supabase-ում չպահպանվեց։ Տեղային պատճենը թարմացվեց։");
-}
-
-export async function saveTour(tour: ManagedTour) {
-  const saved: ManagedTour = tour.is_virtual_only ? { ...tour, virtual_tour_id: null } : tour;
+function commitSavedTour(saved: ManagedTour) {
   const replaced = state.tours.some((item) => item.id === saved.id)
     ? state.tours.map((item) => (item.id === saved.id ? saved : item))
     : [...state.tours, saved];
   const toursNext = saved.is_virtual_only
     ? replaced
     : replaced.map((item) => (item.id !== saved.id && item.virtual_tour_id === saved.id ? { ...item, virtual_tour_id: null } : item));
-  setState({ tours: clearBrokenLinks(toursNext) });
+  setState({ tours: clearBrokenLinks(toursNext), catalogError: null });
   if (saved.is_virtual_only) removePortalTour(saved.id);
   else syncPortal(saved);
-  await pushTour(saved);
+}
+
+async function pushVirtualRecord(tour: ManagedTour) {
+  if (!supabase || tour.is_virtual_only !== true) return;
+  const { error } = await supabase.from("virtual_tours").upsert(serializeVirtualTour(tour));
+  if (error) throwRemote("virtual_tours.upsert", "Վիրտուալ տուրը Supabase-ում չպահպանվեց։", error);
+}
+
+async function pushTour(tour: ManagedTour) {
+  if (!supabase) return;
+  if (tour.is_virtual_only) {
+    await pushVirtualRecord(tour);
+    const { error: leftoverError } = await supabase.from("tours").delete().eq("id", tour.id);
+    if (leftoverError) throwRemote("tours.delete leftover", "Վիրտուալ տուրը պահվեց, բայց կատալոգի կրկնօրինակը չհեռացվեց։", leftoverError);
+    return;
+  }
+  const { error } = await supabase.from("tours").upsert(tourWritePayload(tour));
+  if (error) throwRemote("tours.upsert", "Տուրը Supabase-ում չպահպանվեց։", error);
+  const { error: dropError } = await supabase.from("virtual_tours").delete().eq("id", tour.id);
+  if (dropError) throwRemote("virtual_tours.delete leftover", "Տուրը պահվեց, բայց նույն համարի վիրտուալ կրկնօրինակը չհեռացվեց։", dropError);
+}
+
+export async function saveTour(tour: ManagedTour) {
+  const saved: ManagedTour = tour.is_virtual_only ? { ...tour, virtual_tour_id: null } : tour;
+  if (supabase) {
+    await pushTour(saved);
+    if (!remoteWriteCommitsLocally(true)) return;
+    commitSavedTour(saved);
+    return;
+  }
+  commitSavedTour(saved);
 }
 
 export async function deleteTour(tourId: string) {
+  const existing = state.tours.find((tour) => tour.id === tourId);
   const remaining = state.tours
     .filter((tour) => tour.id !== tourId)
     .map((tour) => (tour.virtual_tour_id === tourId ? { ...tour, virtual_tour_id: null } : tour));
+  if (supabase) {
+    if (existing?.is_virtual_only === true) {
+      const { error: virtualError } = await supabase.from("virtual_tours").delete().eq("id", tourId);
+      if (virtualError) throwRemote("virtual_tours.delete", "Վիրտուալ տուրը Supabase-ից չջնջվեց։", virtualError);
+      const { error: leftoverError } = await supabase.from("tours").delete().eq("id", tourId);
+      if (leftoverError) throwRemote("tours.delete leftover", "Վիրտուալ տուրը ջնջվեց, բայց կատալոգի կրկնօրինակը մնաց։", leftoverError);
+    } else {
+      const { error } = await supabase.from("tours").delete().eq("id", tourId);
+      if (error) throwRemote("tours.delete", "Տուրը Supabase-ից չջնջվեց։", error);
+      const { error: leftoverVirtual } = await supabase.from("virtual_tours").delete().eq("id", tourId);
+      if (leftoverVirtual) throwRemote("virtual_tours.delete leftover", "Տուրը ջնջվեց, բայց նույն համարի վիրտուալ գրառումը մնաց։", leftoverVirtual);
+    }
+  }
   setState({ tours: remaining });
   removePortalTour(tourId);
-  if (!supabase) return;
-  const { error: virtualError } = await supabase.from("virtual_tours").delete().eq("id", tourId);
-  if (virtualError) throw new Error("Supabase-ից չջնջվեց։ Տեղային ցանկից հանված է։");
-  const { error } = await supabase.from("tours").delete().eq("id", tourId);
-  if (error) throw new Error("Supabase-ից չջնջվեց։ Տեղային ցանկից հանված է։");
 }
 
 export async function assignStaff(tourId: string, guideId: string | null, driverId: string | null) {
@@ -988,18 +807,17 @@ export async function saveSettings(settings: SiteSettings) {
     ...settings,
     cashbackPercent: Math.min(100, Math.max(0, Math.round(settings.cashbackPercent))),
   };
-  const toursNext = state.tours.map((tour) => ({ ...tour, departurePlace: next.departurePlace }));
-  setState({ settings: next, tours: toursNext });
-  toursNext.forEach(syncPortal);
-  if (!supabase) return;
-  const { error } = await supabase.from("site_settings").upsert({
-    id: 1,
-    banner_title: next.bannerTitle,
-    banner_text: next.bannerText,
-    departure_place: next.departurePlace,
-    cashback_percent: next.cashbackPercent,
+  if (supabase) {
+    const { error } = await supabase.from("site_settings").upsert(serializeSiteSettings(next));
+    if (error) throwRemote("site_settings.upsert", "Կարգավորումները Supabase-ում չպահպանվեցին։", error);
+  }
+  const toursNext = state.tours.map((tour) =>
+    tour.is_virtual_only === true ? tour : { ...tour, departurePlace: next.departurePlace },
+  );
+  setState({ settings: next, tours: toursNext, settingsError: null });
+  toursNext.forEach((tour) => {
+    if (tour.is_virtual_only !== true) syncPortal(tour);
   });
-  if (error) throw new Error("Կարգավորումները Supabase-ում չպահպանվեցին։ Տեղային պատճենը թարմացվեց։");
 }
 
 function userFromRow(row: {

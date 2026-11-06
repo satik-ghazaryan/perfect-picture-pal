@@ -341,9 +341,10 @@ export function AdminDashboard({ session }: { session: AdminSession }) {
             mode="departures"
             seedDraft={publishDraft}
             onSeedApplied={() => setPublishDraft(null)}
+            loadError={catalog.catalogError}
           />
         )}
-        {section === "virtual" && <ToursSection tours={catalog.tours} mode="virtual" />}
+        {section === "virtual" && <ToursSection tours={catalog.tours} mode="virtual" loadError={catalog.catalogError} />}
         {section === "ideas" && (
           <IdeasSection
             createdBy={session.id}
@@ -381,7 +382,7 @@ export function AdminDashboard({ session }: { session: AdminSession }) {
             error={bookingError}
           />
         )}
-        {section === "settings" && <SettingsSection settings={catalog.settings} />}
+        {section === "settings" && <SettingsSection settings={catalog.settings} loadError={catalog.settingsError} />}
       </div>
     </div>
   );
@@ -497,17 +498,20 @@ function ToursSection({
   mode,
   seedDraft,
   onSeedApplied,
+  loadError,
 }: {
   tours: ManagedTour[];
   mode: "departures" | "virtual";
   seedDraft?: Draft | null;
   onSeedApplied?: () => void;
+  loadError?: string | null;
 }) {
   const listed = tours.filter((tour) => (mode === "virtual" ? tour.is_virtual_only === true : tour.is_virtual_only !== true));
   const [draft, setDraft] = useState<Draft | null>(null);
   const [formLang, setFormLang] = useState<LocaleCode>("hy");
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!seedDraft || mode !== "departures") return;
@@ -521,7 +525,7 @@ function ToursSection({
   };
 
   const save = async () => {
-    if (!draft) return;
+    if (!draft || saving) return;
     const title = trimLocalized(draft.title);
     const virtualOnly = mode === "virtual";
     const price = virtualOnly ? 0 : Math.round(Number(draft.price));
@@ -581,7 +585,7 @@ function ToursSection({
       has360: panoramaUrl.length > 0 || virtualTourUrl.length > 0 || virtualOnly || existing?.has360 === true,
       hasAudioGuide: audio.length > 0,
       day: virtualOnly ? "saturday" : draft.day,
-      highlights: virtualOnly ? [] : (draft.highlights.length > 0 ? draft.highlights : existing?.highlights ?? []),
+      highlights: virtualOnly ? [] : draft.highlights,
       itinerary: virtualOnly ? [] : parseItinerary(draft.itinerary),
       included: virtualOnly ? [] : existing?.included ?? ["Հարմարավետ ավտոբուս Արմավիրից և վերադարձ", "Հայախոս ուղեկցորդ"],
       excluded: virtualOnly ? [] : existing?.excluded ?? ["Ճաշ և անձնական ծախսեր"],
@@ -608,6 +612,8 @@ function ToursSection({
   };
 
   const remove = async (tourId: string) => {
+    if (deletingId) return;
+    setDeletingId(tourId);
     try {
       await deleteTour(tourId);
       toast.success("Տուրը ջնջվեց");
@@ -615,6 +621,8 @@ function ToursSection({
       if (draft?.id === tourId) setDraft(null);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Չջնջվեց։");
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -635,7 +643,11 @@ function ToursSection({
         </Button>
       </div>
 
-      {listed.length === 0 && (
+      {loadError && (
+        <p className="rounded-2xl bg-destructive/10 px-4 py-3 text-sm text-destructive">{loadError}</p>
+      )}
+
+      {listed.length === 0 && !loadError && (
         <p className="rounded-2xl bg-muted px-4 py-3 text-sm text-muted-foreground">
           {mode === "virtual" ? "Վիրտուալ տուրեր դեռ չկան։" : "Մեկնող տուրեր դեռ չկան։"}
         </p>
@@ -665,8 +677,8 @@ function ToursSection({
                   Խմբագրել
                 </Button>
                 {confirmId === tour.id ? (
-                  <Button type="button" variant="destructive" size="sm" className="rounded-full" onClick={() => void remove(tour.id)}>
-                    Հաստատել ջնջումը
+                  <Button type="button" variant="destructive" size="sm" className="rounded-full" disabled={deletingId === tour.id} onClick={() => void remove(tour.id)}>
+                    {deletingId === tour.id ? "Ջնջվում է" : "Հաստատել ջնջումը"}
                   </Button>
                 ) : (
                   <Button type="button" variant="outline" size="sm" className="rounded-full" onClick={() => setConfirmId(tour.id)}>
@@ -1546,7 +1558,7 @@ function BookingsSection({
   );
 }
 
-function SettingsSection({ settings }: { settings: SiteSettings }) {
+function SettingsSection({ settings, loadError }: { settings: SiteSettings; loadError?: string | null }) {
   const [draft, setDraft] = useState(settings);
   const [saving, setSaving] = useState(false);
 
@@ -1555,6 +1567,7 @@ function SettingsSection({ settings }: { settings: SiteSettings }) {
   }, [settings]);
 
   const save = async () => {
+    if (saving) return;
     if (!draft.bannerTitle.trim() || !draft.bannerText.trim() || !draft.departurePlace.trim()) {
       toast.error("Լրացրեք բոլոր դաշտերը։");
       return;
@@ -1576,6 +1589,9 @@ function SettingsSection({ settings }: { settings: SiteSettings }) {
         <h1 className="text-2xl font-black tracking-tight">Կարգավորումներ</h1>
         <p className="mt-1 text-sm text-muted-foreground">Գլխավոր էջի տեքստ, մեկնման վայր և հետվճար</p>
       </div>
+      {loadError && (
+        <p className="rounded-2xl bg-destructive/10 px-4 py-3 text-sm text-destructive">{loadError}</p>
+      )}
       <form
         className="space-y-4 rounded-3xl border border-border bg-card p-4 sm:p-5"
         onSubmit={(event) => {

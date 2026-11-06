@@ -123,6 +123,9 @@ function Index() {
   return (
     <div id="top" className="min-h-screen bg-background font-sans">
       <SiteHeader />
+      {catalog.catalogError && (
+        <p className="mx-auto max-w-7xl px-4 pt-4 text-sm text-destructive sm:px-6">{catalog.catalogError}</p>
+      )}
 
       {/* Hero */}
       <section className="relative">
