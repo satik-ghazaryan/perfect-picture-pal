@@ -3,9 +3,10 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { SiteHeader } from "@/components/site-header";
 import { TouristAuthForm } from "@/components/tourist-auth";
 import {
+  ensureAccountRestored,
+  getAccountStatus,
   getTouristServerSnapshot,
   getTouristSnapshot,
-  hydrateAdmin,
   subscribeTourist,
 } from "@/lib/admin";
 
@@ -54,17 +55,18 @@ function LoginPage() {
   const { redirect } = Route.useSearch();
   const navigate = useNavigate();
   const tourist = useSyncExternalStore(subscribeTourist, getTouristSnapshot, getTouristServerSnapshot);
+  const accountStatus = useSyncExternalStore(subscribeTourist, getAccountStatus, () => "ready" as const);
   const guideEntry = isGuideRedirect(redirect);
   const driverEntry = isDriverRedirect(redirect);
 
   useEffect(() => {
-    hydrateAdmin();
+    void ensureAccountRestored();
   }, []);
 
   useEffect(() => {
-    if (!tourist) return;
+    if (accountStatus !== "ready" || !tourist) return;
     void navigate({ href: destination(tourist.role, redirect) });
-  }, [tourist, navigate, redirect]);
+  }, [accountStatus, tourist, navigate, redirect]);
 
   const go = () => {
     const session = getTouristSnapshot();
@@ -75,10 +77,14 @@ function LoginPage() {
     <div className="min-h-screen bg-background">
       <SiteHeader />
       <main className="mx-auto max-w-lg px-4 py-8 sm:px-6">
+        {accountStatus !== "ready" ? (
+          <p className="text-sm text-muted-foreground">Բեռնվում է...</p>
+        ) : (
         <TouristAuthForm
           loginTitle={guideEntry ? "Զբոսավարի մուտք" : driverEntry ? "Վարորդի մուտք" : "Մուտք համակարգ"}
           onSuccess={go}
         />
+        )}
       </main>
     </div>
   );

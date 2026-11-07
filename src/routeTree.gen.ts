@@ -24,6 +24,7 @@ import { Route as ApiNotificationsDispatchRouteImport } from './routes/api/notif
 import { Route as ApiPaymentArcaCallbackRouteImport } from './routes/api/payment/arca-callback'
 import { Route as ApiPaymentIdramCallbackRouteImport } from './routes/api/payment/idram-callback'
 import { Route as ApiPaymentTelcellCallbackRouteImport } from './routes/api/payment/telcell-callback'
+import { Route as ApiStaffAccountsRouteImport } from './routes/api/staff/accounts'
 import { Route as ApiIdeasRunsRunIdRouteImport } from './routes/api/ideas/runs.$runId'
 
 const IndexRoute = IndexRouteImport.update({
@@ -103,6 +104,11 @@ const ApiPaymentTelcellCallbackRoute =
     path: '/api/payment/telcell-callback',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiStaffAccountsRoute = ApiStaffAccountsRouteImport.update({
+  id: '/api/staff/accounts',
+  path: '/api/staff/accounts',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiIdeasRunsRunIdRoute = ApiIdeasRunsRunIdRouteImport.update({
   id: '/api/ideas/runs/$runId',
   path: '/api/ideas/runs/$runId',
@@ -125,6 +131,7 @@ export interface FileRoutesByFullPath {
   '/api/payment/arca-callback': typeof ApiPaymentArcaCallbackRoute
   '/api/payment/idram-callback': typeof ApiPaymentIdramCallbackRoute
   '/api/payment/telcell-callback': typeof ApiPaymentTelcellCallbackRoute
+  '/api/staff/accounts': typeof ApiStaffAccountsRoute
   '/api/ideas/runs/$runId': typeof ApiIdeasRunsRunIdRoute
 }
 export interface FileRoutesByTo {
@@ -143,6 +150,7 @@ export interface FileRoutesByTo {
   '/api/payment/arca-callback': typeof ApiPaymentArcaCallbackRoute
   '/api/payment/idram-callback': typeof ApiPaymentIdramCallbackRoute
   '/api/payment/telcell-callback': typeof ApiPaymentTelcellCallbackRoute
+  '/api/staff/accounts': typeof ApiStaffAccountsRoute
   '/api/ideas/runs/$runId': typeof ApiIdeasRunsRunIdRoute
 }
 export interface FileRoutesById {
@@ -162,6 +170,7 @@ export interface FileRoutesById {
   '/api/payment/arca-callback': typeof ApiPaymentArcaCallbackRoute
   '/api/payment/idram-callback': typeof ApiPaymentIdramCallbackRoute
   '/api/payment/telcell-callback': typeof ApiPaymentTelcellCallbackRoute
+  '/api/staff/accounts': typeof ApiStaffAccountsRoute
   '/api/ideas/runs/$runId': typeof ApiIdeasRunsRunIdRoute
 }
 export interface FileRouteTypes {
@@ -182,6 +191,7 @@ export interface FileRouteTypes {
     | '/api/payment/arca-callback'
     | '/api/payment/idram-callback'
     | '/api/payment/telcell-callback'
+    | '/api/staff/accounts'
     | '/api/ideas/runs/$runId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -200,6 +210,7 @@ export interface FileRouteTypes {
     | '/api/payment/arca-callback'
     | '/api/payment/idram-callback'
     | '/api/payment/telcell-callback'
+    | '/api/staff/accounts'
     | '/api/ideas/runs/$runId'
   id:
     | '__root__'
@@ -218,6 +229,7 @@ export interface FileRouteTypes {
     | '/api/payment/arca-callback'
     | '/api/payment/idram-callback'
     | '/api/payment/telcell-callback'
+    | '/api/staff/accounts'
     | '/api/ideas/runs/$runId'
   fileRoutesById: FileRoutesById
 }
@@ -237,6 +249,7 @@ export interface RootRouteChildren {
   ApiPaymentArcaCallbackRoute: typeof ApiPaymentArcaCallbackRoute
   ApiPaymentIdramCallbackRoute: typeof ApiPaymentIdramCallbackRoute
   ApiPaymentTelcellCallbackRoute: typeof ApiPaymentTelcellCallbackRoute
+  ApiStaffAccountsRoute: typeof ApiStaffAccountsRoute
   ApiIdeasRunsRunIdRoute: typeof ApiIdeasRunsRunIdRoute
 }
 
@@ -347,6 +360,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPaymentTelcellCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/staff/accounts': {
+      id: '/api/staff/accounts'
+      path: '/api/staff/accounts'
+      fullPath: '/api/staff/accounts'
+      preLoaderRoute: typeof ApiStaffAccountsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/ideas/runs/$runId': {
       id: '/api/ideas/runs/$runId'
       path: '/api/ideas/runs/$runId'
@@ -373,6 +393,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPaymentArcaCallbackRoute: ApiPaymentArcaCallbackRoute,
   ApiPaymentIdramCallbackRoute: ApiPaymentIdramCallbackRoute,
   ApiPaymentTelcellCallbackRoute: ApiPaymentTelcellCallbackRoute,
+  ApiStaffAccountsRoute: ApiStaffAccountsRoute,
   ApiIdeasRunsRunIdRoute: ApiIdeasRunsRunIdRoute,
 }
 export const routeTree = rootRouteImport

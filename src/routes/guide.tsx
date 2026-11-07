@@ -10,10 +10,10 @@ import { Label } from "@/components/ui/label";
 import {
   getAdminServerSnapshot,
   getAdminSnapshot,
+  ensureAccountRestored,
+  getAccountStatus,
   getTouristServerSnapshot,
   getTouristSnapshot,
-  hydrateAdmin,
-  refreshStoredDirectory,
   signInGuide,
   signOutTourist,
   subscribeAdmin,
@@ -22,11 +22,8 @@ import {
 import {
   getPortalServerSnapshot,
   getPortalSnapshot,
-  loadTourManifest,
-  openGuideSession,
-  restoreGuideSession,
+  loadDepartureManifest,
   setAttendance,
-  signOutGuide,
   subscribePortal,
   type StaffProfile,
 } from "@/lib/guide-api";
@@ -48,84 +45,49 @@ function GuidePage() {
   const navigate = useNavigate();
   const portal = useSyncExternalStore(subscribePortal, getPortalSnapshot, getPortalServerSnapshot);
   const currentUser = useSyncExternalStore(subscribeTourist, getTouristSnapshot, getTouristServerSnapshot);
+  const accountStatus = useSyncExternalStore(subscribeTourist, getAccountStatus, () => "ready" as const);
   const users = useSyncExternalStore(subscribeAdmin, getAdminSnapshot, getAdminServerSnapshot).users;
   const [ready, setReady] = useState(false);
   const [bootError, setBootError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
-    hydrateAdmin();
-    refreshStoredDirectory();
-    const session = getTouristSnapshot();
-    const directory = getAdminSnapshot().users.find((user) => user.id === session?.id);
-    const role = directory?.role ?? session?.role;
-    const finish = () => {
-      if (!cancelled) setReady(true);
-    };
-    if (session && role === "guide") {
-      openGuideSession({
-        id: session.id,
-        fullName: directory?.fullName ?? session.fullName,
-        phone: directory?.phone ?? session.phone,
-        email: directory?.email ?? session.email,
-        role: "guide",
-      });
-      finish();
-      return () => {
-        cancelled = true;
-      };
-    }
-    if (session) {
-      finish();
-      return () => {
-        cancelled = true;
-      };
-    }
-    restoreGuideSession()
+    ensureAccountRestored()
       .catch((error: unknown) => {
         if (!cancelled) setBootError(error instanceof Error ? error.message : "Մուտքը չվերականգնվեց։");
       })
-      .finally(finish);
+      .finally(() => {
+        if (!cancelled) setReady(true);
+      });
     return () => {
       cancelled = true;
     };
   }, []);
 
+  const accountReady = accountStatus === "ready";
   const directoryUser = currentUser ? users.find((user) => user.id === currentUser.id) : undefined;
-  const accountRole = directoryUser?.role ?? currentUser?.role;
+  const accountRole = accountReady ? (directoryUser?.role ?? currentUser?.role) : undefined;
   const guideRole = accountRole === "guide";
   const profile = guideRole && portal.profile?.role === "guide" ? portal.profile : null;
-  const denied = ready && currentUser !== null && !guideRole;
+  const denied = ready && accountReady && currentUser !== null && !guideRole;
 
   useEffect(() => {
-    if (!ready || !currentUser || guideRole) return;
+    if (!ready || !accountReady || !currentUser || guideRole) return;
     if (accountRole === "driver") void navigate({ to: "/driver" });
     else void navigate({ to: "/" });
-  }, [ready, currentUser, guideRole, accountRole, navigate]);
-
-  useEffect(() => {
-    if (!ready || !currentUser || !guideRole) return;
-    if (portal.profile?.id === currentUser.id && portal.profile.role === "guide") return;
-    openGuideSession({
-      id: currentUser.id,
-      fullName: directoryUser?.fullName ?? currentUser.fullName,
-      phone: directoryUser?.phone ?? currentUser.phone,
-      email: directoryUser?.email ?? currentUser.email,
-      role: "guide",
-    });
-  }, [ready, currentUser, guideRole, directoryUser, portal.profile]);
+  }, [ready, accountReady, currentUser, guideRole, accountRole, navigate]);
 
   return (
     <div className="min-h-screen bg-background">
       <SiteHeader />
       <main className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-10">
-        {!ready && <p className="text-sm text-muted-foreground">Բեռնվում է...</p>}
+        {(!ready || !accountReady) && <p className="text-sm text-muted-foreground">Բեռնվում է...</p>}
         {ready && bootError && (
           <p className="mb-4 rounded-2xl bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive">{bootError}</p>
         )}
         {denied && <p className="text-sm text-muted-foreground">Բեռնվում է...</p>}
-        {ready && !denied && !profile && <GuideSignIn />}
-        {ready && profile && <GuideHome profile={profile} users={users} />}
+        {ready && accountReady && !denied && !profile && <GuideSignIn />}
+        {ready && accountReady && profile && <GuideHome profile={profile} users={users} />}
       </main>
     </div>
   );
@@ -187,9 +149,9 @@ function GuideHome({
 }) {
   const portal = useSyncExternalStore(subscribePortal, getPortalSnapshot, getPortalServerSnapshot);
   const tours = portal.tours.filter((tour) => tour.guideId === profile.id);
-  const tourKey = tours.map((tour) => tour.id).join("|");
+  const tourKey = tours.map((tour) => tour.departureId).join("|");
   const [openId, setOpenId] = useState("");
-  const openTour = tours.find((tour) => tour.id === openId) ?? null;
+  const openTour = tours.find((tour) => tour.departureId === openId) ?? null;
 
   useEffect(() => {
     const ids = tourKey ? tourKey.split("|") : [];
@@ -200,7 +162,7 @@ function GuideHome({
   useEffect(() => {
     if (!openTour) return;
     let cancelled = false;
-    void loadTourManifest(openTour.id, openTour.departureDate).catch(() => {
+    void loadDepartureManifest(openTour.departureId).catch(() => {
       if (cancelled) return;
     });
     return () => {
@@ -229,7 +191,6 @@ function GuideHome({
           className="rounded-full"
           onClick={() => {
             signOutTourist();
-            void signOutGuide();
           }}
         >
           <LogOut className="h-4 w-4" />
@@ -243,14 +204,14 @@ function GuideHome({
       ) : (
         tours.map((tour) => {
           const driver = users.find((user) => user.id === tour.driverId && user.role === "driver") ?? null;
-          const open = tour.id === openId;
+          const open = tour.departureId === openId;
           const passengers = portal.bookings
-            .filter((booking) => booking.tourId === tour.id)
+            .filter((booking) => booking.departureId === tour.departureId)
             .slice()
             .sort((a, b) => a.seatNumber - b.seatNumber);
           return (
-            <article key={tour.id} className="space-y-4 rounded-3xl border border-border bg-card p-4 sm:p-5">
-              <button type="button" className="w-full text-left" aria-expanded={open} onClick={() => setOpenId(tour.id)}>
+            <article key={tour.departureId} className="space-y-4 rounded-3xl border border-border bg-card p-4 sm:p-5">
+              <button type="button" className="w-full text-left" aria-expanded={open} onClick={() => setOpenId(tour.departureId)}>
                 <h2 className="text-lg font-black leading-snug">{tour.title}</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
                   {formatAssignedDepartureDate(tour.departureDate)} · մեկնում {tour.departureTime}

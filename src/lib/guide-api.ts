@@ -23,6 +23,7 @@ export type StaffProfile = {
 
 export type AssignedTour = {
   id: string;
+  departureId: string;
   title: string;
   departurePlace: string;
   departureTime: string;
@@ -46,6 +47,7 @@ export type BookingRecord = {
   paymentStatus: PaymentState | null;
   amount: number;
   attendance: AttendanceStatus | null;
+  departureId?: string;
 };
 
 export type TourPhoto = {
@@ -85,6 +87,7 @@ function upcomingDate(day: "saturday" | "sunday") {
 function seedTours(): AssignedTour[] {
   return tours.map((tour) => ({
     id: tour.id,
+    departureId: tour.id,
     title: tour.title_hy,
     departurePlace: tour.departurePlace,
     departureTime: tour.departureTime,
@@ -184,6 +187,7 @@ function readSavedData(): Pick<PortalState, "tours" | "bookings" | "photos"> | n
 }
 
 let state: PortalState = (() => {
+  if (isSupabaseConfigured) return { profile: null, tours: [], bookings: [], photos: [] };
   const saved = readSavedData();
   return {
     profile: null,
@@ -311,8 +315,8 @@ export async function restoreGuideSession() {
   }
   try {
     const profile = await requireStaffProfile(userId);
-    const assigned = await listAssignedTours(profile.id);
-    setState({ profile, tours: assigned });
+    const assigned = await listAssignedDepartures(profile.id, "guide");
+    setState({ profile, tours: assigned, bookings: [] });
     return profile;
   } catch (error) {
     setState({ profile: null, tours: [], bookings: [], photos: [] });
@@ -331,26 +335,41 @@ export async function signOutGuide() {
   });
 }
 
-export async function listAssignedTours(userId: string): Promise<AssignedTour[]> {
+export async function listAssignedDepartures(userId: string, role: "guide" | "driver"): Promise<AssignedTour[]> {
   if (!supabase) {
-    return state.tours.filter((tour) => tour.guideId === userId);
+    return state.tours.filter((tour) => (role === "guide" ? tour.guideId === userId : tour.driverId === userId));
   }
+  const column = role === "guide" ? "guide_id" : "driver_id";
   const { data, error } = await supabase
-    .from("tours")
-    .select("id, title_hy, departure_place, departure_time, departure_date, status, guide_id, driver_id")
-    .eq("guide_id", userId)
+    .from("departures")
+    .select("id, tour_id, departure_date, guide_id, driver_id")
+    .eq(column, userId)
     .order("departure_date");
-  if (error) throw new Error("Տուրերի ցանկը չբեռնվեց։");
-  return data.map((row) => ({
-    id: row.id,
-    title: row.title_hy,
-    departurePlace: row.departure_place ?? "",
-    departureTime: row.departure_time ?? "",
-    departureDate: row.departure_date ?? "",
-    status: row.status ?? "scheduled",
-    guideId: row.guide_id,
-    driverId: row.driver_id,
-  }));
+  if (error) throw new Error("Մեկնումները չբեռնվեցին։");
+  const tourIds = [...new Set(data.map((row) => row.tour_id))];
+  const tourResult = tourIds.length
+    ? await supabase.from("tours").select("id, title_hy, departure_place, departure_time").in("id", tourIds)
+    : { data: [], error: null };
+  if (tourResult.error) throw new Error("Մեկնումները չբեռնվեցին։");
+  const toursById = new Map((tourResult.data ?? []).map((tour) => [tour.id, tour]));
+  return data.map((row) => {
+    const tour = toursById.get(row.tour_id);
+    return {
+      id: row.tour_id,
+      departureId: row.id,
+      title: tour?.title_hy ?? row.tour_id,
+      departurePlace: tour?.departure_place ?? "",
+      departureTime: tour?.departure_time ?? "",
+      departureDate: row.departure_date,
+      status: "scheduled" as const,
+      guideId: row.guide_id,
+      driverId: row.driver_id,
+    };
+  });
+}
+
+export async function listAssignedTours(userId: string): Promise<AssignedTour[]> {
+  return listAssignedDepartures(userId, "guide");
 }
 
 export function assignPortalStaff(tourId: string, guideId: string | null, driverId: string | null) {
@@ -358,6 +377,10 @@ export function assignPortalStaff(tourId: string, guideId: string | null, driver
   setState({
     tours: state.tours.map((tour) => (tour.id === tourId ? { ...tour, guideId, driverId } : tour)),
   });
+}
+
+export function replaceAssignedTours(tours: AssignedTour[]) {
+  setState({ tours, bookings: [] });
 }
 
 export function upsertPortalTour(input: {
@@ -368,10 +391,13 @@ export function upsertPortalTour(input: {
   departureDate: string;
   guideId: string | null;
   driverId: string | null;
+  departureId?: string;
 }) {
-  const existing = state.tours.find((tour) => tour.id === input.id);
+  const departureId = input.departureId ?? "";
+  const existing = state.tours.find((tour) => tour.departureId === departureId && tour.id === input.id);
   const next: AssignedTour = {
     id: input.id,
+    departureId,
     title: input.title,
     departurePlace: input.departurePlace,
     departureTime: input.departureTime,
@@ -382,7 +408,7 @@ export function upsertPortalTour(input: {
   };
   setState({
     tours: existing
-      ? state.tours.map((tour) => (tour.id === input.id ? next : tour))
+      ? state.tours.map((tour) => (tour.departureId === departureId && tour.id === input.id ? next : tour))
       : [...state.tours, next],
   });
 }
@@ -418,6 +444,23 @@ export async function listBookings(tourId: string): Promise<BookingRecord[]> {
     .order("seat_number");
   if (error) throw new Error("Ուղևորացուցակը չբեռնվեց։");
   return data.map(mapBooking);
+}
+
+export async function loadDepartureManifest(departureId: string) {
+  if (!departureId) return [];
+  if (!supabase) return state.bookings.filter((booking) => booking.departureId === departureId);
+  const { data, error } = await supabase
+    .from("bookings")
+    .select(
+      "id, tour_id, departure_id, passenger_name, phone, seat_number, ticket_code, status, adults, children, payment_provider, payment_status, amount, attendance",
+    )
+    .eq("departure_id", departureId)
+    .order("seat_number");
+  if (error) throw new Error("Ուղևորացուցակը չբեռնվեց։");
+  const manifest = data.map(mapBooking);
+  const rest = state.bookings.filter((booking) => booking.departureId !== departureId);
+  setState({ bookings: [...rest, ...manifest] });
+  return manifest;
 }
 
 export async function loadTourManifest(tourId: string, departureDate = "") {
@@ -466,8 +509,9 @@ function mapBooking(row: {
   amount?: number | null;
   total_price?: number | null;
   attendance?: string | null;
+  departure_id?: string | null;
 }): BookingRecord {
-  return {
+  const booking: BookingRecord = {
     id: row.id,
     tourId: row.tour_id ?? "",
     passengerName: row.passenger_name ?? "",
@@ -482,6 +526,8 @@ function mapBooking(row: {
     amount: row.amount ?? row.total_price ?? 0,
     attendance: attendanceOf(row.attendance),
   };
+  if (typeof row.departure_id === "string") booking.departureId = row.departure_id;
+  return booking;
 }
 
 function nextSeat(tourId: string) {

@@ -4,17 +4,19 @@ import tatevPhoto from "@/assets/tour-tatev.jpg";
 import { getTourById, tours, type Tour } from "@/data/tours";
 import type { PaymentProviderName, PaymentState, UserRole } from "@/lib/database.types";
 import {
-  assignPortalStaff,
   getPortalSnapshot,
   LOCAL_DRIVER_ID,
   LOCAL_STAFF_ID,
   clearGuideProfile,
+  listAssignedDepartures,
   openGuideSession,
   removePortalTour,
+  replaceAssignedTours,
   upcomingDepartureDate,
   upsertPortalTour,
   type BookingRecord,
 } from "@/lib/guide-api";
+import { assigneeRoleError, isExplicitDepartureDate } from "@/lib/departure-assignment";
 import { loadPublicStaff, type PublicStaffMember } from "@/lib/crew";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import {
@@ -215,6 +217,8 @@ const serverSnapshot: AdminState = {
 let state: AdminState = serverSnapshot;
 let tourist: TouristSession | null = null;
 let hydrated = false;
+let accountStatus: "checking" | "ready" = "ready";
+let accountRestore: Promise<void> | null = null;
 const listeners = new Set<() => void>();
 const touristListeners = new Set<() => void>();
 
@@ -343,12 +347,19 @@ export function getTouristServerSnapshot(): TouristSession | null {
   return null;
 }
 
+export function getAccountStatus() {
+  return accountStatus;
+}
+
 export function signOutTourist() {
-  const role = tourist?.role;
   tourist = null;
+  accountStatus = "ready";
   if (typeof localStorage !== "undefined") localStorage.removeItem(TOURIST_KEY);
+  clearGuideProfile();
+  replaceAssignedTours([]);
+  setState({ session: null });
   emitTourist();
-  if (role === "guide") clearGuideProfile();
+  if (supabase) void supabase.auth.signOut();
 }
 
 export function getCashbackRate() {
@@ -583,12 +594,107 @@ export function hydrateAdmin() {
     state = { ...state, catalogStatus: "loaded" };
     emit();
   }
+  if (isSupabaseConfigured) {
+    if (!accountRestore) {
+      tourist = null;
+      accountStatus = "checking";
+      emitTourist();
+    }
+    void ensureAccountRestored();
+    return;
+  }
   const nextTourist = readTourist(state.users);
   if (!nextTourist && typeof localStorage !== "undefined" && localStorage.getItem(TOURIST_KEY)) {
     localStorage.removeItem(TOURIST_KEY);
   }
   tourist = nextTourist;
+  accountStatus = "ready";
   emitTourist();
+}
+
+export function ensureAccountRestored() {
+  if (!isSupabaseConfigured || !supabase) {
+    accountStatus = "ready";
+    emitTourist();
+    return Promise.resolve();
+  }
+  if (!accountRestore) {
+    accountStatus = "checking";
+    emitTourist();
+    accountRestore = restoreAccountFromAuth().finally(() => {
+      accountStatus = "ready";
+      emitTourist();
+    });
+  }
+  return accountRestore;
+}
+
+async function restoreAccountFromAuth() {
+  if (!supabase) return;
+  const { data } = await supabase.auth.getSession();
+  const session = data.session;
+  const userId = session?.user.id;
+  if (!userId || !session) {
+    tourist = null;
+    if (typeof localStorage !== "undefined") localStorage.removeItem(TOURIST_KEY);
+    clearGuideProfile();
+    replaceAssignedTours([]);
+    setState({ session: null });
+    return;
+  }
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("id, full_name, phone, email, role, avatar_url, bio, birth_date")
+    .eq("id", userId)
+    .maybeSingle();
+  if (!profile) {
+    tourist = null;
+    if (typeof localStorage !== "undefined") localStorage.removeItem(TOURIST_KEY);
+    clearGuideProfile();
+    setState({ session: null });
+    return;
+  }
+  if (profile.role === "admin") {
+    tourist = null;
+    if (typeof localStorage !== "undefined") localStorage.removeItem(TOURIST_KEY);
+    clearGuideProfile();
+    replaceAssignedTours([]);
+    setState({
+      session: {
+        id: profile.id,
+        fullName: profile.full_name,
+        email: profile.email ?? session.user.email ?? "",
+        role: "admin",
+      },
+    });
+    return;
+  }
+  if (profile.role !== "tourist" && profile.role !== "guide" && profile.role !== "driver") {
+    tourist = null;
+    clearGuideProfile();
+    setState({ session: null });
+    return;
+  }
+  const account = userFromRow(profile);
+  setState({ session: null });
+  openAccountSession(account, session.access_token);
+  if (account.role === "guide") {
+    openGuideSession({
+      id: account.id,
+      fullName: account.fullName,
+      phone: account.phone,
+      email: account.email,
+      role: "guide",
+    });
+  } else {
+    clearGuideProfile();
+  }
+  if (account.role === "guide" || account.role === "driver") {
+    const assigned = await listAssignedDepartures(account.id, account.role);
+    replaceAssignedTours(assigned);
+  } else {
+    replaceAssignedTours([]);
+  }
 }
 
 export function resolveTour(id: string): Tour | null {
@@ -613,11 +719,6 @@ function syncPortal(tour: ManagedTour) {
     guideId: tour.guideId,
     driverId: tour.driverId,
   });
-}
-
-function asUuid(value: string | null) {
-  if (!value) return null;
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value) ? value : null;
 }
 
 function commitSavedTour(saved: ManagedTour) {
@@ -656,34 +757,93 @@ export async function deleteTour(tourId: string) {
   removePortalTour(tourId);
 }
 
-export async function assignStaff(tourId: string, guideId: string | null, driverId: string | null) {
-  const tour = state.tours.find((item) => item.id === tourId);
-  if (!tour) throw new Error("Տուրը չի գտնվել։");
-  const next = { ...tour, guideId, driverId };
-  setState({ tours: state.tours.map((item) => (item.id === tourId ? next : item)) });
-  assignPortalStaff(tourId, guideId, driverId);
-  if (!supabase) return;
-  const weekend = assignedWeekendDay(tour.day);
-  if (!weekend) return;
-  const departureDate = upcomingDepartureDate(weekend);
-  const payload = {
-    tour_id: tourId,
-    departure_date: departureDate,
-    available_seats: tour.seatsLeft,
-    guide_id: asUuid(guideId),
-    driver_id: asUuid(driverId),
-  };
-  const { data: existing, error: lookupError } = await supabase
+export type CatalogDeparture = {
+  id: string;
+  tourId: string;
+  departureDate: string;
+  availableSeats: number;
+  guideId: string | null;
+  driverId: string | null;
+};
+
+async function requireAssignee(expected: "guide" | "driver", accountId: string | null) {
+  if (!accountId) return;
+  if (!supabase) {
+    const role = state.users.find((user) => user.id === accountId)?.role ?? null;
+    const message = assigneeRoleError(expected, role);
+    if (message) throw new Error(message);
+    return;
+  }
+  const { data, error } = await supabase.from("profiles").select("role").eq("id", accountId).maybeSingle();
+  if (error || !data) throw new Error("Ընտրված հաշիվը չի գտնվել։");
+  const message = assigneeRoleError(expected, data.role);
+  if (message) throw new Error(message);
+}
+
+export async function loadDepartures(): Promise<CatalogDeparture[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
     .from("departures")
-    .select("id")
-    .eq("tour_id", tourId)
-    .eq("departure_date", departureDate)
-    .maybeSingle();
-  if (lookupError) throw new Error("Նշանակումը Supabase-ում չպահպանվեց։ Տեղային տարբերակը թարմացվեց։");
-  const { error } = existing
-    ? await supabase.from("departures").update(payload).eq("id", existing.id)
-    : await supabase.from("departures").insert(payload);
-  if (error) throw new Error("Նշանակումը Supabase-ում չպահպանվեց։ Տեղային տարբերակը թարմացվեց։");
+    .select("id, tour_id, departure_date, available_seats, guide_id, driver_id")
+    .order("departure_date");
+  if (error) throw new Error("Մեկնումները չբեռնվեցին։");
+  return data.map((row) => ({
+    id: row.id,
+    tourId: row.tour_id,
+    departureDate: row.departure_date,
+    availableSeats: row.available_seats,
+    guideId: row.guide_id,
+    driverId: row.driver_id,
+  }));
+}
+
+export async function loadAssignmentConflicts(): Promise<{ tourId: string; reason: string }[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("departure_assignment_conflicts")
+    .select("tour_id, reason")
+    .order("tour_id");
+  if (error) throw new Error("Կոնֆլիկտները չբեռնվեցին։");
+  return data.map((row) => ({ tourId: row.tour_id, reason: row.reason }));
+}
+
+export async function createDeparture(tourId: string, departureDate: string, seats: number) {
+  if (!isExplicitDepartureDate(departureDate)) throw new Error("Նշեք մեկնման ամսաթիվը։");
+  if (!supabase) throw new Error("Supabase-ը կարգավորված չէ։");
+  const { data, error } = await supabase
+    .from("departures")
+    .insert({
+      tour_id: tourId,
+      departure_date: departureDate,
+      available_seats: Math.max(0, Math.round(seats)),
+    })
+    .select("id, tour_id, departure_date, available_seats, guide_id, driver_id")
+    .single();
+  if (error || !data) throw new Error("Մեկնումը չպահպանվեց։");
+  return {
+    id: data.id,
+    tourId: data.tour_id,
+    departureDate: data.departure_date,
+    availableSeats: data.available_seats,
+    guideId: data.guide_id,
+    driverId: data.driver_id,
+  } satisfies CatalogDeparture;
+}
+
+export async function assignDepartureCrew(
+  departureId: string,
+  guideId: string | null,
+  driverId: string | null,
+) {
+  await requireAssignee("guide", guideId);
+  await requireAssignee("driver", driverId);
+  if (!supabase) throw new Error("Supabase-ը կարգավորված չէ։");
+  const { data, error } = await supabase
+    .from("departures")
+    .update({ guide_id: guideId, driver_id: driverId })
+    .eq("id", departureId)
+    .select("id");
+  if (error || !data?.length) throw new Error("Նշանակումը չպահպանվեց։");
 }
 
 export async function saveSettings(settings: SiteSettings) {
@@ -747,6 +907,7 @@ export async function updateDirectoryUser(next: DirectoryUser) {
     avatarUrl: next.avatarUrl.trim(),
     bio: next.bio.trim(),
     role: normalizeRole(next.role),
+    password: isSupabaseConfigured ? "" : next.password,
   };
   if (!saved.fullName) throw new Error("Գրեք օգտատիրոջ անունը։");
   const emailKey = saved.email.trim().toLowerCase();
@@ -976,6 +1137,12 @@ export async function signInTourist(identifier: string, password: string) {
     } else {
       clearGuideProfile();
     }
+    if (account.role === "guide" || account.role === "driver") {
+      replaceAssignedTours(await listAssignedDepartures(account.id, account.role));
+    } else {
+      replaceAssignedTours([]);
+    }
+    setState({ session: null });
     return openAccountSession(account, data.session.access_token);
   }
   if (!canUseLocalDevSeeds()) throw new Error("Supabase-ը կարգավորված չէ։");
@@ -1012,6 +1179,44 @@ export async function createStaffAccount(input: {
   avatarUrl: string;
   bio: string;
 }) {
+  if (isSupabaseConfigured && supabase) {
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) throw new Error("Մուտքը չի հաստատվել։");
+    const response = await fetch("/api/staff/accounts", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        role: input.role,
+        fullName: input.fullName,
+        phone: input.phone,
+        email: input.email,
+        password: input.password,
+        avatarUrl: input.avatarUrl,
+        bio: input.bio,
+      }),
+    });
+    const payload = (await response.json().catch(() => null)) as { error?: unknown; id?: unknown } | null;
+    if (!response.ok || !payload || typeof payload.id !== "string") {
+      throw new Error(typeof payload?.error === "string" ? payload.error : "Հաշիվը չստեղծվեց։");
+    }
+    const account: DirectoryUser = {
+      id: payload.id,
+      fullName: input.fullName.trim(),
+      phone: input.phone.trim(),
+      email: input.email.trim().toLowerCase(),
+      password: "",
+      role: input.role,
+      avatarUrl: input.avatarUrl.trim(),
+      bio: input.bio.trim(),
+      birthDate: "",
+    };
+    setState({ users: [...state.users.filter((user) => user.id !== account.id), account] });
+    return account;
+  }
   const fullName = input.fullName.trim();
   const phone = input.phone.trim();
   const email = input.email.trim().toLowerCase();
@@ -1073,6 +1278,8 @@ export async function signInGuide(email: string, password: string) {
       },
       data.session.access_token,
     );
+    replaceAssignedTours(await listAssignedDepartures(profile.id, "guide"));
+    setState({ session: null });
     return profile;
   }
   if (!canUseLocalDevSeeds()) throw new Error("Supabase-ը կարգավորված չէ։");
@@ -1144,7 +1351,12 @@ export async function signInAdmin(email: string, password: string) {
       email: profile.email ?? trimmed,
       role: "admin",
     };
+    tourist = null;
+    if (typeof localStorage !== "undefined") localStorage.removeItem(TOURIST_KEY);
+    clearGuideProfile();
+    replaceAssignedTours([]);
     setState({ session });
+    emitTourist();
     return session;
   }
   if (!canUseLocalDevAdmin()) throw new Error(ADMIN_UNAVAILABLE_ERROR);
@@ -1157,8 +1369,7 @@ export function signInMockAdmin() {
 }
 
 export async function signOutAdmin() {
-  setState({ session: null });
-  if (supabase) await supabase.auth.signOut();
+  signOutTourist();
 }
 
 export async function restoreAdminSession() {
@@ -1170,27 +1381,6 @@ export async function restoreAdminSession() {
     }
     return state.session;
   }
-  const { data } = await supabase.auth.getSession();
-  const userId = data.session?.user.id;
-  if (!userId) {
-    setState({ session: null });
-    return null;
-  }
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("id, full_name, email, role")
-    .eq("id", userId)
-    .maybeSingle();
-  if (!profile || profile.role !== "admin") {
-    setState({ session: null });
-    return null;
-  }
-  const session: AdminSession = {
-    id: profile.id,
-    fullName: profile.full_name,
-    email: profile.email ?? "",
-    role: "admin",
-  };
-  setState({ session });
-  return session;
+  await ensureAccountRestored();
+  return state.session?.role === "admin" ? state.session : null;
 }

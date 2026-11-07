@@ -35,13 +35,16 @@ import { formatAmd, regions, tourTypes, type AudioChapter, type AudioLanguage, t
 import { columnsToLocalized, emptyLocalized, tourLocation, tourTitle, trimLocalized, type LocaleCode, type LocalizedText } from "@/lib/locale";
 import { cn } from "@/lib/utils";
 import {
-  assignStaff,
+  assignDepartureCrew,
+  createDeparture,
   deleteTour,
   getAdminServerSnapshot,
   getAdminSnapshot,
   loadAdminBookings,
   createStaffAccount,
   updateDirectoryUser,
+  loadAssignmentConflicts,
+  loadDepartures,
   loadDirectory,
   retryLiveCatalog,
   saveSettings,
@@ -51,6 +54,7 @@ import {
   defaultSettings,
   type AdminSession,
   type DirectoryUser,
+  type CatalogDeparture,
   type ManagedTour,
   type SiteSettings,
 } from "@/lib/admin";
@@ -1034,6 +1038,26 @@ function StaffSection({
   const drivers = users.filter((member) => member.role === "driver");
   const [draft, setDraft] = useState<StaffDraft>(emptyStaffDraft);
   const [savingStaff, setSavingStaff] = useState(false);
+  const [departures, setDepartures] = useState<CatalogDeparture[]>([]);
+  const [conflicts, setConflicts] = useState<{ tourId: string; reason: string }[]>([]);
+  const [departureDates, setDepartureDates] = useState<Record<string, string>>({});
+  const [departureError, setDepartureError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([loadDepartures(), loadAssignmentConflicts()])
+      .then(([nextDepartures, nextConflicts]) => {
+        if (cancelled) return;
+        setDepartures(nextDepartures);
+        setConflicts(nextConflicts);
+      })
+      .catch((caught: unknown) => {
+        if (!cancelled) setDepartureError(caught instanceof Error ? caught.message : "Մեկնումները չբեռնվեցին։");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleEditStaff = (member: DirectoryUser) => {
     if (member.role !== "guide" && member.role !== "driver") return;
@@ -1086,12 +1110,31 @@ function StaffSection({
     }
   };
 
-  const change = async (tourId: string, guideId: string | null, driverId: string | null) => {
+  const changeDeparture = async (
+    departure: CatalogDeparture,
+    guideId: string | null,
+    driverId: string | null,
+  ) => {
     try {
-      await assignStaff(tourId, guideId, driverId);
+      await assignDepartureCrew(departure.id, guideId, driverId);
+      setDepartures((current) =>
+        current.map((item) => (item.id === departure.id ? { ...item, guideId, driverId } : item)),
+      );
       toast.success("Նշանակումը պահվեց");
     } catch (caught) {
-      toast.error(caught instanceof Error ? caught.message : "Նշանակումը չպահվեց։");
+      toast.error(caught instanceof Error ? caught.message : "Նշանակումը չպահպանվեց։");
+    }
+  };
+
+  const addDeparture = async (tour: ManagedTour) => {
+    const departureDate = departureDates[tour.id] ?? "";
+    try {
+      const created = await createDeparture(tour.id, departureDate, tour.seatsLeft);
+      setDepartures((current) => [...current, created].sort((a, b) => a.departureDate.localeCompare(b.departureDate)));
+      setDepartureDates((current) => ({ ...current, [tour.id]: "" }));
+      toast.success("Մեկնումը ավելացվեց");
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "Մեկնումը չպահպանվեց։");
     }
   };
 
@@ -1150,52 +1193,92 @@ function StaffSection({
           <p className="text-xs font-bold uppercase tracking-wide text-primary">Տուրերի նշանակումներ</p>
           <h2 className="mt-1 text-xl font-black tracking-tight">2. Տուրերի զբոսավարներ և վարորդներ</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Յուրաքանչյուր մեկնման համար ընտրեք զբոսավար և վարորդ գրանցված կարգավիճակներից։
+            Նշանակումը կապվում է կոնկրետ մեկնման հետ։ Ամսաթիվը ընտրեք ինքներդ. հաջորդ շաբաթվա օրը ինքնաբերաբար չի դրվում։
           </p>
         </div>
+        {departureError && <p className="text-sm font-medium text-destructive">{departureError}</p>}
+        {conflicts.length > 0 && (
+          <ul className="space-y-2 rounded-2xl bg-card px-4 py-3 text-sm">
+            {conflicts.map((conflict) => (
+              <li key={`${conflict.tourId}-${conflict.reason}`}>
+                <span className="font-semibold">{conflict.tourId}</span>
+                <span className="text-muted-foreground"> · {conflict.reason}</span>
+              </li>
+            ))}
+          </ul>
+        )}
         {tours.length === 0 ? (
           <p className="rounded-2xl bg-card px-4 py-3 text-sm text-muted-foreground">Ֆիզիկական տուրեր դեռ չկան։</p>
         ) : (
           <div className="space-y-3">
-            {tours.map((tour) => (
-              <article key={tour.id} className="space-y-3 rounded-3xl border border-border bg-card p-4">
-                <h3 className="text-sm font-bold leading-snug">{tourTitle(tour)}</h3>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label="Զբոսավար" id={`guide-${tour.id}`}>
-                    <Select
-                      value={tour.guideId && guides.some((member) => member.id === tour.guideId) ? tour.guideId : "unassigned"}
-                      onValueChange={(value) => void change(tour.id, value === "unassigned" ? null : value, tour.driverId)}
-                    >
-                      <SelectTrigger id={`guide-${tour.id}`} className="rounded-2xl">
-                        <SelectValue placeholder="Ընտրել" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="unassigned">Չնշանակված</SelectItem>
-                        {guides.map((member) => (
-                          <SelectItem key={member.id} value={member.id}>{member.fullName}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                  <Field label="Վարորդ" id={`driver-${tour.id}`}>
-                    <Select
-                      value={tour.driverId && drivers.some((member) => member.id === tour.driverId) ? tour.driverId : "unassigned"}
-                      onValueChange={(value) => void change(tour.id, tour.guideId, value === "unassigned" ? null : value)}
-                    >
-                      <SelectTrigger id={`driver-${tour.id}`} className="rounded-2xl">
-                        <SelectValue placeholder="Ընտրել" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="unassigned">Չնշանակված</SelectItem>
-                        {drivers.map((member) => (
-                          <SelectItem key={member.id} value={member.id}>{member.fullName}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                </div>
-              </article>
-            ))}
+            {tours.map((tour) => {
+              const rows = departures.filter((item) => item.tourId === tour.id);
+              return (
+                <article key={tour.id} className="space-y-3 rounded-3xl border border-border bg-card p-4">
+                  <h3 className="text-sm font-bold leading-snug">{tourTitle(tour)}</h3>
+                  {rows.length === 0 && (
+                    <p className="text-sm text-muted-foreground">Այս տուրը դեռ կոնկրետ մեկնում չունի։ Նշեք ամսաթիվը։</p>
+                  )}
+                  {rows.map((departure) => (
+                    <div key={departure.id} className="grid gap-3 sm:grid-cols-2">
+                      <p className="sm:col-span-2 text-sm font-semibold">{departure.departureDate}</p>
+                      <Field label="Զբոսավար" id={`guide-${departure.id}`}>
+                        <Select
+                          value={departure.guideId && guides.some((member) => member.id === departure.guideId) ? departure.guideId : "unassigned"}
+                          onValueChange={(value) =>
+                            void changeDeparture(departure, value === "unassigned" ? null : value, departure.driverId)
+                          }
+                        >
+                          <SelectTrigger id={`guide-${departure.id}`} className="rounded-2xl">
+                            <SelectValue placeholder="Ընտրել" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="unassigned">Չնշանակված</SelectItem>
+                            {guides.map((member) => (
+                              <SelectItem key={member.id} value={member.id}>{member.fullName}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </Field>
+                      <Field label="Վարորդ" id={`driver-${departure.id}`}>
+                        <Select
+                          value={departure.driverId && drivers.some((member) => member.id === departure.driverId) ? departure.driverId : "unassigned"}
+                          onValueChange={(value) =>
+                            void changeDeparture(departure, departure.guideId, value === "unassigned" ? null : value)
+                          }
+                        >
+                          <SelectTrigger id={`driver-${departure.id}`} className="rounded-2xl">
+                            <SelectValue placeholder="Ընտրել" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="unassigned">Չնշանակված</SelectItem>
+                            {drivers.map((member) => (
+                              <SelectItem key={member.id} value={member.id}>{member.fullName}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </Field>
+                    </div>
+                  ))}
+                  <div className="flex flex-wrap items-end gap-2">
+                    <Field label="Մեկնման ամսաթիվ" id={`departure-date-${tour.id}`}>
+                      <Input
+                        id={`departure-date-${tour.id}`}
+                        type="date"
+                        value={departureDates[tour.id] ?? ""}
+                        onChange={(event) =>
+                          setDepartureDates((current) => ({ ...current, [tour.id]: event.target.value }))
+                        }
+                        className="rounded-2xl"
+                      />
+                    </Field>
+                    <Button type="button" variant="outline" className="rounded-full" onClick={() => void addDeparture(tour)}>
+                      Ավելացնել մեկնում
+                    </Button>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         )}
       </section>

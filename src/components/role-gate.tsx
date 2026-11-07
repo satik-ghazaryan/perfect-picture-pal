@@ -2,9 +2,10 @@ import { useEffect } from "react";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { useSyncExternalStore } from "react";
 import {
+  ensureAccountRestored,
+  getAccountStatus,
   getTouristServerSnapshot,
   getTouristSnapshot,
-  hydrateAdmin,
   subscribeTourist,
   type TouristSession,
 } from "@/lib/admin";
@@ -20,18 +21,19 @@ function restrictedRedirect(role: TouristSession["role"], pathname: string) {
 export function RoleGate() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const session = useSyncExternalStore(subscribeTourist, getTouristSnapshot, getTouristServerSnapshot);
+  const accountStatus = useSyncExternalStore(subscribeTourist, getAccountStatus, () => "ready" as const);
   const navigate = useNavigate();
 
   useEffect(() => {
-    hydrateAdmin();
+    void ensureAccountRestored();
   }, []);
 
   useEffect(() => {
-    if (!session) return;
+    if (accountStatus !== "ready" || !session) return;
     const next = restrictedRedirect(session.role, pathname);
     if (!next || next === pathname) return;
     void navigate({ to: next });
-  }, [session, pathname, navigate]);
+  }, [accountStatus, session, pathname, navigate]);
 
   return null;
 }

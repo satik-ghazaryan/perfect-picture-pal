@@ -214,6 +214,25 @@ export type Database = {
         };
         Relationships: [];
       };
+      departure_assignment_conflicts: {
+        Row: {
+          id: number;
+          tour_id: string;
+          reason: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: number;
+          tour_id: string;
+          reason: string;
+          created_at?: string;
+        };
+        Update: {
+          tour_id?: string;
+          reason?: string;
+        };
+        Relationships: [];
+      };
       departures: {
         Row: {
           id: string;

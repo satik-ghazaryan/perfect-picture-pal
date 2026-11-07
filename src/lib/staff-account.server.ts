@@ -1,0 +1,100 @@
+import { createClient } from "@supabase/supabase-js";
+import { requireAdmin, jsonError } from "@/lib/ideas-proxy.server";
+import {
+  createStaffAccountRecord,
+  isDuplicateStaffAuthError,
+  type StaffAccountDraft,
+  type StaffAccountRecord,
+} from "@/lib/staff-account";
+
+function envValue(name: string) {
+  if (typeof process === "undefined" || !process.env) return "";
+  const value = process.env[name];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function serviceClient() {
+  const url = envValue("SUPABASE_URL") || envValue("VITE_SUPABASE_URL");
+  const key = envValue("SUPABASE_SERVICE_ROLE_KEY");
+  if (!url || !key) return null;
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
+
+async function saveStaffProfile(
+  client: NonNullable<ReturnType<typeof serviceClient>>,
+  account: StaffAccountRecord,
+) {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const { data, error } = await client.from("profiles").select("id").eq("id", account.id).maybeSingle();
+    if (error) throw new Error("profile lookup failed");
+    if (data) {
+      const { error: updateError } = await client
+        .from("profiles")
+        .update({
+          full_name: account.fullName,
+          phone: account.phone,
+          email: account.email,
+          role: account.role,
+          avatar_url: account.avatarUrl || null,
+          bio: account.bio || null,
+        })
+        .eq("id", account.id);
+      if (updateError) throw new Error("profile update failed");
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 80));
+  }
+  throw new Error("profile missing");
+}
+
+export async function handleCreateStaffAccount(request: Request) {
+  const admin = await requireAdmin(request);
+  if (admin instanceof Response) return admin;
+  const service = serviceClient();
+  if (!service) return jsonError(503, "Ծառայությունը կարգավորված չէ։");
+  let payload: unknown;
+  try {
+    payload = await request.json();
+  } catch {
+    return jsonError(422, "Հարցումը թերի է։");
+  }
+  const body = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+  const text = (value: unknown) => (typeof value === "string" ? value : "");
+  const result = await createStaffAccountRecord(
+    {
+      role: text(body["role"]),
+      fullName: text(body["fullName"]),
+      phone: text(body["phone"]),
+      email: text(body["email"]),
+      password: text(body["password"]),
+      avatarUrl: text(body["avatarUrl"]),
+      bio: text(body["bio"]),
+    },
+    {
+      createAuth: async (value: StaffAccountDraft) => {
+        const { data, error } = await service.auth.admin.createUser({
+          email: value.email,
+          password: value.password,
+          email_confirm: true,
+          user_metadata: { full_name: value.fullName, phone: value.phone },
+        });
+        if (error || !data.user) {
+          throw new Error(isDuplicateStaffAuthError(error?.message ?? "") ? error?.message ?? "registered" : "create failed");
+        }
+        return { id: data.user.id };
+      },
+      saveProfile: (account) => saveStaffProfile(service, account),
+      deleteAuth: async (id) => {
+        const { error } = await service.auth.admin.deleteUser(id);
+        if (error) throw new Error("delete failed");
+      },
+    },
+  );
+  if (!result.ok) {
+    const status = result.code === "duplicate" ? 409 : result.code === "invalid" ? 422 : 500;
+    return jsonError(status, result.message);
+  }
+  return Response.json(result.account, { status: 201, headers: { "cache-control": "no-store" } });
+}
