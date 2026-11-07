@@ -613,7 +613,7 @@ function ToursSection({
       has360: panoramaUrl.length > 0 || virtualTourUrl.length > 0 || virtualOnly || existing?.has360 === true,
       hasAudioGuide: audio.length > 0,
       day: virtualOnly ? "saturday" : draft.day,
-      highlights: virtualOnly ? [] : draft.highlights,
+      highlights: virtualOnly ? [] : draft.highlights.map((item) => item.trim()).filter(Boolean),
       itinerary: virtualOnly ? [] : parseItinerary(draft.itinerary),
       included: virtualOnly ? [] : existing?.included ?? ["Հարմարավետ ավտոբուս Արմավիրից և վերադարձ", "Հայախոս ուղեկցորդ"],
       excluded: virtualOnly ? [] : existing?.excluded ?? ["Ճաշ և անձնական ծախսեր"],
@@ -884,6 +884,17 @@ function ToursSection({
           )}
           {mode === "departures" && (
             <>
+              <Field label="Տուրի կարևոր կետեր" id="tour-highlights">
+                <Textarea
+                  id="tour-highlights"
+                  value={draft.highlights.join("\n")}
+                  onChange={(event) =>
+                    update({ highlights: event.target.value.split("\n") })
+                  }
+                  className="min-h-24 rounded-2xl"
+                  placeholder={"Գառնիի տաճար\nՔարերի սիմֆոնիա"}
+                />
+              </Field>
               <Field label="Ծրագիր (ժամ | վերնագիր | նկարագրություն)" id="tour-itinerary">
                 <Textarea id="tour-itinerary" value={draft.itinerary} onChange={(event) => update({ itinerary: event.target.value })} className="min-h-32 rounded-2xl" placeholder={"08:30 | Մեկնում Արմավիրից | Հավաք Կենտրոնական հրապարակում"} />
               </Field>
