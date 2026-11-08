@@ -211,11 +211,23 @@ async function sendChannel(
   return receipt;
 }
 
+let ticketNoticeCalls = 0;
+
+export function ticketNoticeCallCount() {
+  return ticketNoticeCalls;
+}
+
+export function resetTicketNoticeCalls() {
+  ticketNoticeCalls = 0;
+}
+
 export function sendBookingSMS(phoneNumber: string, ticketDetails: TicketDetails) {
+  ticketNoticeCalls += 1;
   return sendChannel("sms", phoneNumber, ticketDetails);
 }
 
 export function sendBookingWhatsApp(phoneNumber: string, ticketDetails: TicketDetails) {
+  ticketNoticeCalls += 1;
   return sendChannel("whatsapp", phoneNumber, ticketDetails);
 }
 

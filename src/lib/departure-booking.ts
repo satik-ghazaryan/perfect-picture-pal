@@ -1,6 +1,5 @@
-export const LEGACY_NO_DATE = "Նույն տուրի ID-ն բավարար չէ. վստահելի մեկնման ամսաթիվ չկա։";
-export const LEGACY_MANY = "Այդ ամսաթվով մեկից ավելի մեկնում կա։";
-export const LEGACY_NONE = "Տուրի ամսաթվով համապատասխան մեկնում չկա։";
+export const LEGACY_NO_DATE = "Ամրագրման սեփական տվյալներով մեկնումը միանշանակ չէ։";
+export const LEGACY_UNVERIFIED_LINK = "Նոր հոսքով չի ստեղծվել և ամրագրման սեփական ամսաթիվ չկա. կապը մնացել է ձեռքով վերանայման։";
 
 export type BookableDeparture = {
   id: string;
@@ -23,17 +22,7 @@ export type LegacyBookingLink = {
   tourId: string;
   ticketCode: string;
   departureId: string | null;
-};
-
-export type LegacyTourDate = {
-  id: string;
-  departureDate: string | null;
-};
-
-export type LegacyDeparture = {
-  id: string;
-  tourId: string;
-  departureDate: string;
+  confirmed?: boolean;
 };
 
 export function localDateISO(now = new Date()) {
@@ -106,33 +95,61 @@ export function decideDepartureBooking(
   };
 }
 
-export function planLegacyBookingLinks(
-  bookings: LegacyBookingLink[],
-  tours: LegacyTourDate[],
-  departures: LegacyDeparture[],
+export function orderFingerprint(input: {
+  departureId: string;
+  adults: number;
+  children: number;
+  phone: string;
+  name: string;
+  usePoints: boolean;
+}) {
+  return [
+    input.departureId,
+    input.adults,
+    input.children,
+    input.phone.replace(/\D/g, ""),
+    input.name.trim().toLowerCase(),
+    input.usePoints ? "1" : "0",
+  ].join("|");
+}
+
+export function confirmationAccess(
+  stored: { booker: string; proof: string; fingerprint: string } | null,
+  request: { booker: string; proof: string; fingerprint: string },
 ) {
+  if (!stored) return "create" as const;
+  if (stored.booker !== request.booker || stored.proof !== request.proof || stored.fingerprint !== request.fingerprint) {
+    return "reject" as const;
+  }
+  return "repeat" as const;
+}
+
+export function shouldDeliverTicket(repeated: boolean, notify: boolean) {
+  return notify && !repeated;
+}
+
+export function planLegacyBookingLinks(bookings: LegacyBookingLink[]) {
   const links: { bookingId: string; departureId: string }[] = [];
   const conflicts: { bookingId: string; tourId: string; ticketCode: string; reason: string }[] = [];
+  const reviews: { bookingId: string; tourId: string; ticketCode: string; reason: string }[] = [];
   for (const booking of bookings) {
-    if (booking.departureId) continue;
-    const tour = tours.find((item) => item.id === booking.tourId);
-    const date = tour?.departureDate || null;
-    if (!date) {
-      conflicts.push({ bookingId: booking.id, tourId: booking.tourId, ticketCode: booking.ticketCode, reason: LEGACY_NO_DATE });
-      continue;
-    }
-    const matches = departures.filter((item) => item.tourId === booking.tourId && item.departureDate === date);
-    const match = matches[0];
-    if (matches.length === 1 && match) {
-      links.push({ bookingId: booking.id, departureId: match.id });
+    if (booking.departureId) {
+      if (!booking.confirmed) {
+        reviews.push({
+          bookingId: booking.id,
+          tourId: booking.tourId,
+          ticketCode: booking.ticketCode,
+          reason: LEGACY_UNVERIFIED_LINK,
+        });
+      }
       continue;
     }
     conflicts.push({
       bookingId: booking.id,
       tourId: booking.tourId,
       ticketCode: booking.ticketCode,
-      reason: matches.length > 1 ? LEGACY_MANY : LEGACY_NONE,
+      reason: LEGACY_NO_DATE,
     });
   }
-  return { links, conflicts };
+  return { links, conflicts, reviews };
 }

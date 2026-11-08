@@ -1,16 +1,19 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { resetTicketNoticeCalls, sendBookingSMS, sendBookingWhatsApp, ticketNoticeCallCount } from "./notifications";
 import {
+  confirmationAccess,
   decideDepartureBooking,
   departureTotal,
   groupSeatNumbers,
-  LEGACY_MANY,
   LEGACY_NO_DATE,
-  LEGACY_NONE,
+  LEGACY_UNVERIFIED_LINK,
   listBookableDepartures,
+  orderFingerprint,
   partySize,
   planLegacyBookingLinks,
   quoteChanged,
+  shouldDeliverTicket,
 } from "./departure-booking";
 
 const quote = {
@@ -63,34 +66,51 @@ describe("departure booking", () => {
     assert.equal(first.state.seats, 0);
   });
 
-  it("links a legacy booking only when the tour date matches one departure", () => {
-    const planned = planLegacyBookingLinks(
-      [
-        { id: "linked", tourId: "tour", ticketCode: "AG-LINKED", departureId: "keep" },
-        { id: "clear", tourId: "tour", ticketCode: "AG-CLEAR", departureId: null },
-        { id: "ambiguous", tourId: "mixed", ticketCode: "AG-MIXED", departureId: null },
-        { id: "undated", tourId: "open", ticketCode: "AG-OPEN", departureId: null },
-      ],
-      [
-        { id: "tour", departureDate: "2026-11-14" },
-        { id: "mixed", departureDate: "2026-11-14" },
-        { id: "open", departureDate: null },
-      ],
-      [
-        { id: "nov14", tourId: "tour", departureDate: "2026-11-14" },
-        { id: "nov15", tourId: "tour", departureDate: "2026-11-15" },
-        { id: "mixed-a", tourId: "mixed", departureDate: "2026-11-14" },
-        { id: "mixed-b", tourId: "mixed", departureDate: "2026-11-14" },
-      ],
-    );
-    assert.deepEqual(planned.links, [{ bookingId: "clear", departureId: "nov14" }]);
-    assert.equal(planned.conflicts.find((item) => item.bookingId === "ambiguous")?.reason, LEGACY_MANY);
-    assert.equal(planned.conflicts.find((item) => item.bookingId === "undated")?.reason, LEGACY_NO_DATE);
-    assert.equal(planned.conflicts.some((item) => item.bookingId === "linked"), false);
-    assert.equal(planLegacyBookingLinks(
-      [{ id: "missing", tourId: "tour", ticketCode: "AG-MISS", departureId: null }],
-      [{ id: "tour", departureDate: "2026-12-01" }],
-      [{ id: "nov14", tourId: "tour", departureDate: "2026-11-14" }],
-    ).conflicts[0]?.reason, LEGACY_NONE);
+  it("does not treat the tour's current date as proof for an old booking", () => {
+    const planned = planLegacyBookingLinks([
+      { id: "checkout", tourId: "tour", ticketCode: "AG-NEW", departureId: "nov14", confirmed: true },
+      { id: "old", tourId: "tour", ticketCode: "AG-OLD", departureId: "current-date" },
+      { id: "historical", tourId: "tour", ticketCode: "AG-HIST", departureId: null },
+    ]);
+    assert.deepEqual(planned.links, []);
+    assert.equal(planned.conflicts.find((item) => item.bookingId === "historical")?.reason, LEGACY_NO_DATE);
+    assert.equal(planned.reviews.find((item) => item.bookingId === "old")?.reason, LEGACY_UNVERIFIED_LINK);
+    assert.equal(planned.reviews.some((item) => item.bookingId === "checkout"), false);
+  });
+
+  it("repeats only the same booker and order, and does not send another ticket", async () => {
+    const fingerprint = orderFingerprint({
+      departureId: "dep",
+      adults: 2,
+      children: 1,
+      phone: "+374 90 000311",
+      name: "Անի",
+      usePoints: false,
+    });
+    const stored = { booker: "guest", proof: "secret", fingerprint };
+    assert.equal(confirmationAccess(null, stored), "create");
+    assert.equal(confirmationAccess(stored, stored), "repeat");
+    assert.equal(confirmationAccess(stored, { ...stored, fingerprint: `${fingerprint}x` }), "reject");
+    assert.equal(confirmationAccess(stored, { ...stored, booker: "user:other" }), "reject");
+    assert.equal(shouldDeliverTicket(false, true), true);
+    assert.equal(shouldDeliverTicket(true, true), false);
+    const details = {
+      customerName: "Անի",
+      tourName: "Տուր",
+      tourId: "1-ui",
+      ticketCode: "AG-TEST",
+      seatNumbers: "1",
+      departureTime: "08:30",
+    };
+    resetTicketNoticeCalls();
+    if (shouldDeliverTicket(false, true)) {
+      await sendBookingSMS("12", details).catch(() => undefined);
+      await sendBookingWhatsApp("12", details).catch(() => undefined);
+    }
+    assert.equal(ticketNoticeCallCount(), 2);
+    if (shouldDeliverTicket(true, true)) {
+      await sendBookingSMS("12", details).catch(() => undefined);
+    }
+    assert.equal(ticketNoticeCallCount(), 2);
   });
 });

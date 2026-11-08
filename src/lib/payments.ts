@@ -1,5 +1,5 @@
 import { peekNextSeat, registerBooking } from "@/lib/guide-api";
-import { partySize } from "@/lib/departure-booking";
+import { partySize, shouldDeliverTicket } from "@/lib/departure-booking";
 import { supabase } from "@/lib/supabase";
 import { accountForPhone, activeCreditTotal, commitLoyalty, loadLoyalty, quoteCheckout, revertLoyalty, takePromoCredits } from "@/lib/loyalty";
 import {
@@ -321,6 +321,7 @@ export async function completeCheckout(input: {
   expectedSeats?: number;
   expectedCashback?: number;
   idempotencyKey?: string;
+  guestProof?: string;
 }): Promise<CheckoutSuccess | CheckoutFailure> {
   if (input.departureId && supabase) return confirmDepartureBooking(input);
   let balance = input.balance;
@@ -520,8 +521,9 @@ async function confirmDepartureBooking(input: {
   expectedSeats?: number;
   expectedCashback?: number;
   idempotencyKey?: string;
+  guestProof?: string;
 }): Promise<CheckoutSuccess | CheckoutFailure> {
-  if (!supabase || !input.departureId || !input.idempotencyKey || !input.expectedDate) {
+  if (!supabase || !input.departureId || !input.idempotencyKey || !input.guestProof || !input.expectedDate) {
     return { ok: false, status: "FAILED", message: "Մեկնումը ընտրված չէ։" };
   }
   const seats = partySize(input.adults, input.children);
@@ -566,6 +568,7 @@ async function confirmDepartureBooking(input: {
     p_use_points: input.usePoints,
     p_provider: input.provider,
     p_idempotency_key: input.idempotencyKey,
+    p_guest_proof: input.guestProof,
     p_expected_date: input.expectedDate,
     p_expected_price: unitPrice,
     p_expected_seats: input.expectedSeats ?? 0,
@@ -594,7 +597,7 @@ async function confirmDepartureBooking(input: {
     : formatSeatNumbers(data.seat_number ?? 1, data.seats_count ?? seats);
   const payable = data.payable ?? 0;
   let notified = false;
-  if (input.notify && data.ticket_code) {
+  if (shouldDeliverTicket(data.repeated === true, input.notify) && data.ticket_code) {
     const details: TicketDetails = {
       customerName: input.passengerName.trim(),
       tourName: input.tourTitle,
@@ -623,7 +626,7 @@ async function confirmDepartureBooking(input: {
     creditApplied: 0,
     earned: data.repeated ? 0 : data.earned ?? 0,
     points: data.points ?? 0,
-    pointsSaved: true,
+    pointsSaved: (data.redeemed ?? 0) > 0 || (!data.repeated && (data.earned ?? 0) > 0),
     notified,
     coveredByPoints: payable === 0 && (data.redeemed ?? 0) > 0,
   };

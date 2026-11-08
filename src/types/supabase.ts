@@ -577,6 +577,7 @@ export type Database = {
           p_use_points: boolean;
           p_provider: string | null;
           p_idempotency_key: string;
+          p_guest_proof: string;
           p_expected_date: string;
           p_expected_price: number;
           p_expected_seats: number;

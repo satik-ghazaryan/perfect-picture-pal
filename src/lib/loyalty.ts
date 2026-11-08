@@ -193,20 +193,7 @@ export async function commitLoyalty(input: {
   if (key.length < 8) throw new Error("Հեռախոսահամարը պակաս է։");
   const cashbackPercent = Math.min(100, Math.max(0, Math.round(input.cashbackPercent)));
   if (!supabase) return commitLocal({ ...input, phone: key, cashbackPercent });
-
-  const { data, error } = await supabase.rpc("apply_loyalty", {
-    p_phone: key,
-    p_name: input.fullName.trim(),
-    p_redeem: input.redeem,
-    p_earn: input.earn,
-    p_tour_id: input.tourId,
-    p_tour_title: input.tourTitle,
-    p_cashback_percent: cashbackPercent,
-  });
-  if (error || !data) throw new Error(error?.message || "Միավորները չպահպանվեցին։");
-  const account = mapAccount(data);
-  remember(account);
-  return account;
+  throw new Error("Հեռախոսահամարը հաշվին հաստատված չէ. միավորները չեն փոխվում։");
 }
 
 export async function revertLoyalty(input: {
@@ -228,15 +215,7 @@ export async function revertLoyalty(input: {
     setState({ accounts, lastPhone: state.lastPhone === key ? "" : state.lastPhone });
     return;
   }
-
-  const { data, error } = await supabase.rpc("revert_loyalty", {
-    p_phone: key,
-    p_redeem: input.redeem,
-    p_earn: input.earn,
-    p_tour_id: input.tourId,
-  });
-  if (error || !data) throw new Error(error?.message || "Միավորները չվերականգնվեցին։");
-  remember(mapAccount(data));
+  throw new Error("Հեռախոսահամարը հաշվին հաստատված չէ. միավորները չեն փոխվում։");
 }
 
 export async function adjustLoyaltyPoints(input: { phone: string; fullName: string; delta: number }) {

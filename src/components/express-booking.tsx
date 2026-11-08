@@ -113,6 +113,7 @@ export function BookingPanel({ tour }: { tour: Tour }) {
   const [cashbackPercent, setCashbackPercent] = useState(0);
   const [seatLabel, setSeatLabel] = useState("");
   const [confirmationKey, setConfirmationKey] = useState("");
+  const [confirmationProof, setConfirmationProof] = useState("");
   const [quoteHold, setQuoteHold] = useState<{
     balance: number;
     credit: number;
@@ -191,9 +192,11 @@ export function BookingPanel({ tour }: { tour: Tour }) {
   const liveCredit = !remote && signedInTourist ? Math.min(activeCreditTotal(phone), total) : 0;
   const balance = quoteHold?.balance ?? liveBalance;
   const creditApplied = quoteHold?.credit ?? liveCredit;
-  const pointsOn = quoteHold
-    ? quoteHold.usePoints
-    : signedInTourist && usePoints && liveBalance > 0;
+  const pointsOn = remote
+    ? false
+    : quoteHold
+      ? quoteHold.usePoints
+      : signedInTourist && usePoints && liveBalance > 0;
   const quote = quoteCheckout(balance, total - creditApplied, pointsOn, cashback / 100);
   const coveredByPoints = quote.payable === 0 && (pointsOn || creditApplied > 0);
   const soldOut = seatLimit < 1;
@@ -223,6 +226,7 @@ export function BookingPanel({ tour }: { tour: Tour }) {
     setNotify(true);
     setSaving(false);
     setConfirmationKey("");
+    setConfirmationProof("");
     setSeatLabel("");
   };
 
@@ -272,7 +276,11 @@ export function BookingPanel({ tour }: { tour: Tour }) {
     );
     try {
       const key = confirmationKey || crypto.randomUUID();
-      if (!confirmationKey) setConfirmationKey(key);
+      const proof = confirmationProof || crypto.randomUUID();
+      if (!confirmationKey || !confirmationProof) {
+        setConfirmationKey(key);
+        setConfirmationProof(proof);
+      }
       const checkout = () =>
         completeCheckout({
           provider: method,
@@ -296,6 +304,7 @@ export function BookingPanel({ tour }: { tour: Tour }) {
                 expectedSeats: selected.availableSeats,
                 expectedCashback: cashback,
                 idempotencyKey: key,
+                guestProof: proof,
               }
             : {}),
         });
@@ -328,6 +337,7 @@ export function BookingPanel({ tour }: { tour: Tour }) {
             ),
           );
           setConfirmationKey(crypto.randomUUID());
+          setConfirmationProof(crypto.randomUUID());
         }
         setError(result.message);
         toast.error(result.message, { id: toastId });
@@ -442,6 +452,7 @@ export function BookingPanel({ tour }: { tour: Tour }) {
                 return;
               }
               setConfirmationKey(crypto.randomUUID());
+              setConfirmationProof(crypto.randomUUID());
               setError("");
               setOpen(true);
             }}
@@ -580,7 +591,12 @@ export function BookingPanel({ tour }: { tour: Tour }) {
                   </button>
                 );
               })}
-              {signedInTourist && balance > 0 && (
+              {remote && (
+                <p className="rounded-2xl bg-muted px-3 py-2 text-xs text-muted-foreground">
+                  Միավորները չեն կիրառվում. հեռախոսահամարը հաշվին հաստատված չէ։ Ամրագրումը շարունակվում է առանց միավորների։
+                </p>
+              )}
+              {!remote && signedInTourist && balance > 0 && (
                 <div className="flex items-start gap-3 rounded-2xl border border-border px-3 py-3">
                   <Checkbox
                     id="use-points"
@@ -641,6 +657,13 @@ export function BookingPanel({ tour }: { tour: Tour }) {
                   <p className="text-muted-foreground">
                     Տուրն ամբողջությամբ ծածկված է միավորներով։ Վճարման դարպասը բաց է թողնվում։
                     Հետվճար՝ 0, որովհետև կանխիկ վճարում չկա։
+                  </p>
+                ) : remote ? (
+                  <p className="text-muted-foreground">
+                    {quote.payable > 0 && method
+                      ? `${methods.find((item) => item.id === method)?.label} կգանձի ${formatAmd(quote.payable)}։ `
+                      : ""}
+                    Հետվճարը չի գրվում, քանի դեռ համարը հաշվին հաստատված չէ։
                   </p>
                 ) : (
                   <p className="text-muted-foreground">
@@ -744,7 +767,9 @@ export function BookingPanel({ tour }: { tour: Tour }) {
                       )}
                       {receipt && !receipt.pointsSaved && (
                         <p className="mt-1 text-[11px] text-muted-foreground">
-                          Միավորները չգրանցվեցին
+                          {remote
+                            ? "Հեռախոսահամարը հաշվին հաստատված չէ. միավորներ չեն գրվել։"
+                            : "Միավորները չգրանցվեցին"}
                         </p>
                       )}
                     </div>

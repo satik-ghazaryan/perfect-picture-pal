@@ -283,7 +283,7 @@ export function AdminDashboard({ session }: { session: AdminSession }) {
   const [staffError, setStaffError] = useState("");
   const [remoteBookings, setRemoteBookings] = useState(portal.bookings);
   const [bookingError, setBookingError] = useState("");
-  const [linkConflicts, setLinkConflicts] = useState<{ id: number; tour_id: string; ticket_code: string | null; reason: string }[]>([]);
+  const [linkConflicts, setLinkConflicts] = useState<{ id: number; booking_id: string; tour_id: string; ticket_code: string | null; reason: string }[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1578,7 +1578,7 @@ function BookingsSection({
   }[];
   revenue: number;
   error: string;
-  conflicts: { id: number; tour_id: string; ticket_code: string | null; reason: string }[];
+  conflicts: { id: number; booking_id: string; tour_id: string; ticket_code: string | null; reason: string }[];
 }) {
   const paid = bookings.filter((booking) => booking.paymentStatus === "SUCCESS").length;
   const pending = bookings.filter((booking) => booking.paymentStatus === "PENDING").length;
@@ -1604,6 +1604,7 @@ function BookingsSection({
     };
   });
   const unresolved = bookings.filter((booking) => !booking.departureId);
+  const reviewCount = new Set(conflicts.map((conflict) => conflict.booking_id)).size;
 
   const exportDeparture = (departure: (typeof departures)[number]) => {
     const passengers = departure.rows
@@ -1641,9 +1642,9 @@ function BookingsSection({
       {error && <p className="text-sm font-medium text-destructive">{error}</p>}
       {(unresolved.length > 0 || conflicts.length > 0) && (
         <div className="rounded-3xl border border-border bg-card px-4 py-3 text-sm">
-          <p className="font-semibold">Անորոշ հին ամրագրումներ՝ {unresolved.length}</p>
+          <p className="font-semibold">Անորոշ հին ամրագրումներ՝ {reviewCount}</p>
           <p className="mt-1 text-muted-foreground">
-            Սրանք մեկնման հետ չեն կապվել, որովհետև միայն տուրի ID-ն բավարար չէ։ Աշխատակցի էջում չեն երևում։
+            Սեփական տվյալներով մեկնումը միանշանակ չէ, կամ կապը նոր հոսքով չի ստեղծվել և մնացել է ձեռքով վերանայման։ Աշխատակցի ուղևորացուցակում սխալ մեկնման տակ չեն երևում։
           </p>
           <ul className="mt-2 space-y-1">
             {conflicts.map((conflict) => (

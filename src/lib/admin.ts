@@ -1322,7 +1322,7 @@ export async function loadBookingLinkConflicts() {
   if (!supabase) return [];
   const { data, error } = await supabase
     .from("booking_departure_conflicts")
-    .select("id, tour_id, ticket_code, reason")
+    .select("id, booking_id, tour_id, ticket_code, reason")
     .order("id");
   if (error) throw new Error("Անորոշ ամրագրումները չբեռնվեցին։");
   return data;
