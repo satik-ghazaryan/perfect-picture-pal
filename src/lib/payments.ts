@@ -1,4 +1,6 @@
 import { peekNextSeat, registerBooking } from "@/lib/guide-api";
+import { partySize } from "@/lib/departure-booking";
+import { supabase } from "@/lib/supabase";
 import { accountForPhone, activeCreditTotal, commitLoyalty, loadLoyalty, quoteCheckout, revertLoyalty, takePromoCredits } from "@/lib/loyalty";
 import {
   formatSeatNumbers,
@@ -276,6 +278,7 @@ export type CheckoutSuccess = {
   provider: PaymentProvider | null;
   ticketCode: string;
   seatNumber: number;
+  seatNumbers: string;
   payable: number;
   redeemed: number;
   creditApplied: number;
@@ -290,6 +293,12 @@ export type CheckoutFailure = {
   ok: false;
   status: "FAILED" | "PENDING";
   message: string;
+  stale?: {
+    departureDate: string;
+    price: number;
+    availableSeats: number;
+    cashbackPercent: number;
+  };
 };
 
 export async function completeCheckout(input: {
@@ -306,7 +315,14 @@ export async function completeCheckout(input: {
   credit: number;
   notify: boolean;
   departureTime: string;
+  departureId?: string;
+  expectedDate?: string;
+  expectedPrice?: number;
+  expectedSeats?: number;
+  expectedCashback?: number;
+  idempotencyKey?: string;
 }): Promise<CheckoutSuccess | CheckoutFailure> {
+  if (input.departureId && supabase) return confirmDepartureBooking(input);
   let balance = input.balance;
   try {
     const account = await loadLoyalty(input.phone);
@@ -474,6 +490,7 @@ export async function completeCheckout(input: {
     provider: quote.payable === 0 ? null : input.provider,
     ticketCode: booking.ticketCode,
     seatNumber: booking.seatNumber,
+    seatNumbers: formatSeatNumbers(booking.seatNumber, input.adults + input.children),
     payable: quote.payable,
     redeemed: quote.redeem,
     creditApplied,
@@ -482,5 +499,132 @@ export async function completeCheckout(input: {
     pointsSaved: true,
     notified,
     coveredByPoints: quote.payable === 0 && quote.redeem > 0,
+  };
+}
+
+async function confirmDepartureBooking(input: {
+  provider: PaymentProvider | null;
+  tourId: string;
+  tourTitle: string;
+  passengerName: string;
+  phone: string;
+  adults: number;
+  children: number;
+  usePoints: boolean;
+  balance: number;
+  notify: boolean;
+  departureTime: string;
+  departureId?: string;
+  expectedDate?: string;
+  expectedPrice?: number;
+  expectedSeats?: number;
+  expectedCashback?: number;
+  idempotencyKey?: string;
+}): Promise<CheckoutSuccess | CheckoutFailure> {
+  if (!supabase || !input.departureId || !input.idempotencyKey || !input.expectedDate) {
+    return { ok: false, status: "FAILED", message: "Մեկնումը ընտրված չէ։" };
+  }
+  const seats = partySize(input.adults, input.children);
+  if (
+    !seats ||
+    !Number.isInteger(input.expectedPrice) ||
+    !Number.isInteger(input.expectedSeats) ||
+    !Number.isInteger(input.expectedCashback)
+  ) {
+    return { ok: false, status: "FAILED", message: "Ամրագրման տվյալները թերի են։" };
+  }
+  const unitPrice = input.expectedPrice ?? 0;
+  const cashback = input.expectedCashback ?? 0;
+  const quote = quoteCheckout(input.balance, unitPrice * seats, input.usePoints, cashback / 100);
+  if (quote.payable > 0 && !input.provider) {
+    return { ok: false, status: "FAILED", message: "Ընտրեք վճարման եղանակը։" };
+  }
+  if (quote.payable > 0) {
+    const provider = input.provider;
+    if (!provider) return { ok: false, status: "FAILED", message: "Ընտրեք վճարման եղանակը։" };
+    try {
+      const pending = await postCallback(provider, input.idempotencyKey, quote.payable, "precheck");
+      if (pending.status === "FAILED") return { ok: false, status: "FAILED", message: pending.message };
+      const confirmed = await postCallback(provider, input.idempotencyKey, quote.payable, "confirm");
+      if (confirmed.status !== "SUCCESS") return { ok: false, status: confirmed.status, message: confirmed.message };
+    } catch (reason) {
+      return {
+        ok: false,
+        status: "FAILED",
+        message: reason instanceof Error ? reason.message : "Վճարման ծառայությունը անհասանելի է։",
+      };
+    }
+  }
+
+  const { data, error } = await supabase.rpc("book_departure", {
+    p_departure_id: input.departureId,
+    p_tour_id: input.tourId,
+    p_passenger_name: input.passengerName,
+    p_phone: input.phone,
+    p_adults: input.adults,
+    p_children: input.children,
+    p_use_points: input.usePoints,
+    p_provider: input.provider,
+    p_idempotency_key: input.idempotencyKey,
+    p_expected_date: input.expectedDate,
+    p_expected_price: unitPrice,
+    p_expected_seats: input.expectedSeats ?? 0,
+    p_expected_cashback: cashback,
+  });
+  if (error || !data) return { ok: false, status: "FAILED", message: "Ամրագրումը չպահպանվեց։" };
+  if (!data.ok) {
+    if (data.code === "stale" && data.departure_date && data.price !== undefined && data.available_seats !== undefined) {
+      return {
+        ok: false,
+        status: "FAILED",
+        message: data.message || "Մեկնման տվյալները փոխվել են։ Ստուգեք և հաստատեք նորից։",
+        stale: {
+          departureDate: data.departure_date,
+          price: data.price,
+          availableSeats: data.available_seats,
+          cashbackPercent: data.cashback_percent ?? cashback,
+        },
+      };
+    }
+    return { ok: false, status: "FAILED", message: data.message || "Ամրագրումը չպահպանվեց։" };
+  }
+
+  const seatNumbers = Array.isArray(data.seat_numbers)
+    ? data.seat_numbers.join(", ")
+    : formatSeatNumbers(data.seat_number ?? 1, data.seats_count ?? seats);
+  const payable = data.payable ?? 0;
+  let notified = false;
+  if (input.notify && data.ticket_code) {
+    const details: TicketDetails = {
+      customerName: input.passengerName.trim(),
+      tourName: input.tourTitle,
+      tourId: input.tourId,
+      ticketCode: data.ticket_code,
+      seatNumbers,
+      departureTime: input.departureTime,
+    };
+    try {
+      const sms = await sendBookingSMS(input.phone, details);
+      const whatsapp = await sendBookingWhatsApp(input.phone, details);
+      notified = sms.mode !== "failed" || whatsapp.mode !== "failed";
+    } catch {
+      notified = false;
+    }
+  }
+  return {
+    ok: true,
+    status: "SUCCESS",
+    provider: payable === 0 ? null : input.provider,
+    ticketCode: data.ticket_code ?? "",
+    seatNumber: data.seat_number ?? 1,
+    seatNumbers,
+    payable,
+    redeemed: data.redeemed ?? 0,
+    creditApplied: 0,
+    earned: data.repeated ? 0 : data.earned ?? 0,
+    points: data.points ?? 0,
+    pointsSaved: true,
+    notified,
+    coveredByPoints: payable === 0 && (data.redeemed ?? 0) > 0,
   };
 }

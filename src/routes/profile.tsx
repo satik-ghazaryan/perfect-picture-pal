@@ -42,9 +42,11 @@ import {
 import {
   getPortalServerSnapshot,
   getPortalSnapshot,
+  loadOwnBookings,
   subscribePortal,
   type BookingRecord,
 } from "@/lib/guide-api";
+import { isSupabaseConfigured } from "@/lib/supabase";
 import { formatAssignedDepartureDate } from "@/lib/calendar-date";
 
 export const Route = createFileRoute("/profile")({
@@ -97,6 +99,7 @@ function ProfilePage() {
   const session = useSyncExternalStore(subscribeTourist, getTouristSnapshot, getTouristServerSnapshot);
   const catalog = useSyncExternalStore(subscribeAdmin, getAdminSnapshot, getAdminServerSnapshot);
   const portal = useSyncExternalStore(subscribePortal, getPortalSnapshot, getPortalServerSnapshot);
+  const [ownBookings, setOwnBookings] = useState<BookingRecord[]>([]);
   const wallet = useSyncExternalStore(subscribeLoyalty, getLoyaltySnapshot, getLoyaltyServerSnapshot);
   const lang = useSiteLocale();
   const [ready, setReady] = useState(false);
@@ -114,6 +117,21 @@ function ProfilePage() {
     if (!ready || session?.role !== "tourist" || phoneKey(phone).length < 8) return;
     void loadLoyalty(phone).catch(() => undefined);
   }, [ready, session?.role, phone]);
+
+  useEffect(() => {
+    if (!ready || !isSupabaseConfigured || session?.role !== "tourist" || !session.id) return;
+    let cancelled = false;
+    void loadOwnBookings(session.id)
+      .then((rows) => {
+        if (!cancelled) setOwnBookings(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setOwnBookings([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, session]);
 
   useEffect(() => {
     if (!ready) return;
@@ -143,12 +161,13 @@ function ProfilePage() {
   const points = account?.points ?? 0;
   const credits = account?.credits ?? [];
   const digits = phoneKey(phone);
-  const trips = portal.bookings.flatMap((booking) => {
-    if (phoneKey(booking.phone) !== digits) return [];
+  const visibleBookings = isSupabaseConfigured ? ownBookings : portal.bookings;
+  const trips = visibleBookings.flatMap((booking) => {
+    if (!isSupabaseConfigured && phoneKey(booking.phone) !== digits) return [];
     const tour = catalog.tours.find((item) => item.id === booking.tourId && item.is_virtual_only !== true);
-    const assigned = portal.tours.find((item) => item.id === booking.tourId);
-    if (!tour && !assigned) return [];
-    const departureDate = assigned?.departureDate || "";
+    const assigned = portal.tours.find((item) => item.departureId === booking.departureId);
+    if (!tour && !assigned && !booking.departureDate) return [];
+    const departureDate = booking.departureDate || "";
     return [
       {
         id: booking.id,

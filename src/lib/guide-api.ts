@@ -48,6 +48,7 @@ export type BookingRecord = {
   amount: number;
   attendance: AttendanceStatus | null;
   departureId?: string;
+  departureDate?: string;
 };
 
 export type TourPhoto = {
@@ -444,6 +445,24 @@ export async function listBookings(tourId: string): Promise<BookingRecord[]> {
     .order("seat_number");
   if (error) throw new Error("Ուղևորացուցակը չբեռնվեց։");
   return data.map(mapBooking);
+}
+
+export async function loadOwnBookings(userId: string) {
+  if (!supabase || !userId) return [];
+  const { data, error } = await supabase
+    .from("bookings")
+    .select(
+      "id, tour_id, departure_id, passenger_name, phone, seat_number, ticket_code, status, adults, children, payment_provider, payment_status, amount, attendance, departures(departure_date)",
+    )
+    .eq("user_id", userId);
+  if (error) throw new Error("Ամրագրումները չբեռնվեցին։");
+  return data.map((row) => {
+    const booking = mapBooking(row);
+    const departure = row.departures;
+    const departureDate = departure && !Array.isArray(departure) ? departure.departure_date : null;
+    if (typeof departureDate === "string") booking.departureDate = departureDate;
+    return booking;
+  });
 }
 
 export async function loadDepartureManifest(departureId: string) {

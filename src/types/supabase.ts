@@ -214,6 +214,31 @@ export type Database = {
         };
         Relationships: [];
       };
+      booking_departure_conflicts: {
+        Row: {
+          id: number;
+          booking_id: string;
+          tour_id: string;
+          ticket_code: string | null;
+          reason: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: number;
+          booking_id: string;
+          tour_id: string;
+          ticket_code?: string | null;
+          reason: string;
+          created_at?: string;
+        };
+        Update: {
+          booking_id?: string;
+          tour_id?: string;
+          ticket_code?: string | null;
+          reason?: string;
+        };
+        Relationships: [];
+      };
       departure_assignment_conflicts: {
         Row: {
           id: number;
@@ -539,6 +564,42 @@ export type Database = {
             note: string;
             createdAt: string;
           }[];
+        };
+      };
+      book_departure: {
+        Args: {
+          p_departure_id: string;
+          p_tour_id: string;
+          p_passenger_name: string;
+          p_phone: string;
+          p_adults: number;
+          p_children: number;
+          p_use_points: boolean;
+          p_provider: string | null;
+          p_idempotency_key: string;
+          p_expected_date: string;
+          p_expected_price: number;
+          p_expected_seats: number;
+          p_expected_cashback: number;
+        };
+        Returns: {
+          ok: boolean;
+          repeated?: boolean;
+          code?: string;
+          message?: string;
+          booking_id?: string;
+          ticket_code?: string;
+          seat_number?: number;
+          seat_numbers?: number[];
+          seats_count?: number;
+          payable?: number;
+          redeemed?: number;
+          earned?: number;
+          points?: number;
+          departure_date?: string;
+          price?: number;
+          available_seats?: number;
+          cashback_percent?: number;
         };
       };
       set_booking_payment: {

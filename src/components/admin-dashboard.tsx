@@ -41,6 +41,7 @@ import {
   getAdminServerSnapshot,
   getAdminSnapshot,
   loadAdminBookings,
+  loadBookingLinkConflicts,
   createStaffAccount,
   updateDirectoryUser,
   loadAssignmentConflicts,
@@ -282,6 +283,7 @@ export function AdminDashboard({ session }: { session: AdminSession }) {
   const [staffError, setStaffError] = useState("");
   const [remoteBookings, setRemoteBookings] = useState(portal.bookings);
   const [bookingError, setBookingError] = useState("");
+  const [linkConflicts, setLinkConflicts] = useState<{ id: number; tour_id: string; ticket_code: string | null; reason: string }[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -299,6 +301,13 @@ export function AdminDashboard({ session }: { session: AdminSession }) {
       })
       .catch((error: unknown) => {
         if (!cancelled) setBookingError(error instanceof Error ? error.message : "Ամրագրումները չբեռնվեցին։");
+      });
+    loadBookingLinkConflicts()
+      .then((rows) => {
+        if (!cancelled) setLinkConflicts(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setLinkConflicts([]);
       });
     return () => {
       cancelled = true;
@@ -399,6 +408,7 @@ export function AdminDashboard({ session }: { session: AdminSession }) {
             bookings={bookings}
             revenue={revenue}
             error={bookingError}
+            conflicts={linkConflicts}
           />
         )}
         {section === "transfer" && (
@@ -1547,12 +1557,15 @@ function BookingsSection({
   bookings,
   revenue,
   error,
+  conflicts,
 }: {
   tours: ManagedTour[];
   users: DirectoryUser[];
   bookings: {
     id: string;
     tourId: string;
+    departureId?: string;
+    departureDate?: string;
     passengerName: string;
     phone: string;
     ticketCode: string;
@@ -1565,6 +1578,7 @@ function BookingsSection({
   }[];
   revenue: number;
   error: string;
+  conflicts: { id: number; tour_id: string; ticket_code: string | null; reason: string }[];
 }) {
   const paid = bookings.filter((booking) => booking.paymentStatus === "SUCCESS").length;
   const pending = bookings.filter((booking) => booking.paymentStatus === "PENDING").length;
@@ -1573,30 +1587,23 @@ function BookingsSection({
     const tour = tours.find((item) => item.id === tourId);
     return tour ? tourTitle(tour) : tourId;
   };
-  const physical = tours.filter((tour) => tour.is_virtual_only !== true);
-  const known = new Set(physical.map((tour) => tour.id));
-  const departures = [
-    ...physical.map((tour) => ({
-      key: tour.id,
-      title: tourTitle(tour),
-      departure: departureLabel(tour),
-      guideName: staffName(users, tour.guideId, "guide"),
-      driverName: staffName(users, tour.driverId, "driver"),
-      fileName: `Ուղևորներ-${tour.id}-${assignedWeekendDay(tour.day) ? upcomingDepartureDate(assignedWeekendDay(tour.day) as "saturday" | "sunday") : "unassigned"}.xlsx`,
-      rows: bookings.filter((booking) => booking.tourId === tour.id),
-    })),
-    ...[...new Set(bookings.map((booking) => booking.tourId))]
-      .filter((tourId) => !known.has(tourId))
-      .map((tourId) => ({
-        key: tourId,
-        title: titleOf(tourId),
-        departure: "—",
-        guideName: "Նշանակված չէ",
-        driverName: "Նշանակված չէ",
-        fileName: `Ուղևորներ-${tourId}.xlsx`,
-        rows: bookings.filter((booking) => booking.tourId === tourId),
-      })),
-  ];
+  const linkedIds = [...new Set(bookings.flatMap((booking) => (booking.departureId ? [booking.departureId] : [])))];
+  const departures = linkedIds.map((departureId) => {
+    const rows = bookings.filter((booking) => booking.departureId === departureId);
+    const sample = rows[0];
+    const tour = tours.find((item) => item.id === sample?.tourId);
+    const date = sample?.departureDate || "ամսաթիվ չկա";
+    return {
+      key: departureId,
+      title: sample ? titleOf(sample.tourId) : departureId,
+      departure: date,
+      guideName: staffName(users, tour?.guideId ?? null, "guide"),
+      driverName: staffName(users, tour?.driverId ?? null, "driver"),
+      fileName: `Ուղևորներ-${sample?.tourId ?? "tour"}-${date}.xlsx`,
+      rows,
+    };
+  });
+  const unresolved = bookings.filter((booking) => !booking.departureId);
 
   const exportDeparture = (departure: (typeof departures)[number]) => {
     const passengers = departure.rows
@@ -1632,6 +1639,22 @@ function BookingsSection({
         <p className="mt-1 text-sm text-muted-foreground">Idram, Telcell և ArCa վճարումներ, գրանցում և եկամուտ</p>
       </div>
       {error && <p className="text-sm font-medium text-destructive">{error}</p>}
+      {(unresolved.length > 0 || conflicts.length > 0) && (
+        <div className="rounded-3xl border border-border bg-card px-4 py-3 text-sm">
+          <p className="font-semibold">Անորոշ հին ամրագրումներ՝ {unresolved.length}</p>
+          <p className="mt-1 text-muted-foreground">
+            Սրանք մեկնման հետ չեն կապվել, որովհետև միայն տուրի ID-ն բավարար չէ։ Աշխատակցի էջում չեն երևում։
+          </p>
+          <ul className="mt-2 space-y-1">
+            {conflicts.map((conflict) => (
+              <li key={conflict.id}>
+                <span className="font-semibold">{conflict.ticket_code || conflict.tour_id}</span>
+                <span className="text-muted-foreground"> · {conflict.reason}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Stat label="Եկամուտ" value={formatAmd(revenue)} />
         <Stat label="Վճարված" value={String(paid)} />

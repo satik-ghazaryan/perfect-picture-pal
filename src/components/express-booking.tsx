@@ -1,4 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { format, parseISO } from "date-fns";
+import { hy } from "date-fns/locale";
 import { Check, CreditCard, Minus, Plus, Smartphone, Ticket, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -26,6 +28,8 @@ import {
   subscribeLoyalty,
 } from "@/lib/loyalty";
 import { completeCheckout, type CheckoutSuccess } from "@/lib/payments";
+import { listBookableDepartures, localDateISO, type BookableDeparture } from "@/lib/departure-booking";
+import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { DepartureCrew } from "@/components/departure-crew";
 import { TestModeNotice } from "@/components/test-mode-notice";
 import { TouristAuthForm } from "@/components/tourist-auth";
@@ -90,7 +94,7 @@ export function BookingPanel({ tour }: { tour: Tour }) {
   const dayReady = bookingDayAssigned(tour.day);
   const departureLabel = bookingDepartureLabel(tour.day);
   const title = tourTitle(tour, useSiteLocale());
-  const [party, setParty] = useState({ adults: tour.seatsLeft > 0 ? 1 : 0, children: 0 });
+  const [party, setParty] = useState({ adults: 1, children: 0 });
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [name, setName] = useState("");
@@ -103,6 +107,12 @@ export function BookingPanel({ tour }: { tour: Tour }) {
   const [usePoints, setUsePoints] = useState(false);
   const [notify, setNotify] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [options, setOptions] = useState<BookableDeparture[]>([]);
+  const [selectedId, setSelectedId] = useState("");
+  const [unitPrice, setUnitPrice] = useState(tour.price);
+  const [cashbackPercent, setCashbackPercent] = useState(0);
+  const [seatLabel, setSeatLabel] = useState("");
+  const [confirmationKey, setConfirmationKey] = useState("");
   const [quoteHold, setQuoteHold] = useState<{
     balance: number;
     credit: number;
@@ -120,7 +130,7 @@ export function BookingPanel({ tour }: { tour: Tour }) {
     getTouristSnapshot,
     getTouristServerSnapshot,
   );
-  const cashback = catalog.settings.cashbackPercent;
+  const cashback = cashbackPercent;
   const assigned = catalog.tours.find((item) => item.id === tour.id);
 
   useEffect(() => {
@@ -133,11 +143,52 @@ export function BookingPanel({ tour }: { tour: Tour }) {
     setPhone(tourist?.phone ?? "");
   }, [tourist]);
 
+  useEffect(() => {
+    setCashbackPercent(catalog.settings.cashbackPercent);
+  }, [catalog.settings.cashbackPercent]);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured || !supabase) return;
+    let cancelled = false;
+    void supabase
+      .from("departures")
+      .select("id, tour_id, departure_date, available_seats")
+      .eq("tour_id", tour.id)
+      .order("departure_date")
+      .then(({ data }) => {
+        if (cancelled || !data) return;
+        const rows = listBookableDepartures(
+          data.map((row) => ({
+            id: row.id,
+            tourId: row.tour_id,
+            departureDate: row.departure_date,
+            availableSeats: row.available_seats,
+            price: tour.price,
+          })),
+          localDateISO(),
+        );
+        setOptions(rows);
+        setSelectedId((current) => (current && rows.some((row) => row.id === current) ? current : rows[0]?.id ?? ""));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tour.id, tour.price]);
+
+  const selected = options.find((item) => item.id === selectedId) ?? null;
+  const remote = isSupabaseConfigured;
+  const seatLimit = remote ? selected?.availableSeats ?? 0 : tour.seatsLeft;
+  const shownDate = remote
+    ? selected
+      ? format(parseISO(selected.departureDate), "d MMMM yyyy, EEEE", { locale: hy })
+      : "Հասանելի մեկնում չկա"
+    : departureLabel;
+
   const guests = party.adults + party.children;
-  const total = guests * tour.price;
+  const total = guests * (remote ? unitPrice : tour.price);
   const signedInTourist = tourist?.role === "tourist";
   const liveBalance = signedInTourist ? (wallet.accounts[phoneKey(phone)]?.points ?? 0) : 0;
-  const liveCredit = signedInTourist ? Math.min(activeCreditTotal(phone), total) : 0;
+  const liveCredit = !remote && signedInTourist ? Math.min(activeCreditTotal(phone), total) : 0;
   const balance = quoteHold?.balance ?? liveBalance;
   const creditApplied = quoteHold?.credit ?? liveCredit;
   const pointsOn = quoteHold
@@ -145,15 +196,15 @@ export function BookingPanel({ tour }: { tour: Tour }) {
     : signedInTourist && usePoints && liveBalance > 0;
   const quote = quoteCheckout(balance, total - creditApplied, pointsOn, cashback / 100);
   const coveredByPoints = quote.payable === 0 && (pointsOn || creditApplied > 0);
-  const soldOut = tour.seatsLeft < 1;
-  const low = tour.seatsLeft > 0 && tour.seatsLeft <= 5;
+  const soldOut = seatLimit < 1;
+  const low = seatLimit > 0 && seatLimit <= 5;
   const selectedMethod = methods.find((item) => item.id === method);
 
   const changeParty = (key: "adults" | "children", delta: number) => {
     setParty((current) => {
       const next = { ...current, [key]: current[key] + delta };
       if (next.adults < 1 || next.children < 0) return current;
-      if (next.adults + next.children > tour.seatsLeft) return current;
+      if (next.adults + next.children > seatLimit) return current;
       return next;
     });
   };
@@ -171,12 +222,15 @@ export function BookingPanel({ tour }: { tour: Tour }) {
     setUsePoints(false);
     setNotify(true);
     setSaving(false);
+    setConfirmationKey("");
+    setSeatLabel("");
   };
 
   const continueDetails = async () => {
-    if (!bookingDayAssigned(tour.day)) {
-      setError(UNASSIGNED_SCHEDULE_LABEL);
-      toast.error(UNASSIGNED_SCHEDULE_LABEL);
+    if (remote ? !selected : !bookingDayAssigned(tour.day)) {
+      const message = remote ? "Հասանելի մեկնում չկա։" : UNASSIGNED_SCHEDULE_LABEL;
+      setError(message);
+      toast.error(message);
       return;
     }
     if (name.trim().length < 2) {
@@ -199,9 +253,10 @@ export function BookingPanel({ tour }: { tour: Tour }) {
   };
 
   const confirmPayment = async () => {
-    if (!bookingDayAssigned(tour.day)) {
-      setError(UNASSIGNED_SCHEDULE_LABEL);
-      toast.error(UNASSIGNED_SCHEDULE_LABEL);
+    if (remote ? !selected : !bookingDayAssigned(tour.day)) {
+      const message = remote ? "Հասանելի մեկնում չկա։" : UNASSIGNED_SCHEDULE_LABEL;
+      setError(message);
+      toast.error(message);
       return;
     }
     if (!coveredByPoints && !method) {
@@ -216,7 +271,9 @@ export function BookingPanel({ tour }: { tour: Tour }) {
       coveredByPoints ? "Տոմսը ձևավորվում է…" : "Վճարումը սպասման մեջ է…",
     );
     try {
-      const allowed = await confirmBookingIfDayAssigned(tour.day, () =>
+      const key = confirmationKey || crypto.randomUUID();
+      if (!confirmationKey) setConfirmationKey(key);
+      const checkout = () =>
         completeCheckout({
           provider: method,
           tourId: tour.id,
@@ -231,8 +288,20 @@ export function BookingPanel({ tour }: { tour: Tour }) {
           credit: creditApplied,
           notify,
           departureTime: tour.departureTime,
-        }),
-      );
+          ...(remote && selected
+            ? {
+                departureId: selected.id,
+                expectedDate: selected.departureDate,
+                expectedPrice: unitPrice,
+                expectedSeats: selected.availableSeats,
+                expectedCashback: cashback,
+                idempotencyKey: key,
+              }
+            : {}),
+        });
+      const allowed = remote
+        ? { ok: true as const, result: await checkout() }
+        : await confirmBookingIfDayAssigned(tour.day, checkout);
       if (!allowed.ok) {
         setError(allowed.message);
         toast.error(allowed.message, { id: toastId });
@@ -240,12 +309,33 @@ export function BookingPanel({ tour }: { tour: Tour }) {
       }
       const result = allowed.result;
       if (!result.ok) {
+        if (result.stale && selected) {
+          setUnitPrice(result.stale.price);
+          setCashbackPercent(result.stale.cashbackPercent);
+          setOptions((current) =>
+            listBookableDepartures(
+              current.map((item) =>
+                item.id === selected.id
+                  ? {
+                      ...item,
+                      departureDate: result.stale?.departureDate ?? item.departureDate,
+                      availableSeats: result.stale?.availableSeats ?? item.availableSeats,
+                      price: result.stale?.price ?? item.price,
+                    }
+                  : item,
+              ),
+              localDateISO(),
+            ),
+          );
+          setConfirmationKey(crypto.randomUUID());
+        }
         setError(result.message);
         toast.error(result.message, { id: toastId });
         return;
       }
       setCode(result.ticketCode);
       setSeat(result.seatNumber);
+      setSeatLabel(result.seatNumbers);
       setReceipt(result);
       setStep(3);
       toast.success(result.coveredByPoints ? "Տուրն ծածկվեց միավորներով" : "Ամրագրումը հաստատվեց", {
@@ -279,7 +369,7 @@ export function BookingPanel({ tour }: { tour: Tour }) {
         <div className="rounded-3xl border border-border bg-card p-4 shadow-float lg:sticky lg:top-24">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-2xl font-black text-primary">{formatAmd(tour.price)}</p>
+              <p className="text-2xl font-black text-primary">{formatAmd(remote ? unitPrice : tour.price)}</p>
               <p className="text-[11px] text-muted-foreground">մեկ անձի համար</p>
             </div>
             <span
@@ -290,13 +380,34 @@ export function BookingPanel({ tour }: { tour: Tour }) {
                   : "bg-primary-soft text-primary",
               )}
             >
-              {soldOut ? "Տեղերը սպառվել են" : `Մնացել է ${tour.seatsLeft} տեղ`}
+              {soldOut ? "Տեղերը սպառվել են" : `Մնացել է ${seatLimit} տեղ`}
             </span>
           </div>
 
           <p className="mt-3 text-xs text-muted-foreground">
-            {dayReady ? `${departureLabel} · ${tour.departureTime}` : departureLabel}
+            {remote || dayReady ? `${shownDate} · ${tour.departureTime}` : shownDate}
           </p>
+          {remote && (
+            <div className="mt-3 space-y-2">
+              {options.length === 0 && (
+                <p className="text-xs text-muted-foreground">Հասանելի մեկնում չկա։</p>
+              )}
+              {options.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setSelectedId(item.id)}
+                  className={cn(
+                    "flex w-full items-center justify-between rounded-2xl border px-3 py-2 text-left text-xs",
+                    item.id === selectedId ? "border-primary bg-primary-soft" : "border-border",
+                  )}
+                >
+                  <span>{format(parseISO(item.departureDate), "d MMMM yyyy", { locale: hy })}</span>
+                  <span>{item.availableSeats} ազատ տեղ</span>
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="mt-4 grid grid-cols-2 gap-2">
             <PartyCounter
@@ -305,7 +416,7 @@ export function BookingPanel({ tour }: { tour: Tour }) {
               onDecrease={() => changeParty("adults", -1)}
               onIncrease={() => changeParty("adults", 1)}
               decreaseDisabled={party.adults <= 1}
-              increaseDisabled={guests >= tour.seatsLeft}
+              increaseDisabled={guests >= seatLimit}
             />
             <PartyCounter
               label="Երեխա"
@@ -313,7 +424,7 @@ export function BookingPanel({ tour }: { tour: Tour }) {
               onDecrease={() => changeParty("children", -1)}
               onIncrease={() => changeParty("children", 1)}
               decreaseDisabled={party.children <= 0}
-              increaseDisabled={guests >= tour.seatsLeft}
+              increaseDisabled={guests >= seatLimit}
             />
           </div>
 
@@ -324,12 +435,13 @@ export function BookingPanel({ tour }: { tour: Tour }) {
 
           <Button
             className="mt-4 h-11 w-full rounded-full font-bold"
-            disabled={soldOut || guests < 1 || !dayReady}
+            disabled={soldOut || guests < 1 || guests > seatLimit || (remote ? !selected : !dayReady)}
             onClick={() => {
-              if (!bookingDayAssigned(tour.day)) {
-                toast.error(UNASSIGNED_SCHEDULE_LABEL);
+              if (remote ? !selected : !bookingDayAssigned(tour.day)) {
+                toast.error(remote ? "Հասանելի մեկնում չկա։" : UNASSIGNED_SCHEDULE_LABEL);
                 return;
               }
+              setConfirmationKey(crypto.randomUUID());
               setError("");
               setOpen(true);
             }}
@@ -553,7 +665,7 @@ export function BookingPanel({ tour }: { tour: Tour }) {
                 <Button
                   type="button"
                   className="rounded-full font-bold"
-                  disabled={saving || !bookingDayAssigned(tour.day)}
+                  disabled={saving || (remote ? !selected : !bookingDayAssigned(tour.day))}
                   onClick={() => void confirmPayment()}
                 >
                   {saving ? "Հաստատվում է" : coveredByPoints ? "Ստանալ տոմսը" : "Հաստատել"}
@@ -576,8 +688,8 @@ export function BookingPanel({ tour }: { tour: Tour }) {
                   <div>
                     <p className="text-sm font-bold leading-snug">{title}</p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {bookingTicketDateLabel(tour.day)}
-                      {bookingDayAssigned(tour.day)
+                      {remote ? shownDate : bookingTicketDateLabel(tour.day)}
+                      {(remote ? Boolean(selected) : bookingDayAssigned(tour.day))
                         ? ` · ${tour.departureTime}–${tour.returnTime}`
                         : ""}
                     </p>
@@ -611,8 +723,8 @@ export function BookingPanel({ tour }: { tour: Tour }) {
                     <div>
                       <p className="text-[11px] text-muted-foreground">Ամրագրման կոդ</p>
                       <p className="font-mono text-sm font-bold tracking-wide">{code}</p>
-                      {seat !== null && (
-                        <p className="mt-1 text-[11px] text-muted-foreground">Նստատեղ {seat}</p>
+                      {(seatLabel || seat !== null) && (
+                        <p className="mt-1 text-[11px] text-muted-foreground">Նստատեղ {seatLabel || seat}</p>
                       )}
                       {receipt?.notified && (
                         <p className="mt-1 text-[11px] text-muted-foreground">
@@ -641,7 +753,7 @@ export function BookingPanel({ tour }: { tour: Tour }) {
                 </div>
               </div>
               <DepartureCrew
-                departureDate={bookingCrewDepartureDate(tour.day)}
+                departureDate={remote && selected ? selected.departureDate : bookingCrewDepartureDate(tour.day)}
                 departureTime={tour.departureTime}
                 guideId={assigned?.guideId ?? null}
                 driverId={assigned?.driverId ?? null}

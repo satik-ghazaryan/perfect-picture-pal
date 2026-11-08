@@ -1304,11 +1304,28 @@ export async function loadAdminBookings(): Promise<BookingRecord[]> {
   const { data, error } = await supabase
     .from("bookings")
     .select(
-      "id, tour_id, passenger_name, phone, seat_number, ticket_code, status, adults, children, payment_provider, payment_status, amount",
+      "id, tour_id, departure_id, passenger_name, phone, seat_number, ticket_code, status, adults, children, payment_provider, payment_status, amount, departures(departure_date)",
     )
     .order("seat_number");
   if (error) throw new Error("Ամրագրումները չբեռնվեցին։");
-  return data.map(bookingFromRow);
+  return data.map((row) => {
+    const booking = bookingFromRow(row);
+    if (row.departure_id) booking.departureId = row.departure_id;
+    const departure = row.departures;
+    const departureDate = departure && !Array.isArray(departure) ? departure.departure_date : null;
+    if (typeof departureDate === "string") booking.departureDate = departureDate;
+    return booking;
+  });
+}
+
+export async function loadBookingLinkConflicts() {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("booking_departure_conflicts")
+    .select("id, tour_id, ticket_code, reason")
+    .order("id");
+  if (error) throw new Error("Անորոշ ամրագրումները չբեռնվեցին։");
+  return data;
 }
 
 const ADMIN_CREDENTIALS_ERROR = "Էլ. փոստը կամ գաղտնաբառը սխալ է։";
