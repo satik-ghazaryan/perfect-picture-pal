@@ -41,6 +41,7 @@ import {
   getAdminServerSnapshot,
   getAdminSnapshot,
   loadAdminBookings,
+  confirmBookingDeparture,
   loadBookingLinkConflicts,
   createStaffAccount,
   updateDirectoryUser,
@@ -409,6 +410,12 @@ export function AdminDashboard({ session }: { session: AdminSession }) {
             revenue={revenue}
             error={bookingError}
             conflicts={linkConflicts}
+            onConfirmLink={async (bookingId) => {
+              await confirmBookingDeparture(bookingId);
+              const [rows, conflicts] = await Promise.all([loadAdminBookings(), loadBookingLinkConflicts()]);
+              setRemoteBookings(rows);
+              setLinkConflicts(conflicts);
+            }}
           />
         )}
         {section === "transfer" && (
@@ -1558,6 +1565,7 @@ function BookingsSection({
   revenue,
   error,
   conflicts,
+  onConfirmLink,
 }: {
   tours: ManagedTour[];
   users: DirectoryUser[];
@@ -1579,6 +1587,7 @@ function BookingsSection({
   revenue: number;
   error: string;
   conflicts: { id: number; booking_id: string; tour_id: string; ticket_code: string | null; reason: string }[];
+  onConfirmLink?: (bookingId: string) => Promise<void>;
 }) {
   const paid = bookings.filter((booking) => booking.paymentStatus === "SUCCESS").length;
   const pending = bookings.filter((booking) => booking.paymentStatus === "PENDING").length;
@@ -1644,13 +1653,29 @@ function BookingsSection({
         <div className="rounded-3xl border border-border bg-card px-4 py-3 text-sm">
           <p className="font-semibold">Անորոշ հին ամրագրումներ՝ {reviewCount}</p>
           <p className="mt-1 text-muted-foreground">
-            Սեփական տվյալներով մեկնումը միանշանակ չէ, կամ կապը նոր հոսքով չի ստեղծվել և մնացել է ձեռքով վերանայման։ Աշխատակցի ուղևորացուցակում սխալ մեկնման տակ չեն երևում։
+            Սեփական տվյալներով մեկնումը միանշանակ չէ, կամ կապը դեռ հաստատված չէ։ Մինչև հաստատումը այդ գրառումները աշխատակցի ուղևորացուցակում չեն երևում և ազատ տեղերը չեն նվազեցնում։
           </p>
           <ul className="mt-2 space-y-1">
             {conflicts.map((conflict) => (
-              <li key={conflict.id}>
-                <span className="font-semibold">{conflict.ticket_code || conflict.tour_id}</span>
-                <span className="text-muted-foreground"> · {conflict.reason}</span>
+              <li key={conflict.id} className="flex flex-wrap items-center justify-between gap-2">
+                <span>
+                  <span className="font-semibold">{conflict.ticket_code || conflict.tour_id}</span>
+                  <span className="text-muted-foreground"> · {conflict.reason}</span>
+                </span>
+                {onConfirmLink && conflict.reason.startsWith("Նոր հոսքով չի ստեղծվել") && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-8 rounded-full"
+                    onClick={() =>
+                      void onConfirmLink(conflict.booking_id).catch((reason: unknown) => {
+                        toast.error(reason instanceof Error ? reason.message : "Մեկնման կապը չհաստատվեց։");
+                      })
+                    }
+                  >
+                    Հաստատել այս մեկնումը
+                  </Button>
+                )}
               </li>
             ))}
           </ul>

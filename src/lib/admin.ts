@@ -1318,6 +1318,13 @@ export async function loadAdminBookings(): Promise<BookingRecord[]> {
   });
 }
 
+export async function confirmBookingDeparture(bookingId: string) {
+  if (!supabase) throw new Error("Supabase-ը կարգավորված չէ։");
+  const { data, error } = await supabase.rpc("confirm_booking_departure", { p_booking_id: bookingId });
+  if (error || !data?.ok) throw new Error(data?.message || "Մեկնման կապը չհաստատվեց։");
+  return data;
+}
+
 export async function loadBookingLinkConflicts() {
   if (!supabase) return [];
   const { data, error } = await supabase

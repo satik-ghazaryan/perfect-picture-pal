@@ -18,12 +18,10 @@ export default defineConfig({
     ? {
         nitro: {
           preset: nitroPreset,
-          vercel: {
-            functions: {
-              maxDuration: 300,
-            },
-          },
-        },
+          ...(nitroPreset === "vercel"
+            ? { vercel: { functions: { maxDuration: 300 } } }
+            : {}),
+        } as { preset: string },
       }
     : {}),
 });

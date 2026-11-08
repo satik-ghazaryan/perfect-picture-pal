@@ -360,7 +360,7 @@ export type Database = {
           total_price?: number;
           used_points?: number;
           status?: BookingStatus;
-          attendance?: AttendanceStatus;
+          attendance?: AttendanceStatus | null;
           passenger_name?: string | null;
           phone?: string | null;
           ticket_code?: string | null;
@@ -565,6 +565,10 @@ export type Database = {
             createdAt: string;
           }[];
         };
+      };
+      confirm_booking_departure: {
+        Args: { p_booking_id: string };
+        Returns: { ok: boolean; repeated?: boolean; message?: string; available_seats?: number };
       };
       book_departure: {
         Args: {

@@ -3,6 +3,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useSyncExternalStore } from "react";
 import { formatAssignedDepartureDate } from "@/lib/calendar-date";
 import { LogOut } from "lucide-react";
+import { QrScanner } from "@/components/qr-scanner";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +21,7 @@ import {
   subscribeTourist,
 } from "@/lib/admin";
 import {
+  checkInPassenger,
   getPortalServerSnapshot,
   getPortalSnapshot,
   loadDepartureManifest,
@@ -27,6 +29,7 @@ import {
   subscribePortal,
   type StaffProfile,
 } from "@/lib/guide-api";
+import { downloadPassengerWorkbook } from "@/lib/passenger-export";
 import type { AttendanceStatus } from "@/lib/database.types";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
@@ -151,6 +154,7 @@ function GuideHome({
   const tours = portal.tours.filter((tour) => tour.guideId === profile.id);
   const tourKey = tours.map((tour) => tour.departureId).join("|");
   const [openId, setOpenId] = useState("");
+  const [scanMessage, setScanMessage] = useState("");
   const openTour = tours.find((tour) => tour.departureId === openId) ?? null;
 
   useEffect(() => {
@@ -176,6 +180,35 @@ function GuideHome({
     } catch {
       /* The local copy is already updated when the remote write fails. */
     }
+  };
+  const scan = async (code: string) => {
+    if (!openTour) return;
+    const result = await checkInPassenger(openTour.departureId, code);
+    setScanMessage(result.message);
+    if (result.ok) await loadDepartureManifest(openTour.departureId);
+  };
+  const exportPassengers = () => {
+    if (!openTour) return;
+    const passengers = portal.bookings
+      .filter((booking) => booking.departureId === openTour.departureId)
+      .slice()
+      .sort((a, b) => a.passengerName.localeCompare(b.passengerName, "hy"));
+    const driver = users.find((user) => user.id === openTour.driverId && user.role === "driver");
+    downloadPassengerWorkbook({
+      tourTitle: openTour.title,
+      departure: `${formatAssignedDepartureDate(openTour.departureDate)} · ${openTour.departureTime}`,
+      guideName: profile.fullName,
+      driverName: driver?.fullName ?? "Նշանակված չէ",
+      fileName: `Ուղևորներ-${openTour.departureDate}.xlsx`,
+      passengers: passengers.map((booking) => ({
+        fullName: booking.passengerName,
+        phone: booking.phone,
+        email: "",
+        seats: booking.adults + booking.children,
+        paymentStatus: booking.paymentStatus === "SUCCESS" ? "Վճարված" : "Սիմուլացված",
+        notes: booking.attendance === "present" ? "Ներկա" : booking.attendance === "absent" ? "Բացակա" : "",
+      })),
+    });
   };
 
   return (
@@ -236,8 +269,15 @@ function GuideHome({
                 )}
               </div>
               {open && (
-              <div>
-                <h3 className="text-sm font-bold">Ուղևորացուցակ</h3>
+              <div className="space-y-3">
+                <QrScanner onScan={scan} />
+                {scanMessage && <p className="text-sm font-medium">{scanMessage}</p>}
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-sm font-bold">Ուղևորացուցակ</h3>
+                  <Button type="button" variant="outline" className="rounded-full" onClick={exportPassengers}>
+                    Արտահանել Excel
+                  </Button>
+                </div>
                 {passengers.length === 0 ? (
                   <p className="mt-2 rounded-2xl bg-muted px-3 py-3 text-sm text-muted-foreground">
                     Այս տուրի համար դեռևս գրանցված զբոսաշրջիկներ չկան
@@ -248,6 +288,7 @@ function GuideHome({
                       <li key={booking.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
                         <div className="min-w-0">
                           <p className="text-sm font-bold">{booking.passengerName}</p>
+                          <p className="text-xs text-muted-foreground">Տոմս՝ {booking.ticketCode || "—"}</p>
                           <p className="text-xs text-muted-foreground">Հեռախոսահամար՝ {booking.phone || "—"}</p>
                           <p className="text-xs text-muted-foreground">Տեղերի քանակ՝ {booking.adults + booking.children}</p>
                         </div>

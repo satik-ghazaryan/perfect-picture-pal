@@ -6,6 +6,7 @@ import type {
   PaymentState,
   TourStatus,
 } from "@/lib/database.types";
+import { planPassengerCheckIn } from "@/lib/check-in";
 import { loadPublicStaff } from "@/lib/crew";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 
@@ -59,7 +60,7 @@ export type TourPhoto = {
 };
 
 export type CheckInResult =
-  | { ok: true; booking: BookingRecord; message: string }
+  | { ok: true; booking: BookingRecord; message: string; repeated: boolean }
   | { ok: false; message: string };
 
 type PortalState = {
@@ -425,7 +426,7 @@ export async function setAttendance(bookingId: string, attendance: AttendanceSta
     bookings: state.bookings.map((booking) => (booking.id === bookingId ? { ...booking, attendance } : booking)),
   });
   if (!supabase) return;
-  const { error } = await supabase.from("bookings").update({ attendance: attendance ?? "pending" }).eq("id", bookingId);
+  const { error } = await supabase.from("bookings").update({ attendance }).eq("id", bookingId);
   if (error) throw new Error("Ներկայությունը չպահվեց։ Տեղային վիճակը թարմացվեց։");
 }
 
@@ -618,49 +619,61 @@ export async function registerBooking(input: {
   });
 }
 
-export async function checkInPassenger(tourId: string, rawCode: string): Promise<CheckInResult> {
+export async function checkInPassenger(departureId: string, rawCode: string): Promise<CheckInResult> {
   const ticketCode = ticketCodeFromScan(rawCode);
-  if (!ticketCode) return { ok: false, message: "QR կոդը դատարկ է։" };
+  if (!ticketCode || !departureId) return { ok: false, message: "QR կոդը դատարկ է։" };
 
   if (!supabase) {
     const booking = state.bookings.find(
-      (item) => item.tourId === tourId && item.ticketCode.toUpperCase() === ticketCode,
+      (item) => item.departureId === departureId && item.ticketCode.toUpperCase() === ticketCode,
     );
-    if (!booking) return { ok: false, message: "Այս տուրում այդպիսի տոմս չկա։" };
-    if (booking.status === "checked_in") {
-      return { ok: false, message: `${booking.passengerName} արդեն գրանցված է։` };
-    }
-    const updated: BookingRecord = { ...booking, status: "checked_in" };
+    const plan = planPassengerCheckIn({
+      assigned: true,
+      foundOnDeparture: Boolean(booking),
+      attendance: booking?.attendance ?? null,
+      passengerName: booking?.passengerName ?? "",
+    });
+    if (!booking || plan.action === "reject") return { ok: false, message: plan.message };
+    if (plan.action === "repeat") return { ok: true, booking, message: plan.message, repeated: true };
+    const updated: BookingRecord = { ...booking, attendance: "present" };
     setState({
       bookings: state.bookings.map((item) => (item.id === booking.id ? updated : item)),
     });
-    return { ok: true, booking: updated, message: `${updated.passengerName} գրանցվեց։` };
+    return { ok: true, booking: updated, message: plan.message, repeated: false };
   }
 
   const { data, error } = await supabase
     .from("bookings")
     .select(
-      "id, tour_id, passenger_name, phone, seat_number, ticket_code, status, adults, children, checked_in_at",
+      "id, tour_id, departure_id, passenger_name, phone, seat_number, ticket_code, status, adults, children, payment_provider, payment_status, amount, attendance",
     )
-    .eq("tour_id", tourId)
+    .eq("departure_id", departureId)
     .eq("ticket_code", ticketCode)
     .maybeSingle();
   if (error) return { ok: false, message: "Գրանցումը չստուգվեց։" };
-  if (!data) return { ok: false, message: "Այս տուրում այդպիսի տոմս չկա։" };
-  if (data.status === "checked_in") {
-    return { ok: false, message: `${data.passenger_name} արդեն գրանցված է։` };
+  const plan = planPassengerCheckIn({
+    assigned: true,
+    foundOnDeparture: Boolean(data),
+    attendance: data ? attendanceOf(data.attendance) : null,
+    passengerName: data?.passenger_name ?? "",
+  });
+  if (!data || plan.action === "reject") return { ok: false, message: plan.message };
+  if (plan.action === "repeat") {
+    return { ok: true, booking: mapBooking(data), message: plan.message, repeated: true };
   }
   const { data: saved, error: updateError } = await supabase
     .from("bookings")
-    .update({ status: "checked_in", checked_in_at: new Date().toISOString() })
+    .update({ attendance: "present" })
     .eq("id", data.id)
     .select(
-      "id, tour_id, passenger_name, phone, seat_number, ticket_code, status, adults, children, checked_in_at",
+      "id, tour_id, departure_id, passenger_name, phone, seat_number, ticket_code, status, adults, children, payment_provider, payment_status, amount, attendance",
     )
-    .single();
+    .maybeSingle();
   if (updateError || !saved) return { ok: false, message: "Գրանցումը չպահպանվեց։" };
   const booking = mapBooking(saved);
-  return { ok: true, booking, message: `${booking.passengerName} գրանցվեց։` };
+  const rest = state.bookings.filter((item) => item.id !== booking.id);
+  setState({ bookings: [...rest, booking] });
+  return { ok: true, booking, message: plan.message, repeated: false };
 }
 
 export async function updateTourStatus(tourId: string, status: TourStatus) {

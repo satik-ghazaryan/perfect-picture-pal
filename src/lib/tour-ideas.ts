@@ -124,7 +124,7 @@ export function parseAmd(value: unknown): number {
   }
   if (value && typeof value === "object") {
     const record = value as Record<string, unknown>;
-    return parseAmd(record.amd ?? record.amount ?? record.value ?? record.price);
+    return parseAmd(record["amd"] ?? record["amount"] ?? record["value"] ?? record["price"]);
   }
   return 0;
 }
@@ -132,14 +132,14 @@ export function parseAmd(value: unknown): number {
 function asStop(value: unknown): TourIdeaStop | null {
   if (!value || typeof value !== "object") return null;
   const record = value as Record<string, unknown>;
-  const time = String(record.time ?? "").trim();
-  const description = String(record.description ?? "").trim();
+  const time = String(record["time"] ?? "").trim();
+  const description = String(record["description"] ?? "").trim();
   const hasPlaceName = "place_name" in record;
   const placeRaw = record["place_name"];
   const placeName =
     placeRaw == null || String(placeRaw).trim() === "" ? null : String(placeRaw).trim();
   const activity = String(record["activity"] ?? "").trim();
-  let title = String(record.title ?? "").trim();
+  let title = String(record["title"] ?? "").trim();
   if (!title && placeName) {
     title = activity ? `${placeName} — ${activity}` : placeName;
   }
@@ -171,32 +171,32 @@ function asBreakdown(value: unknown): TourIdeaBreakdown | undefined {
   if (!value || typeof value !== "object") return undefined;
   const record = value as Record<string, unknown>;
   return {
-    transport_amd: parseAmd(record.transport_amd ?? record.transport),
-    meals_amd: parseAmd(record.meals_amd ?? record.meals),
-    entrance_fees_amd: parseAmd(record.entrance_fees_amd ?? record.entrance_fees ?? record.tickets),
-    guide_amd: parseAmd(record.guide_amd ?? record.guide),
-    other_amd: parseAmd(record.other_amd ?? record.other),
-    yerevan_transfer_amd: parseAmd(record.yerevan_transfer_amd ?? record.yerevan_transfer),
-    notes: String(record.notes ?? "Estimated. Needs verification."),
+    transport_amd: parseAmd(record["transport_amd"] ?? record["transport"]),
+    meals_amd: parseAmd(record["meals_amd"] ?? record["meals"]),
+    entrance_fees_amd: parseAmd(record["entrance_fees_amd"] ?? record["entrance_fees"] ?? record["tickets"]),
+    guide_amd: parseAmd(record["guide_amd"] ?? record["guide"]),
+    other_amd: parseAmd(record["other_amd"] ?? record["other"]),
+    yerevan_transfer_amd: parseAmd(record["yerevan_transfer_amd"] ?? record["yerevan_transfer"]),
+    notes: String(record["notes"] ?? "Estimated. Needs verification."),
   };
 }
 
 function asProfitability(value: unknown): TourIdeaProfitability | undefined {
   if (!value || typeof value !== "object") return undefined;
   const record = value as Record<string, unknown>;
-  const groupSize = parseAmd(record.group_size) || GROUP_SIZE_FALLBACK;
-  const revenue = parseAmd(record.revenue_per_person_amd ?? record.revenue_per_person);
-  const expense = parseAmd(record.expense_per_person_amd ?? record.expense_per_person);
-  const profit = parseAmd(record.profit_per_person_amd ?? record.profit_per_person) || Math.max(0, revenue - expense);
+  const groupSize = parseAmd(record["group_size"]) || GROUP_SIZE_FALLBACK;
+  const revenue = parseAmd(record["revenue_per_person_amd"] ?? record["revenue_per_person"]);
+  const expense = parseAmd(record["expense_per_person_amd"] ?? record["expense_per_person"]);
+  const profit = parseAmd(record["profit_per_person_amd"] ?? record["profit_per_person"]) || Math.max(0, revenue - expense);
   return {
     group_size: groupSize,
     revenue_per_person_amd: revenue,
     expense_per_person_amd: expense,
     profit_per_person_amd: profit,
-    revenue_per_group_amd: parseAmd(record.revenue_per_group_amd) || revenue * groupSize,
-    expense_per_group_amd: parseAmd(record.expense_per_group_amd) || expense * groupSize,
-    profit_per_group_amd: parseAmd(record.profit_per_group_amd) || profit * groupSize,
-    assumptions: String(record.assumptions ?? "Estimated. Needs verification."),
+    revenue_per_group_amd: parseAmd(record["revenue_per_group_amd"]) || revenue * groupSize,
+    expense_per_group_amd: parseAmd(record["expense_per_group_amd"]) || expense * groupSize,
+    profit_per_group_amd: parseAmd(record["profit_per_group_amd"]) || profit * groupSize,
+    assumptions: String(record["assumptions"] ?? "Estimated. Needs verification."),
     confidence: record["confidence"] === "needs_verification" ? "needs_verification" : "estimated",
   };
 }
@@ -364,14 +364,14 @@ export function normalizeResearch(value: unknown): TourIdeaResearch {
 export function normalizeTourIdea(value: unknown): TourIdeaResult | null {
   if (!value || typeof value !== "object") return null;
   const record = value as Record<string, unknown>;
-  const id = String(record.id ?? "").trim();
-  const titleHy = String(record.title_hy ?? "").trim();
+  const id = String(record["id"] ?? "").trim();
+  const titleHy = String(record["title_hy"] ?? "").trim();
   if (!id || !titleHy) return null;
-  const itinerary = Array.isArray(record.itinerary)
-    ? record.itinerary.map(asStop).filter((item): item is TourIdeaStop => item !== null)
+  const itinerary = Array.isArray(record["itinerary"])
+    ? record["itinerary"].map(asStop).filter((item): item is TourIdeaStop => item !== null)
     : [];
-  const highlights = Array.isArray(record.highlights)
-    ? record.highlights.map((item) => String(item).trim()).filter(Boolean)
+  const highlights = Array.isArray(record["highlights"])
+    ? record["highlights"].map((item) => String(item).trim()).filter(Boolean)
     : [];
   const result: TourIdeaResult = {
     id,
@@ -401,15 +401,15 @@ export function normalizeTourIdea(value: unknown): TourIdeaResult | null {
           .map((item) => {
             if (!item || typeof item !== "object") return null;
             const row = item as Record<string, unknown>;
-            const name = String(row.name ?? "").trim();
-            const lat = typeof row.lat === "number" ? row.lat : Number(row.lat);
-            const lon = typeof row.lon === "number" ? row.lon : Number(row.lon);
+            const name = String(row["name"] ?? "").trim();
+            const lat = typeof row["lat"] === "number" ? row["lat"] : Number(row["lat"]);
+            const lon = typeof row["lon"] === "number" ? row["lon"] : Number(row["lon"]);
             if (!name || !Number.isFinite(lat) || !Number.isFinite(lon)) return null;
             return {
               name,
               lat,
               lon,
-              coord_source: String(row.coord_source ?? "Nominatim"),
+              coord_source: String(row["coord_source"] ?? "Nominatim"),
             };
           })
           .filter((item): item is { name: string; lat: number; lon: number; coord_source: string } => item !== null)
