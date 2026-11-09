@@ -273,8 +273,8 @@ begin
 end;
 $$;
 
-revoke all on function public.book_departure(uuid, text, text, text, integer, integer, boolean, text, text, text, date, integer, integer, integer) from public;
-grant execute on function public.book_departure(uuid, text, text, text, integer, integer, boolean, text, text, text, date, integer, integer, integer) to anon, authenticated, service_role;
+revoke all on function public.book_departure(uuid, text, text, text, integer, integer, boolean, text, text, text, date, integer, integer, integer) from public, anon, authenticated;
+grant execute on function public.book_departure(uuid, text, text, text, integer, integer, boolean, text, text, text, date, integer, integer, integer) to service_role;
 
 create or replace function public.refresh_booking_departure_reviews()
 returns void
