@@ -33,6 +33,18 @@ export function rateLimitTourChat(key: string, now = Date.now()) {
   return true;
 }
 
+export function anonCatalogKey(key: string) {
+  const part = key.split(".")[1];
+  if (!part) return false;
+  try {
+    const padded = part.replace(/-/g, "+").replace(/_/g, "/");
+    const pad = padded + "=".repeat((4 - (padded.length % 4)) % 4);
+    const payload = JSON.parse(atob(pad)) as { role?: string };
+    return payload.role === "anon";
+  } catch {
+    return false;
+  }
+}
 export function clientAddress(request: Request) {
   const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "";
   const candidate = forwarded || request.headers.get("x-real-ip")?.trim() || "unknown";
@@ -42,7 +54,7 @@ export function clientAddress(request: Request) {
 export async function loadPublicTourFacts(): Promise<ChatFacts> {
   const url = envValue("VITE_SUPABASE_URL") || envValue("SUPABASE_URL");
   const anonKey = envValue("VITE_SUPABASE_ANON_KEY") || envValue("SUPABASE_ANON_KEY");
-  if (!url || !anonKey) return { ok: false, tours: [] };
+  if (!url || !anonKey || !anonCatalogKey(anonKey)) return { ok: false, tours: [] };
   try {
     const client = createClient(url, anonKey, {
       auth: { persistSession: false, autoRefreshToken: false },

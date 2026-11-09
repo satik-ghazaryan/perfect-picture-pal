@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { answerTourQuestion, publicFactsFromRows, replyKeepsPublishedFacts, type ChatFacts } from "./tour-chat-facts.ts";
-import { rateLimitTourChat, replyToTourQuestion, resetTourChatRateLimit } from "./tour-chat.server.ts";
+import { rateLimitTourChat, replyToTourQuestion, resetTourChatRateLimit, anonCatalogKey } from "./tour-chat.server.ts";
 
 const now = new Date("2026-11-09T10:00:00.000Z");
 
@@ -28,7 +28,8 @@ describe("public tour chat facts", () => {
       facts: facts(),
       now,
     });
-    assert.match(reply, /0 ֏/);
+    assert.match(reply, /Գինը դեռ նշված չէ/);
+    assert.doesNotMatch(reply, /0 ֏|անվճար/);
     assert.match(reply, /30 նոյեմբեր 2026/);
     assert.match(reply, /08:30/);
     assert.match(reply, /Ազատ տեղերը՝ 3/);
@@ -42,7 +43,7 @@ describe("public tour chat facts", () => {
       facts: facts(),
       now,
     });
-    assert.match(reply, /գինը հրապարակված չէ/);
+    assert.match(reply, /Գինը դեռ նշված չէ/);
     assert.match(reply, /առաջիկա բաց մեկնում այս պահին չկա/);
     assert.match(reply, /\/tours\/tatev/);
     assert.doesNotMatch(reply, /\d/);
@@ -69,7 +70,7 @@ describe("public tour chat facts", () => {
       facts: facts(),
       now,
     });
-    assert.match(onPage, /0 ֏/);
+    assert.match(onPage, /Գինը դեռ նշված չէ/);
     assert.match(onPage, /\/tours\/garni/);
     assert.doesNotMatch(onPage, /15000/);
   });
@@ -83,14 +84,14 @@ describe("public tour chat facts", () => {
     });
     assert.match(reply, /Ամրագրում չեմ կատարում/);
     assert.match(reply, /\/tours\/sevan/);
-    assert.doesNotMatch(reply, /book_departure|0 ֏/);
+    assert.doesNotMatch(reply, /book_departure|0 ֏|անվճար/);
   });
 
   it("rejects a model reply that adds a price or drops the tour link", () => {
-    const grounded = "Գառնի տուրի գինը այս պահին 0 ֏ է։ Էջը՝ /tours/garni։";
-    assert.equal(replyKeepsPublishedFacts(grounded, "Գինը 0 ֏ է։ Էջը՝ /tours/garni։"), true);
-    assert.equal(replyKeepsPublishedFacts(grounded, "Գինը 12000 ֏ է։ Էջը՝ /tours/garni։"), false);
-    assert.equal(replyKeepsPublishedFacts(grounded, "Գինը 0 ֏ է։"), false);
+    const grounded = "Գառնի տուրի գինը այս պահին 12000 ֏ է։ Էջը՝ /tours/garni։";
+    assert.equal(replyKeepsPublishedFacts(grounded, "Գինը 12000 ֏ է։ Էջը՝ /tours/garni։"), true);
+    assert.equal(replyKeepsPublishedFacts(grounded, "Գինը 0 ֏ է։ Էջը՝ /tours/garni։"), false);
+    assert.equal(replyKeepsPublishedFacts(grounded, "Գինը 12000 ֏ է։"), false);
   });
 });
 
@@ -105,7 +106,40 @@ describe("public tour chat limit", () => {
       facts: facts(),
       now,
     });
-    assert.match(reply, /0 ֏/);
+    assert.match(reply, /Գինը դեռ նշված չէ/);
+    assert.doesNotMatch(reply, /0 ֏|անվճար/);
     assert.match(reply, /\/tours\/garni/);
+  });
+
+  it("reads an open departure from isolated rows and the next request sees the new seat count", () => {
+    const rows = (seats: number) =>
+      publicFactsFromRows(
+        [{ id: "garni", title_hy: "Գառնի", price: 12000, departure_time: "08:30", is_virtual_only: false }],
+        [{ tour_id: "garni", departure_date: "2026-11-30", available_seats: seats }],
+      );
+    const first = answerTourQuestion({
+      message: "Գառնիի գինը, հաջորդ մեկնումը և ազատ տեղերը",
+      facts: rows(4),
+      now,
+    });
+    const second = answerTourQuestion({
+      message: "Գառնիի գինը, հաջորդ մեկնումը և ազատ տեղերը",
+      facts: rows(1),
+      now,
+    });
+    assert.match(first, /12000 ֏/);
+    assert.match(first, /Ազատ տեղերը՝ 4/);
+    assert.match(second, /Ազատ տեղերը՝ 1/);
+    assert.doesNotMatch(second, /Ազատ տեղերը՝ 4/);
+  });
+
+  it("refuses a service role key and accepts only the public anon role", () => {
+    const token = (role: string) => {
+      const body = Buffer.from(JSON.stringify({ role })).toString("base64url");
+      return `header.${body}.sig`;
+    };
+    assert.equal(anonCatalogKey(token("anon")), true);
+    assert.equal(anonCatalogKey(token("service_role")), false);
+    assert.equal(anonCatalogKey("not-a-jwt"), false);
   });
 });

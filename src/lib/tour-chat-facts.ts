@@ -170,7 +170,7 @@ function clarify(tours: PublicTourFact[]) {
 }
 
 function priceLine(tour: PublicTourFact) {
-  if (tour.price === null) return `${tour.title} տուրի գինը հրապարակված չէ։ Թիվ չեմ նշում։`;
+  if (tour.price === null || tour.price === 0) return `${tour.title}։ Գինը դեռ նշված չէ։`;
   return `${tour.title} տուրի գինը այս պահին ${tour.price} ֏ է։`;
 }
 
