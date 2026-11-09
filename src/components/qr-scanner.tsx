@@ -2,67 +2,157 @@ import { useEffect, useRef, useState } from "react";
 import { Camera, Keyboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ScannerStartSession, readScannerSurface, waitForScannerSurface } from "@/lib/qr-scanner-session";
 
 type Props = {
   onScan: (value: string) => Promise<void> | void;
   disabled?: boolean;
 };
 
+function stopCapturedMedia(element: HTMLElement | null) {
+  if (!element) return;
+  for (const video of element.querySelectorAll("video")) {
+    const stream = video.srcObject;
+    if (stream instanceof MediaStream) {
+      for (const track of stream.getTracks()) track.stop();
+    }
+    video.pause();
+    video.srcObject = null;
+    video.remove();
+  }
+}
+
+async function releaseScanner(
+  scanner: import("html5-qrcode").Html5Qrcode | null,
+  element: HTMLElement | null,
+) {
+  if (scanner) {
+    try {
+      if (scanner.isScanning) await scanner.stop();
+    } catch {
+      /* Start can still be settling when the reader is closed. */
+    }
+    try {
+      scanner.clear();
+    } catch {
+      /* The reader element was already removed. */
+    }
+  }
+  stopCapturedMedia(element);
+}
+
 export function QrScanner({ onScan, disabled = false }: Props) {
+  const readerRef = useRef<HTMLDivElement>(null);
   const scannerRef = useRef<import("html5-qrcode").Html5Qrcode | null>(null);
+  const sessionRef = useRef(new ScannerStartSession());
+  const onScanRef = useRef(onScan);
   const [cameraOn, setCameraOn] = useState(false);
   const [cameraError, setCameraError] = useState("");
   const [manualCode, setManualCode] = useState("");
   const [busy, setBusy] = useState(false);
+  onScanRef.current = onScan;
 
-  const stopCamera = async () => {
+  const stopCamera = () => {
+    sessionRef.current.invalidate();
     const scanner = scannerRef.current;
     scannerRef.current = null;
-    if (!scanner) return;
-    try {
-      if (scanner.isScanning) await scanner.stop();
-      scanner.clear();
-    } catch {
-      /* The camera element is already gone. */
-    }
     setCameraOn(false);
+    void releaseScanner(scanner, readerRef.current);
   };
 
   useEffect(() => {
+    const session = sessionRef.current;
     return () => {
-      void stopCamera();
+      session.invalidate();
+      const scanner = scannerRef.current;
+      scannerRef.current = null;
+      void releaseScanner(scanner, readerRef.current);
     };
   }, []);
 
-  const startCamera = async () => {
-    setCameraError("");
+  const submit = async (value: string) => {
+    const code = value.trim();
+    if (!code || !sessionRef.current.tryAcceptScan()) return;
+    setBusy(true);
     try {
+      await onScanRef.current(code);
+      setManualCode("");
+    } finally {
+      sessionRef.current.finishScan();
+      setBusy(false);
+    }
+  };
+
+  const startCamera = async () => {
+    const session = sessionRef.current;
+    const id = session.begin();
+    setCameraError("");
+    setCameraOn(true);
+    const reader = readerRef.current;
+    if (!reader) {
+      if (session.isCurrent(id)) {
+        setCameraOn(false);
+        setCameraError("Տեսախցիկը չբացվեց։ Կարող եք մուտքագրել տոմսի կոդը։");
+      }
+      return;
+    }
+    try {
+      await waitForScannerSurface(
+        () => readScannerSurface(reader),
+        () => !session.isCurrent(id),
+        (check) => {
+          const observer = new ResizeObserver(check);
+          observer.observe(reader);
+          const unsubscribe = session.subscribe(check);
+          const frame = requestAnimationFrame(check);
+          return () => {
+            cancelAnimationFrame(frame);
+            observer.disconnect();
+            unsubscribe();
+          };
+        },
+      );
+      if (!session.isCurrent(id)) return;
       const { Html5Qrcode } = await import("html5-qrcode");
-      const scanner = new Html5Qrcode("guide-qr-reader");
+      if (!session.isCurrent(id)) return;
+      const scanner = new Html5Qrcode(reader.id, {
+        verbose: false,
+        useBarCodeDetectorIfSupported: false,
+      });
       scannerRef.current = scanner;
-      setCameraOn(true);
       await scanner.start(
         { facingMode: "environment" },
-        { fps: 8, qrbox: { width: 220, height: 220 } },
+        { fps: 8 },
         (decodedText) => {
-          void stopCamera().then(() => submit(decodedText));
+          if (!session.isCurrent(id) || !session.tryAcceptScan()) return;
+          void releaseScanner(scanner, reader).then(() => {
+            scannerRef.current = null;
+            setCameraOn(false);
+            void submitLocked(decodedText);
+          });
         },
         () => undefined,
       );
-    } catch {
+      if (!session.isCurrent(id)) {
+        scannerRef.current = null;
+        await releaseScanner(scanner, reader);
+      }
+    } catch (error) {
+      scannerRef.current = null;
+      stopCapturedMedia(reader);
+      if (!session.isCurrent(id) || (error instanceof DOMException && error.name === "AbortError")) return;
       setCameraOn(false);
       setCameraError("Տեսախցիկը չբացվեց։ Կարող եք մուտքագրել տոմսի կոդը։");
     }
   };
 
-  const submit = async (value: string) => {
-    const code = value.trim();
-    if (!code || busy) return;
+  const submitLocked = async (value: string) => {
     setBusy(true);
     try {
-      await onScan(code);
+      await onScanRef.current(value.trim());
       setManualCode("");
     } finally {
+      sessionRef.current.finishScan();
       setBusy(false);
     }
   };
@@ -70,7 +160,11 @@ export function QrScanner({ onScan, disabled = false }: Props) {
   return (
     <div className="space-y-3">
       <div className="overflow-hidden rounded-2xl bg-navy">
-        <div id="guide-qr-reader" className={cameraOn ? "min-h-[240px]" : "hidden"} />
+        <div
+          id="guide-qr-reader"
+          ref={readerRef}
+          className={cameraOn ? "min-h-[240px]" : "hidden"}
+        />
         {!cameraOn && (
           <div className="grid min-h-[240px] place-items-center px-4 text-center text-navy-foreground">
             <div>
@@ -86,7 +180,7 @@ export function QrScanner({ onScan, disabled = false }: Props) {
       {cameraError && <p className="text-xs font-medium text-destructive">{cameraError}</p>}
       <div className="flex flex-wrap gap-2">
         {cameraOn ? (
-          <Button type="button" variant="outline" className="rounded-full" onClick={() => void stopCamera()}>
+          <Button type="button" variant="outline" className="rounded-full" onClick={stopCamera}>
             Կանգնեցնել տեսախցիկը
           </Button>
         ) : (
