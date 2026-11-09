@@ -11,6 +11,7 @@ import { packingList, tourTypeLabels } from "@/data/tours";
 import { pickLocale, tourDescription, tourLocation, tourTitle, useSiteLocale } from "@/lib/locale";
 import { CatalogStatusPanel } from "@/components/catalog-status-panel";
 import { catalogIsPending, getAdminServerSnapshot, getAdminSnapshot, hydrateAdmin, resolveTour, retryLiveCatalog, subscribeAdmin } from "@/lib/admin";
+import { withPublishedGarniAudio } from "@/lib/garni-audio";
 
 export const Route = createFileRoute("/tours/$id")({
   validateSearch: (search: Record<string, unknown>): { ticket?: string } => {
@@ -60,7 +61,9 @@ function TourDetailPage() {
   const catalog = useSyncExternalStore(subscribeAdmin, getAdminSnapshot, getAdminServerSnapshot);
   const pending = catalogIsPending(catalog.catalogStatus);
   const live = catalog.tours.find((item) => item.id === id);
-  const tour = catalog.catalogStatus === "loaded" ? (live ?? loaded) : undefined;
+  const resolved = live ?? loaded;
+  const tour =
+    catalog.catalogStatus === "loaded" && resolved ? withPublishedGarniAudio(resolved) : undefined;
   const { ticket: shownTicket = "" } = Route.useSearch();
   const linkedId = tour?.is_virtual_only ? "" : tour?.virtual_tour_id?.trim() ?? "";
   const linkedTour = linkedId

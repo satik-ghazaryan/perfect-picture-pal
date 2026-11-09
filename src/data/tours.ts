@@ -170,11 +170,13 @@ export const tours: Tour[] = [
     included: baseIncluded,
     excluded: [...baseExcluded, "Գեղարդի հոգևոր երգի մասնավոր կատարում"],
     audioChapters: [
-      { id: "g1", title: "Բարի գալուստ. ճանապարհը Արմավիրից", duration: 254 },
-      { id: "g2", title: "Գառնի՝ հեթանոսական Հայաստան", duration: 412 },
-      { id: "g3", title: "Ազատի կիրճ և բազալտե սյուներ", duration: 318 },
-      { id: "g4", title: "Գեղարդ՝ նիզակի վանքը", duration: 486 },
-      { id: "g5", title: "Ամփոփում և վերադարձ", duration: 176 },
+      {
+        id: "garni-guide",
+        title: "Գառնի, Գեղարդ և Քարերի սիմֆոնիա",
+        duration: 16 * 60 + 30,
+        language: "hy",
+        audioUrl: "/audio/garni-guide.m4a",
+      },
     ],
     hotspots: [
       { id: "gh1", x: 22, y: 52, title: "Տաճարի սյունասրահ", description: "24 իոնական սյուներ՝ 1 դ. հռոմեական ոճով։" },

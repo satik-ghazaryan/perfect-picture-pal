@@ -1,3 +1,4 @@
+import { withPublishedGarniAudio } from "@/lib/garni-audio";
 import {
   deserializeSiteSettings,
   deserializeTourCatalog,
@@ -81,7 +82,8 @@ export async function loadRemoteCatalog(
   }
   const physical = toursResult.data
     .map((row) => deserializeTourCatalog(row))
-    .filter((tour): tour is CatalogTour => tour !== null);
+    .filter((tour): tour is CatalogTour => tour !== null)
+    .map((tour) => withPublishedGarniAudio(tour));
   const virtualTours = virtualResult.data
     .map((row) => deserializeVirtualTour(row))
     .filter((tour): tour is CatalogTour => tour !== null);
