@@ -29,6 +29,7 @@ import {
 } from "@/lib/loyalty";
 import { completeCheckout, type CheckoutSuccess } from "@/lib/payments";
 import { listBookableDepartures, localDateISO, type BookableDeparture } from "@/lib/departure-booking";
+import { DEPARTURE_CLOSED_MESSAGE, departureBookingClosed } from "@/lib/departure-deadline";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { DepartureCrew } from "@/components/departure-crew";
 import { TestModeNotice } from "@/components/test-mode-notice";
@@ -114,6 +115,7 @@ export function BookingPanel({ tour }: { tour: Tour }) {
   const [seatLabel, setSeatLabel] = useState("");
   const [confirmationKey, setConfirmationKey] = useState("");
   const [confirmationProof, setConfirmationProof] = useState("");
+  const [clock, setClock] = useState(() => new Date());
   const [quoteHold, setQuoteHold] = useState<{
     balance: number;
     credit: number;
@@ -147,6 +149,11 @@ export function BookingPanel({ tour }: { tour: Tour }) {
   useEffect(() => {
     setCashbackPercent(catalog.settings.cashbackPercent);
   }, [catalog.settings.cashbackPercent]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setClock(new Date()), 200);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) return;
@@ -200,6 +207,9 @@ export function BookingPanel({ tour }: { tour: Tour }) {
   const quote = quoteCheckout(balance, total - creditApplied, pointsOn, cashback / 100);
   const coveredByPoints = quote.payable === 0 && (pointsOn || creditApplied > 0);
   const soldOut = seatLimit < 1;
+  const bookingClosed = Boolean(
+    remote && selected && departureBookingClosed(selected.departureDate, tour.departureTime, clock),
+  );
   const low = seatLimit > 0 && seatLimit <= 5;
   const selectedMethod = methods.find((item) => item.id === method);
 
@@ -397,6 +407,9 @@ export function BookingPanel({ tour }: { tour: Tour }) {
           <p className="mt-3 text-xs text-muted-foreground">
             {remote || dayReady ? `${shownDate} · ${tour.departureTime}` : shownDate}
           </p>
+          {bookingClosed && (
+            <p className="mt-2 text-xs font-medium text-destructive">{DEPARTURE_CLOSED_MESSAGE}</p>
+          )}
           {remote && (
             <div className="mt-3 space-y-2">
               {options.length === 0 && (
@@ -445,7 +458,9 @@ export function BookingPanel({ tour }: { tour: Tour }) {
 
           <Button
             className="mt-4 h-11 w-full rounded-full font-bold"
-            disabled={soldOut || guests < 1 || guests > seatLimit || (remote ? !selected : !dayReady)}
+            disabled={
+              soldOut || bookingClosed || guests < 1 || guests > seatLimit || (remote ? !selected : !dayReady)
+            }
             onClick={() => {
               if (remote ? !selected : !bookingDayAssigned(tour.day)) {
                 toast.error(remote ? "Հասանելի մեկնում չկա։" : UNASSIGNED_SCHEDULE_LABEL);
