@@ -12,6 +12,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { RoleGate } from "../components/role-gate";
 import { TestModeNotice } from "../components/test-mode-notice";
+import { TourChat } from "../components/tour-chat";
 import { Toaster } from "../components/ui/sonner";
 
 function NotFoundComponent() {
@@ -140,6 +141,7 @@ function RootComponent() {
       <TestModeNotice />
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
       <Outlet />
+      <TourChat />
       {toastsReady && <Toaster position="top-center" />}
     </QueryClientProvider>
   );

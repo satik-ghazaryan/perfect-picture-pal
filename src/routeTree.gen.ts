@@ -18,6 +18,7 @@ import { Route as LoyaltyRouteImport } from './routes/loyalty'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as VendorRouteImport } from './routes/vendor'
 import { Route as VirtualRouteImport } from './routes/virtual'
+import { Route as ApiTourChatRouteImport } from './routes/api/tour-chat'
 import { Route as ToursIdRouteImport } from './routes/tours/$id'
 import { Route as ApiIdeasGenerateRouteImport } from './routes/api/ideas/generate'
 import { Route as ApiNotificationsDispatchRouteImport } from './routes/api/notifications/dispatch'
@@ -70,6 +71,11 @@ const VendorRoute = VendorRouteImport.update({
 const VirtualRoute = VirtualRouteImport.update({
   id: '/virtual',
   path: '/virtual',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiTourChatRoute = ApiTourChatRouteImport.update({
+  id: '/api/tour-chat',
+  path: '/api/tour-chat',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ToursIdRoute = ToursIdRouteImport.update({
@@ -125,6 +131,7 @@ export interface FileRoutesByFullPath {
   '/profile': typeof ProfileRoute
   '/vendor': typeof VendorRoute
   '/virtual': typeof VirtualRoute
+  '/api/tour-chat': typeof ApiTourChatRoute
   '/tours/$id': typeof ToursIdRoute
   '/api/ideas/generate': typeof ApiIdeasGenerateRoute
   '/api/notifications/dispatch': typeof ApiNotificationsDispatchRoute
@@ -144,6 +151,7 @@ export interface FileRoutesByTo {
   '/profile': typeof ProfileRoute
   '/vendor': typeof VendorRoute
   '/virtual': typeof VirtualRoute
+  '/api/tour-chat': typeof ApiTourChatRoute
   '/tours/$id': typeof ToursIdRoute
   '/api/ideas/generate': typeof ApiIdeasGenerateRoute
   '/api/notifications/dispatch': typeof ApiNotificationsDispatchRoute
@@ -164,6 +172,7 @@ export interface FileRoutesById {
   '/profile': typeof ProfileRoute
   '/vendor': typeof VendorRoute
   '/virtual': typeof VirtualRoute
+  '/api/tour-chat': typeof ApiTourChatRoute
   '/tours/$id': typeof ToursIdRoute
   '/api/ideas/generate': typeof ApiIdeasGenerateRoute
   '/api/notifications/dispatch': typeof ApiNotificationsDispatchRoute
@@ -185,6 +194,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/vendor'
     | '/virtual'
+    | '/api/tour-chat'
     | '/tours/$id'
     | '/api/ideas/generate'
     | '/api/notifications/dispatch'
@@ -204,6 +214,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/vendor'
     | '/virtual'
+    | '/api/tour-chat'
     | '/tours/$id'
     | '/api/ideas/generate'
     | '/api/notifications/dispatch'
@@ -223,6 +234,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/vendor'
     | '/virtual'
+    | '/api/tour-chat'
     | '/tours/$id'
     | '/api/ideas/generate'
     | '/api/notifications/dispatch'
@@ -243,6 +255,7 @@ export interface RootRouteChildren {
   ProfileRoute: typeof ProfileRoute
   VendorRoute: typeof VendorRoute
   VirtualRoute: typeof VirtualRoute
+  ApiTourChatRoute: typeof ApiTourChatRoute
   ToursIdRoute: typeof ToursIdRoute
   ApiIdeasGenerateRoute: typeof ApiIdeasGenerateRoute
   ApiNotificationsDispatchRoute: typeof ApiNotificationsDispatchRoute
@@ -318,6 +331,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof VirtualRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/tour-chat': {
+      id: '/api/tour-chat'
+      path: '/api/tour-chat'
+      fullPath: '/api/tour-chat'
+      preLoaderRoute: typeof ApiTourChatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/tours/$id': {
       id: '/tours/$id'
       path: '/tours/$id'
@@ -387,6 +407,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProfileRoute: ProfileRoute,
   VendorRoute: VendorRoute,
   VirtualRoute: VirtualRoute,
+  ApiTourChatRoute: ApiTourChatRoute,
   ToursIdRoute: ToursIdRoute,
   ApiIdeasGenerateRoute: ApiIdeasGenerateRoute,
   ApiNotificationsDispatchRoute: ApiNotificationsDispatchRoute,
