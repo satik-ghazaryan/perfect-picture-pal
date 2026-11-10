@@ -86,6 +86,19 @@ export function publishInterestDeparture(
   return created;
 }
 
+export function sameInterest(
+  registered: { key: string; tourId: string | null }[],
+  offer: { label: string; tourId: string | null },
+) {
+  const key = directionKey(offer.label);
+  return registered.some((item) => item.key === key || (offer.tourId !== null && item.tourId === offer.tourId));
+}
+
+export function interestOfferEnabled(env: Record<string, string | undefined> = process.env, vercelEnv = env["VERCEL_ENV"]) {
+  if (vercelEnv === "production" && interestDeliveryPlan(env).mode !== "live") return false;
+  return true;
+}
+
 export function interestDeliveryPlan(env: Record<string, string | undefined> = process.env) {
   const webhook = Boolean(env["SMS_GATEWAY_URL"] || env["WHATSAPP_GATEWAY_URL"]);
   const twilio = Boolean(env["TWILIO_ACCOUNT_SID"] && env["TWILIO_AUTH_TOKEN"] && env["TWILIO_PHONE_NUMBER"]);

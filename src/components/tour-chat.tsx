@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouterState } from "@tanstack/react-router";
 import { format, parseISO } from "date-fns";
 import { hy } from "date-fns/locale";
@@ -7,6 +7,7 @@ import { completeCheckout, type PaymentProvider } from "@/lib/payments";
 import { getTouristSnapshot } from "@/lib/admin";
 import { bookingSummary, validConfirmationToken, validGuestPhone, type ChatBookingOffer, type ChatDepartureChoice } from "@/lib/tour-chat-booking";
 import type { InterestOffer } from "@/lib/tour-interest";
+import { directionKey, sameInterest } from "@/lib/tour-interest";
 
 type ChatMessage = {
   role: "user" | "assistant";
@@ -76,8 +77,27 @@ export function TourChat() {
     consent: boolean;
     note: string;
   } | null>(null);
+  const [registeredInterest, setRegisteredInterest] = useState<{ key: string; tourId: string | null }[]>([]);
   const [bookingDraft, setBookingDraft] = useState<BookingDraft | null>(null);
+  const [keyboard, setKeyboard] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
   const saving = useRef(false);
+  useEffect(() => {
+    if (!open || typeof window === "undefined") return;
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    const update = () => {
+      setKeyboard(Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop));
+      setViewportHeight(viewport.height);
+    };
+    update();
+    viewport.addEventListener("resize", update);
+    viewport.addEventListener("scroll", update);
+    return () => {
+      viewport.removeEventListener("resize", update);
+      viewport.removeEventListener("scroll", update);
+    };
+  }, [open]);
   const intro = tourId
     ? "Գրեք, թե ինչն եք ուզում իմանալ այս տուրի մասին։"
     : "Գրեք տուրի անունը, օրինակ՝ Գառնի։";
@@ -103,6 +123,7 @@ export function TourChat() {
         error?: string;
         booking?: ChatBookingOffer | null;
         interest?: InterestOffer | null;
+        notify?: "mock" | "live" | "off";
       };
       const reply =
         payload.reply ||
@@ -152,18 +173,23 @@ export function TourChat() {
           consent: true,
         }),
       });
-      const payload = (await response.json()) as { ok?: boolean; message?: string };
+      const payload = (await response.json()) as { ok?: boolean; message?: string; delivery?: { mode?: "mock" | "live" } };
       if (!payload.ok) {
         setInterestForm({ ...interestForm, note: payload.message || "Հետաքրքրությունը չգրանցվեց։" });
         return;
       }
+      const label = interestForm.label.trim();
+      const tourId = interestForm.tourId;
+      setRegisteredInterest((current) => [...current, { key: directionKey(label), tourId }]);
       setInterestForm(null);
-      setInterest(null);
+      const promised = payload.delivery?.mode === "live";
       setMessages((current) => [
         ...current,
         {
           role: "assistant",
-          text: "Հետաքրքրությունդ գրանցված է։ Երբ այս ուղղությամբ ամրագրման համար բաց մեկնում հրապարակվի, կտեղեկացնենք քեզ",
+          text: promised
+            ? "Հետաքրքրությունդ գրանցված է։ Երբ այս ուղղությամբ ամրագրման համար բաց մեկնում հրապարակվի, կտեղեկացնենք քեզ"
+            : "Հետաքրքրությունդ գրանցված է։ Իրական ծանուցում չի ուղարկվի, որովհետև ուղարկման ալիքը միացված չէ։",
         },
       ]);
     } catch {
@@ -250,7 +276,10 @@ export function TourChat() {
         setBookingDraft(null);
         setMessages((current) => [
           ...current,
-          { role: "assistant", text: `Փորձարկման ամրագրումը հաստատվեց։ Կոդը՝ ${ticket}։ Արտադրական ամրագրում չի ստեղծվել։` },
+          {
+            role: "assistant",
+            text: `Փորձարկման ամրագրումը հաստատվեց։ Կոդը՝ ${ticket}։ Արտադրական ամրագրում չի ստեղծվել։ [Բացել տոմսը](/tours/chat-test?ticket=${ticket})`,
+          },
         ]);
         return;
       }
@@ -349,13 +378,18 @@ export function TourChat() {
     return Number.isNaN(parsed.getTime()) ? date : format(parsed, "d MMMM yyyy", { locale: hy });
   }
 
+  const panelHeight = viewportHeight > 0 ? Math.min(512, Math.max(240, viewportHeight - 88)) : undefined;
   return (
-    <div className="fixed inset-x-3 bottom-3 z-40 flex flex-col items-stretch gap-2 sm:inset-x-auto sm:right-4 sm:bottom-4 sm:items-end">
+    <div
+      className="fixed inset-x-2 z-40 flex w-auto max-w-full flex-col items-stretch gap-2 sm:inset-x-auto sm:right-4 sm:w-[22rem] sm:items-end"
+      style={{ bottom: `calc(0.5rem + ${keyboard}px)` }}
+    >
       {open && (
         <section
           role="dialog"
           aria-label="Հարցրու տուրերի մասին"
-          className="flex h-[min(70dvh,32rem)] w-full flex-col overflow-hidden rounded-3xl border border-border bg-card shadow-xl sm:w-[22rem]"
+          className="flex w-full min-w-0 flex-col overflow-hidden rounded-3xl border border-border bg-card shadow-xl"
+          style={{ height: panelHeight ? `${panelHeight}px` : "min(70dvh, 32rem)" }}
         >
           <header className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
             <div>
@@ -406,6 +440,9 @@ export function TourChat() {
               </div>
             )}
             {interest && !interestForm && !bookingDraft && (
+              sameInterest(registeredInterest, interest) ? (
+                <p className="rounded-2xl bg-muted px-3 py-2 text-sm">Հետաքրքրությունն արդեն գրանցված է</p>
+              ) : (
               <button
                 type="button"
                 className="min-h-11 rounded-2xl border border-border px-3 text-left text-sm font-semibold"
@@ -421,6 +458,7 @@ export function TourChat() {
               >
                 Տեղեկացրեք ինձ, երբ տուր լինի
               </button>
+              )
             )}
             {interestForm && (
               <div className="space-y-2 rounded-2xl bg-muted p-3">
@@ -619,7 +657,7 @@ export function TourChat() {
             )}
           </div>
           <form
-            className="flex gap-2 border-t border-border p-3"
+            className="flex w-full min-w-0 shrink-0 items-center gap-2 border-t border-border p-2"
             onSubmit={(event) => {
               event.preventDefault();
               void send();
@@ -634,12 +672,12 @@ export function TourChat() {
               maxLength={500}
               onChange={(event) => setInput(event.target.value)}
               placeholder="Օրինակ՝ Գառնիի գինը"
-              className="min-h-11 flex-1 rounded-full border border-input bg-background px-4 text-base"
+              className="box-border h-11 w-0 min-w-0 flex-1 rounded-full border border-input bg-background px-3 text-base"
             />
             <button
               type="submit"
               disabled={pending || input.trim().length === 0}
-              className="inline-flex min-h-11 items-center rounded-full bg-primary px-4 text-sm font-bold text-primary-foreground disabled:opacity-60"
+              className="inline-flex h-11 shrink-0 items-center whitespace-nowrap rounded-full bg-primary px-3 text-sm font-bold text-primary-foreground disabled:opacity-60"
             >
               {pending ? "…" : "Ուղարկել"}
             </button>

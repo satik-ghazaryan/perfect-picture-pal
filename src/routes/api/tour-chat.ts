@@ -1,8 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { clientAddress, loadPublicTourFacts, rateLimitTourChat, replyToTourQuestion } from "@/lib/tour-chat.server";
 import { checkDepartureBooking, confirmPreviewFixture, isolatedBookingChecks, previewFixtureOffer, type BookingLive } from "@/lib/tour-chat-booking";
-import { createInterestStore, interestDeliveryPlan, interestPreviewScenario, publishInterestDeparture, registerInterest } from "@/lib/tour-interest";
-import { deliverNotification } from "@/lib/notification-gateway";
+import { createInterestStore, interestDeliveryPlan, interestOfferEnabled, interestPreviewScenario, publishInterestDeparture, registerInterest } from "@/lib/tour-interest";
 import type { ChatTurn } from "@/lib/tour-chat-facts";
 
 const TOUR_ID = /^[a-z0-9-]{1,64}$/;
@@ -59,8 +58,6 @@ async function handlePost({ request }: { request: Request }) {
   if (record["action"] === "interest-preview") {
     if (process.env.VERCEL_ENV === "production") return json(404, { error: "Չկա։" });
     const scenario = interestPreviewScenario();
-    const delivery = scenario.delivery;
-    if (delivery.mode === "mock" && scenario.notices === 1) await deliverNotification("sms", "37400000000", scenario.body);
     return json(200, {
       unknown: scenario.loriNotified === false,
       registered: scenario.registered,
@@ -76,7 +73,7 @@ async function handlePost({ request }: { request: Request }) {
     });
   }
   if (record["action"] === "interest-register") {
-    if (process.env.VERCEL_ENV === "production") return json(404, { error: "Չկա։" });
+    if (!interestOfferEnabled()) return json(200, { ok: false, message: "Ծանուցման ալիքը միացված չէ։" });
     const saved = registerInterest(interestStore, {
       label: interestDirection,
       tourId: interestTourId && TOUR_ID.test(interestTourId) ? interestTourId : null,
@@ -84,7 +81,7 @@ async function handlePost({ request }: { request: Request }) {
       consent: interestConsent,
     });
     if (!saved.ok) return json(200, { ok: false, message: saved.message });
-    return json(200, { ok: true, repeated: saved.repeated });
+    return json(200, { ok: true, repeated: saved.repeated, delivery: interestDeliveryPlan() });
   }
   if (record["action"] === "interest-publish") {
     if (process.env.VERCEL_ENV === "production") return json(404, { error: "Չկա։" });
@@ -102,9 +99,6 @@ async function handlePost({ request }: { request: Request }) {
       link,
     });
     const delivery = interestDeliveryPlan();
-    if (delivery.mode === "mock") {
-      for (const notice of created) await deliverNotification("sms", notice.phone, notice.body);
-    }
     return json(200, {
       created: created.length,
       delivery,
@@ -181,7 +175,9 @@ async function handlePost({ request }: { request: Request }) {
       pageTourId: pageTourId || null,
       history: readHistory(record["history"]),
     });
-    return json(200, { reply: answer.reply, booking: answer.booking, interest: answer.interest });
+    const delivery = interestDeliveryPlan();
+    const interest = interestOfferEnabled() ? answer.interest : null;
+    return json(200, { reply: answer.reply, booking: answer.booking, interest, notify: interest ? delivery.mode : "off" });
   } catch {
     return json(200, {
       reply: "Չաթը հիմա չկարողացավ պատասխանել։ Գին, ժամ կամ տեղերի թիվ չեմ նշում։ Ամրագրումը տուրի էջում շարունակվում է։",

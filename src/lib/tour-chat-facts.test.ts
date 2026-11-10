@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { answerTourQuestion, answerTourChat, publicFactsFromRows, replyKeepsPublishedFacts, type ChatFacts } from "./tour-chat-facts.ts";
 import { confirmPreviewFixture, isolatedBookingChecks } from "./tour-chat-booking.ts";
-import { interestPreviewScenario } from "./tour-interest.ts";
+import { interestOfferEnabled, interestPreviewScenario, sameInterest } from "./tour-interest.ts";
 import { rateLimitTourChat, replyToTourQuestion, resetTourChatRateLimit, anonCatalogKey } from "./tour-chat.server.ts";
 
 const now = new Date("2026-11-09T10:00:00.000Z");
@@ -321,5 +321,11 @@ describe("public tour chat limit", () => {
     assert.match(saved.body, /20 դեկտեմբեր 2026/);
     assert.match(saved.body, /08:30/);
     assert.match(saved.body, /\/tours\/garni/);
+    assert.equal(sameInterest([{ key: "լոռի", tourId: null }], { label: "Լոռի", tourId: null }), true);
+    assert.equal(sameInterest([{ key: "լոռի", tourId: null }], { label: "Տաթև", tourId: "tatev" }), false);
+    assert.equal(sameInterest([{ key: "տաթև", tourId: "tatev" }], { label: "Արմավիր – Տաթև", tourId: "tatev" }), true);
+    assert.equal(interestOfferEnabled({}, "production"), false);
+    assert.equal(interestOfferEnabled({ TWILIO_ACCOUNT_SID: "AC", TWILIO_AUTH_TOKEN: "token", TWILIO_PHONE_NUMBER: "+37400000000" }, "production"), true);
+    assert.equal(interestOfferEnabled({}, "preview"), true);
   });
 });
