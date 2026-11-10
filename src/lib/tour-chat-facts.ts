@@ -252,7 +252,7 @@ const DIRECTION_STOP = new Set([
   "ասա", "ասացիր", "պատմիր", "շարունակիր",
   "տուր", "տուրը", "տուրեր", "տուրի",
   "ուզում", "եմ", "կա", "կան", "ինձ", "մասին",
-  "որ", "որը", "ինչ", "ես", "ձեզ",
+  "որ", "որը", "ինչ", "ես", "ձեզ", "իսկ", "քանի", "քանիսն", "բարև",
   "տեղեկացրեք", "երբ", "լինի",
   "ամրագրել", "ամրագրիր", "book",
   "բաց", "բացել", "էջը",
@@ -297,19 +297,19 @@ export function answerTourChat(input: {
   const tours = input.facts.tours;
   const named = mentioned(message, tours);
   if (named.length > 1) return { reply: clarify(tours), booking: null, interest: null };
-  const pageId = input.pageTourId && TOUR_ID.test(input.pageTourId) ? input.pageTourId : "";
-  const tour =
-    named[0] ??
-    latestUserTour(input.history, tours) ??
-    (pageId ? (tours.find((item) => item.id === pageId) ?? null) : null);
-  const unknown = tour ? null : unknownDirection(message, tours);
-  if (!tour && unknown) {
+  const unknown = named.length === 0 ? unknownDirection(message, tours) : null;
+  if (unknown) {
     return {
       reply: `«${unknown.label}» ուղղությունը կատալոգում չկա։`,
       booking: null,
       interest: { tourId: null, label: unknown.label },
     };
   }
+  const pageId = input.pageTourId && TOUR_ID.test(input.pageTourId) ? input.pageTourId : "";
+  const tour =
+    named[0] ??
+    latestUserTour(input.history, tours) ??
+    (pageId ? (tours.find((item) => item.id === pageId) ?? null) : null);
   if (wantsBooking(message)) {
     const offer = bookingOffer({
       tour,

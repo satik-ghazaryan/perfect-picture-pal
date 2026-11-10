@@ -98,6 +98,10 @@ export function TourChat() {
       viewport.removeEventListener("scroll", update);
     };
   }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    document.querySelector("[data-chat-actions]")?.scrollIntoView({ block: "nearest" });
+  }, [open, interestForm, bookingDraft, keyboard, viewportHeight]);
   const intro = tourId
     ? "Գրեք, թե ինչն եք ուզում իմանալ այս տուրի մասին։"
     : "Գրեք տուրի անունը, օրինակ՝ Գառնի։";
@@ -500,16 +504,16 @@ export function TourChat() {
                   Համաձայն եմ այս ուղղության մասին ծանուցում ստանալ
                 </label>
                 {interestForm.note && <p className="text-sm text-destructive">{interestForm.note}</p>}
-                <div className="flex gap-2">
+                <div data-chat-actions="" className="sticky bottom-0 flex flex-col gap-2 bg-muted pt-1">
                   <button
                     type="button"
                     disabled={pending || !interestForm.consent}
-                    className="min-h-11 flex-1 rounded-full bg-primary px-3 text-sm font-bold text-primary-foreground disabled:opacity-60"
+                    className="min-h-11 w-full whitespace-normal rounded-full bg-primary px-3 py-2 text-sm font-bold leading-5 text-primary-foreground disabled:opacity-60"
                     onClick={() => void registerInterest()}
                   >
                     Գրանցել հետաքրքրություն
                   </button>
-                  <button type="button" className="min-h-11 rounded-full px-3 text-sm" onClick={() => setInterestForm(null)}>
+                  <button type="button" className="min-h-11 w-full rounded-full px-3 text-sm" onClick={() => setInterestForm(null)}>
                     Չեղարկել
                   </button>
                 </div>
@@ -587,10 +591,10 @@ export function TourChat() {
                   </div>
                 )}
                 {bookingDraft.note && <p className="text-sm text-destructive">{bookingDraft.note}</p>}
-                <div className="flex gap-2">
+                <div data-chat-actions="" className="sticky bottom-0 flex flex-col gap-2 bg-muted pt-1">
                   <button
                     type="button"
-                    className="min-h-11 flex-1 rounded-full bg-primary px-3 text-sm font-bold text-primary-foreground"
+                    className="min-h-11 w-full whitespace-normal rounded-full bg-primary px-3 py-2 text-sm font-bold leading-5 text-primary-foreground"
                     onClick={() => {
                       const party = bookingDraft.adults + bookingDraft.children;
                       if (bookingDraft.name.trim().length < 2) {
@@ -614,7 +618,7 @@ export function TourChat() {
                   >
                     Շարունակել
                   </button>
-                  <button type="button" className="min-h-11 rounded-full px-3 text-sm" onClick={() => setBookingDraft(null)}>
+                  <button type="button" className="min-h-11 w-full rounded-full px-3 text-sm" onClick={() => setBookingDraft(null)}>
                     Չեղարկել
                   </button>
                 </div>
@@ -633,23 +637,23 @@ export function TourChat() {
                   })}
                 </p>
                 {bookingDraft.note && <p className="text-sm text-destructive">{bookingDraft.note}</p>}
-                <button
-                  type="button"
-                  disabled={pending}
-                  className="min-h-11 w-full rounded-full bg-primary px-3 text-sm font-bold text-primary-foreground disabled:opacity-60"
-                  onClick={() => void confirmBooking()}
-                >
-                  Հաստատել ամրագրումը
-                </button>
-                <div className="flex gap-2">
+                <div data-chat-actions="" className="sticky bottom-0 flex flex-col gap-2 bg-muted pt-1">
                   <button
                     type="button"
-                    className="min-h-11 flex-1 rounded-full border border-border px-3 text-sm"
+                    disabled={pending}
+                    className="min-h-11 w-full whitespace-normal rounded-full bg-primary px-3 py-2 text-sm font-bold leading-5 text-primary-foreground disabled:opacity-60"
+                    onClick={() => void confirmBooking()}
+                  >
+                    Հաստատել ամրագրումը
+                  </button>
+                  <button
+                    type="button"
+                    className="min-h-11 w-full rounded-full border border-border px-3 text-sm"
                     onClick={() => setBookingDraft({ ...bookingDraft, step: "form", note: "" })}
                   >
                     Խմբագրել
                   </button>
-                  <button type="button" className="min-h-11 flex-1 rounded-full border border-border px-3 text-sm" onClick={() => setBookingDraft(null)}>
+                  <button type="button" className="min-h-11 w-full rounded-full border border-border px-3 text-sm" onClick={() => setBookingDraft(null)}>
                     Չեղարկել
                   </button>
                 </div>

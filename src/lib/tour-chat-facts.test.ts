@@ -138,6 +138,17 @@ describe("public tour chat facts", () => {
     assert.doesNotMatch(sevan, /Գինը դեռ նշված չէ/);
   });
 
+  it("offers Gyumri interest from the Tatev page instead of the open tour", () => {
+    const answer = answerTourChat({ message: "Գյումրի", pageTourId: "tatev", facts: facts(), now });
+    assert.equal(answer.interest?.tourId, null);
+    assert.equal(answer.interest?.label, "Գյումրի");
+    assert.match(answer.reply, /«Գյումրի» ուղղությունը կատալոգում չկա/);
+    assert.doesNotMatch(answer.reply, /Տաթև/);
+    const page = answerTourChat({ message: "գինը", pageTourId: "tatev", facts: facts(), now });
+    assert.match(page.reply, /\/tours\/tatev/);
+    assert.equal(page.interest?.label.includes("Գյումրի"), false);
+  });
+
   it("answers a free-seat question and does not open booking", () => {
     const answer = answerTourChat({
       message: "քանի ազատ տեղ կա",
