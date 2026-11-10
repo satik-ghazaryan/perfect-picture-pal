@@ -1,10 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { clientAddress, loadPublicTourFacts, rateLimitTourChat, replyToTourQuestion } from "@/lib/tour-chat.server";
 import { checkDepartureBooking, confirmPreviewFixture, isolatedBookingChecks, previewFixtureOffer, type BookingLive } from "@/lib/tour-chat-booking";
+import { createInterestStore, interestDeliveryPlan, interestPreviewScenario, publishInterestDeparture, registerInterest } from "@/lib/tour-interest";
+import { deliverNotification } from "@/lib/notification-gateway";
 import type { ChatTurn } from "@/lib/tour-chat-facts";
 
 const TOUR_ID = /^[a-z0-9-]{1,64}$/;
 const MAX_BODY = 8_000;
+const interestStore = createInterestStore();
 
 function json(status: number, body: Record<string, unknown>) {
   return Response.json(body, { status, headers: { "cache-control": "no-store" } });
@@ -40,6 +43,10 @@ async function handlePost({ request }: { request: Request }) {
   }
   if (!parsed || typeof parsed !== "object") return json(422, { error: "Հարցը թերի է։" });
   const record = parsed as Record<string, unknown>;
+  const interestPhone = typeof record["phone"] === "string" ? record["phone"] : "";
+  const interestConsent = record["consent"] === true;
+  const interestDirection = typeof record["direction"] === "string" ? record["direction"].trim().slice(0, 80) : "";
+  const interestTourId = typeof record["interestTourId"] === "string" ? record["interestTourId"].trim() : "";
   delete record["name"];
   delete record["phone"];
   delete record["passengerName"];
@@ -48,6 +55,61 @@ async function handlePost({ request }: { request: Request }) {
   if (pageTourId && !TOUR_ID.test(pageTourId)) return json(422, { error: "Տուրի էջը չճանաչվեց։" });
   if (!rateLimitTourChat(clientAddress(request))) {
     return json(429, { error: "Շատ հարց եկավ կարճ ժամանակում։ Մի րոպե հետո նորից փորձեք։ Ամրագրումը էջում բաց է մնում։" });
+  }
+  if (record["action"] === "interest-preview") {
+    if (process.env.VERCEL_ENV === "production") return json(404, { error: "Չկա։" });
+    const scenario = interestPreviewScenario();
+    const delivery = scenario.delivery;
+    if (delivery.mode === "mock" && scenario.notices === 1) await deliverNotification("sms", "37400000000", scenario.body);
+    return json(200, {
+      unknown: scenario.loriNotified === false,
+      registered: scenario.registered,
+      duplicate: scenario.duplicate,
+      rows: scenario.rows,
+      notices: scenario.notices,
+      repeatNotices: scenario.repeatNotices,
+      declined: scenario.declined,
+      hasDate: scenario.body.includes("20 դեկտեմբեր 2026"),
+      hasTime: scenario.body.includes("08:30"),
+      hasLink: scenario.body.includes("/tours/garni"),
+      delivery: scenario.delivery,
+    });
+  }
+  if (record["action"] === "interest-register") {
+    if (process.env.VERCEL_ENV === "production") return json(404, { error: "Չկա։" });
+    const saved = registerInterest(interestStore, {
+      label: interestDirection,
+      tourId: interestTourId && TOUR_ID.test(interestTourId) ? interestTourId : null,
+      phone: interestPhone,
+      consent: interestConsent,
+    });
+    if (!saved.ok) return json(200, { ok: false, message: saved.message });
+    return json(200, { ok: true, repeated: saved.repeated });
+  }
+  if (record["action"] === "interest-publish") {
+    if (process.env.VERCEL_ENV === "production") return json(404, { error: "Չկա։" });
+    const departureId = typeof record["departureId"] === "string" ? record["departureId"] : "";
+    const dateLabel = typeof record["dateLabel"] === "string" ? record["dateLabel"].slice(0, 40) : "";
+    const time = typeof record["time"] === "string" ? record["time"].slice(0, 5) : "";
+    const label = typeof record["label"] === "string" ? record["label"].slice(0, 80) : "";
+    const link = TOUR_ID.test(pageTourId) ? `/tours/${pageTourId}` : "";
+    const created = publishInterestDeparture(interestStore, {
+      tourId: pageTourId,
+      label,
+      dateLabel,
+      time: time || null,
+      departureId,
+      link,
+    });
+    const delivery = interestDeliveryPlan();
+    if (delivery.mode === "mock") {
+      for (const notice of created) await deliverNotification("sms", notice.phone, notice.body);
+    }
+    return json(200, {
+      created: created.length,
+      delivery,
+      sample: created[0]?.body ?? "",
+    });
   }
   if (record["action"] === "isolated-booking") {
     if (process.env.VERCEL_ENV === "production") return json(404, { error: "Չկա։" });
@@ -119,7 +181,7 @@ async function handlePost({ request }: { request: Request }) {
       pageTourId: pageTourId || null,
       history: readHistory(record["history"]),
     });
-    return json(200, { reply: answer.reply, booking: answer.booking });
+    return json(200, { reply: answer.reply, booking: answer.booking, interest: answer.interest });
   } catch {
     return json(200, {
       reply: "Չաթը հիմա չկարողացավ պատասխանել։ Գին, ժամ կամ տեղերի թիվ չեմ նշում։ Ամրագրումը տուրի էջում շարունակվում է։",

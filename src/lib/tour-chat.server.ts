@@ -126,6 +126,6 @@ export async function replyToTourQuestion(input: {
     now: input.now,
     facts,
   });
-  if (grounded.booking) return grounded;
-  return { reply: await phraseFromServerModel(grounded.reply), booking: null };
+  if (grounded.booking || grounded.interest) return grounded;
+  return { reply: await phraseFromServerModel(grounded.reply), booking: null, interest: null };
 }

@@ -6,6 +6,7 @@ import { MessageCircle, X } from "lucide-react";
 import { completeCheckout, type PaymentProvider } from "@/lib/payments";
 import { getTouristSnapshot } from "@/lib/admin";
 import { bookingSummary, validConfirmationToken, validGuestPhone, type ChatBookingOffer, type ChatDepartureChoice } from "@/lib/tour-chat-booking";
+import type { InterestOffer } from "@/lib/tour-interest";
 
 type ChatMessage = {
   role: "user" | "assistant";
@@ -67,6 +68,14 @@ export function TourChat() {
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(false);
   const [offer, setOffer] = useState<ChatBookingOffer | null>(null);
+  const [interest, setInterest] = useState<InterestOffer | null>(null);
+  const [interestForm, setInterestForm] = useState<{
+    label: string;
+    tourId: string | null;
+    phone: string;
+    consent: boolean;
+    note: string;
+  } | null>(null);
   const [bookingDraft, setBookingDraft] = useState<BookingDraft | null>(null);
   const saving = useRef(false);
   const intro = tourId
@@ -89,13 +98,19 @@ export function TourChat() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ message, tourId, history }),
       });
-      const payload = (await response.json()) as { reply?: string; error?: string; booking?: ChatBookingOffer | null };
+      const payload = (await response.json()) as {
+        reply?: string;
+        error?: string;
+        booking?: ChatBookingOffer | null;
+        interest?: InterestOffer | null;
+      };
       const reply =
         payload.reply ||
         payload.error ||
         "Չաթը հիմա չպատասխանեց։ Կարող եք շարունակել ամրագրումը տուրի էջում։";
       setMessages((current) => [...current, { role: "assistant", text: reply }]);
       setOffer(payload.booking ?? null);
+      if (!interestForm) setInterest(payload.interest ?? null);
     } catch {
       setMessages((current) => [
         ...current,
@@ -105,6 +120,56 @@ export function TourChat() {
         },
       ]);
     } finally {
+      setPending(false);
+    }
+  }
+
+  async function registerInterest() {
+    if (!interestForm || saving.current) return;
+    if (!interestForm.consent) {
+      setInterestForm({ ...interestForm, note: "Նշեք, որ համաձայն եք ծանուցում ստանալ այս ուղղության մասին։" });
+      return;
+    }
+    if (interestForm.label.trim().length < 2) {
+      setInterestForm({ ...interestForm, note: "Գրեք ուղղությունը։" });
+      return;
+    }
+    if (!validGuestPhone(interestForm.phone)) {
+      setInterestForm({ ...interestForm, note: "Հեռախոսը պետք է ունենա 8–15 թվանշան։" });
+      return;
+    }
+    saving.current = true;
+    setPending(true);
+    try {
+      const response = await fetch("/api/tour-chat", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "interest-register",
+          direction: interestForm.label.trim(),
+          interestTourId: interestForm.tourId,
+          phone: interestForm.phone,
+          consent: true,
+        }),
+      });
+      const payload = (await response.json()) as { ok?: boolean; message?: string };
+      if (!payload.ok) {
+        setInterestForm({ ...interestForm, note: payload.message || "Հետաքրքրությունը չգրանցվեց։" });
+        return;
+      }
+      setInterestForm(null);
+      setInterest(null);
+      setMessages((current) => [
+        ...current,
+        {
+          role: "assistant",
+          text: "Հետաքրքրությունդ գրանցված է։ Երբ այս ուղղությամբ ամրագրման համար բաց մեկնում հրապարակվի, կտեղեկացնենք քեզ",
+        },
+      ]);
+    } catch {
+      setInterestForm({ ...interestForm, note: "Հետաքրքրությունը չգրանցվեց։" });
+    } finally {
+      saving.current = false;
       setPending(false);
     }
   }
@@ -338,6 +403,78 @@ export function TourChat() {
                     {departure.time ? `, ${departure.time}` : ""} · {departure.seats} ազատ
                   </button>
                 ))}
+              </div>
+            )}
+            {interest && !interestForm && !bookingDraft && (
+              <button
+                type="button"
+                className="min-h-11 rounded-2xl border border-border px-3 text-left text-sm font-semibold"
+                onClick={() =>
+                  setInterestForm({
+                    label: interest.label,
+                    tourId: interest.tourId,
+                    phone: "",
+                    consent: false,
+                    note: "",
+                  })
+                }
+              >
+                Տեղեկացրեք ինձ, երբ տուր լինի
+              </button>
+            )}
+            {interestForm && (
+              <div className="space-y-2 rounded-2xl bg-muted p-3">
+                <label className="block text-xs" htmlFor="chat-interest-direction">
+                  Ուղղություն
+                  <input
+                    id="chat-interest-direction"
+                    value={interestForm.label}
+                    onChange={(event) =>
+                      setInterestForm({
+                        ...interestForm,
+                        label: event.target.value,
+                        tourId: event.target.value.trim() === interest?.label ? interest.tourId : null,
+                        note: "",
+                      })
+                    }
+                    className="mt-1 min-h-11 w-full rounded-xl border border-input bg-background px-3 text-base"
+                  />
+                </label>
+                <label className="block text-xs" htmlFor="chat-interest-phone">
+                  Հեռախոս
+                  <input
+                    id="chat-interest-phone"
+                    value={interestForm.phone}
+                    autoComplete="tel"
+                    inputMode="tel"
+                    onChange={(event) => setInterestForm({ ...interestForm, phone: event.target.value, note: "" })}
+                    className="mt-1 min-h-11 w-full rounded-xl border border-input bg-background px-3 text-base"
+                  />
+                </label>
+                <label className="flex min-h-11 items-start gap-2 text-sm" htmlFor="chat-interest-consent">
+                  <input
+                    id="chat-interest-consent"
+                    type="checkbox"
+                    checked={interestForm.consent}
+                    onChange={(event) => setInterestForm({ ...interestForm, consent: event.target.checked, note: "" })}
+                    className="mt-1 h-5 w-5"
+                  />
+                  Համաձայն եմ այս ուղղության մասին ծանուցում ստանալ
+                </label>
+                {interestForm.note && <p className="text-sm text-destructive">{interestForm.note}</p>}
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={pending || !interestForm.consent}
+                    className="min-h-11 flex-1 rounded-full bg-primary px-3 text-sm font-bold text-primary-foreground disabled:opacity-60"
+                    onClick={() => void registerInterest()}
+                  >
+                    Գրանցել հետաքրքրություն
+                  </button>
+                  <button type="button" className="min-h-11 rounded-full px-3 text-sm" onClick={() => setInterestForm(null)}>
+                    Չեղարկել
+                  </button>
+                </div>
               </div>
             )}
             {bookingDraft && bookingDraft.step === "form" && (

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { answerTourQuestion, answerTourChat, publicFactsFromRows, replyKeepsPublishedFacts, type ChatFacts } from "./tour-chat-facts.ts";
 import { confirmPreviewFixture, isolatedBookingChecks } from "./tour-chat-booking.ts";
+import { interestPreviewScenario } from "./tour-interest.ts";
 import { rateLimitTourChat, replyToTourQuestion, resetTourChatRateLimit, anonCatalogKey } from "./tour-chat.server.ts";
 
 const now = new Date("2026-11-09T10:00:00.000Z");
@@ -144,6 +145,7 @@ describe("public tour chat facts", () => {
       history: [{ role: "user", text: "Գառնի" }],
     });
     assert.equal(answer.booking, null);
+    assert.equal(answer.interest, null);
     assert.match(answer.reply, /Ազատ տեղերը՝ 3/);
     const booking = answerTourChat({ message: "ամրագրիր 2 տեղ", facts: facts(), now, history: [{ role: "user", text: "Գառնի" }] });
     assert.equal(booking.booking?.party, 2);
@@ -279,5 +281,45 @@ describe("public tour chat limit", () => {
     });
     assert.equal(closed.ok, false);
     if (!closed.ok) assert.equal(closed.code, "closed");
+  });
+
+  it("offers interest for a missing direction or a tour without an open departure, and sends one notice", () => {
+    const lori = answerTourChat({ message: "Լոռի կա", facts: facts(), now });
+    assert.equal(lori.interest?.label, "Լոռի");
+    assert.equal(lori.interest?.tourId, null);
+    assert.match(lori.reply, /կատալոգում չկա/);
+    assert.doesNotMatch(lori.reply, /առաջիկա բաց մեկնում/);
+    const tatev = answerTourChat({ message: "Տաթև", facts: facts(), now });
+    assert.equal(tatev.interest?.tourId, "tatev");
+    assert.match(tatev.reply, /բաց մեկնում այս պահին չկա/);
+    const garni = answerTourChat({ message: "Գառնի", facts: facts(), now });
+    assert.equal(garni.interest, null);
+    const unclear = answerTourChat({ message: "տուր", facts: facts(), now });
+    assert.equal(unclear.interest, null);
+    const failed = answerTourChat({ message: "Գառնի", facts: { ok: false, tours: [] }, now });
+    assert.equal(failed.interest, null);
+    assert.match(failed.reply, /չբեռնվեցին/);
+    assert.doesNotMatch(failed.reply, /առաջիկա բաց մեկնում/);
+    const unreadable = answerTourChat({
+      message: "Գառնիի ազատ տեղերը",
+      now,
+      facts: publicFactsFromRows(
+        [{ id: "garni", title_hy: "Գառնի", price: 12000, departure_time: "08:30", is_virtual_only: false }],
+        [{ id: "garni-dep-blank", tour_id: "garni", departure_date: "2026-11-30", available_seats: "x" }],
+      ),
+    });
+    assert.equal(unreadable.interest, null);
+    assert.match(unreadable.reply, /չբեռնվեցին/);
+    const saved = interestPreviewScenario();
+    assert.equal(saved.declined, false);
+    assert.equal(saved.registered, true);
+    assert.equal(saved.duplicate, true);
+    assert.equal(saved.rows, 2);
+    assert.equal(saved.notices, 1);
+    assert.equal(saved.repeatNotices, 0);
+    assert.equal(saved.loriNotified, false);
+    assert.match(saved.body, /20 դեկտեմբեր 2026/);
+    assert.match(saved.body, /08:30/);
+    assert.match(saved.body, /\/tours\/garni/);
   });
 });
