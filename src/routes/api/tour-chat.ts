@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { clientAddress, loadPublicTourFacts, rateLimitTourChat, replyToTourQuestion } from "@/lib/tour-chat.server";
-import { checkDepartureBooking, confirmPreviewFixture, isolatedBookingChecks, previewFixtureOffer, type BookingLive } from "@/lib/tour-chat-booking";
+import { checkDepartureBooking, confirmPreviewFixture, findPreviewTicket, isolatedBookingChecks, previewFixtureOffer, type BookingLive } from "@/lib/tour-chat-booking";
 import { createInterestStore, interestDeliveryPlan, interestOfferEnabled, interestPreviewScenario, publishInterestDeparture, registerInterest } from "@/lib/tour-interest";
 import type { ChatTurn } from "@/lib/tour-chat-facts";
 
@@ -108,6 +108,13 @@ async function handlePost({ request }: { request: Request }) {
   if (record["action"] === "isolated-booking") {
     if (process.env.VERCEL_ENV === "production") return json(404, { error: "Չկա։" });
     return json(200, { isolated: isolatedBookingChecks() });
+  }
+  if (record["action"] === "isolated-ticket") {
+    if (process.env.VERCEL_ENV === "production") return json(404, { error: "Չկա։" });
+    const code = typeof record["ticketCode"] === "string" ? record["ticketCode"] : "";
+    const ticket = findPreviewTicket(code);
+    if (!ticket) return json(404, { error: "Տոմսը չի գտնվել։" });
+    return json(200, { ticket });
   }
   if (record["action"] === "isolated-confirm") {
     if (process.env.VERCEL_ENV === "production") return json(404, { error: "Չկա։" });

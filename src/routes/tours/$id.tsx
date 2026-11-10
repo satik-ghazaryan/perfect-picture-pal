@@ -7,6 +7,7 @@ import { AudioGuidePlayer } from "@/components/audio-guide-player";
 import { BookingPanel } from "@/components/express-booking";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
+import { CHAT_TEST_TOUR_ID, chatTestTour } from "@/lib/chat-test-fixture";
 import { packingList, tourTypeLabels } from "@/data/tours";
 import { pickLocale, tourDescription, tourLocation, tourTitle, useSiteLocale } from "@/lib/locale";
 import { CatalogStatusPanel } from "@/components/catalog-status-panel";
@@ -19,7 +20,10 @@ export const Route = createFileRoute("/tours/$id")({
     if (typeof ticket !== "string" || !ticket.startsWith("AG-")) return {};
     return { ticket: ticket.slice(0, 24) };
   },
-  loader: ({ params }) => ({ id: params.id, tour: resolveTour(params.id) }),
+  loader: ({ params }) => ({
+    id: params.id,
+    tour: params.id === CHAT_TEST_TOUR_ID && import.meta.env.DEV ? chatTestTour() : resolveTour(params.id),
+  }),
   head: ({ loaderData }) => ({
     meta: [
       {
@@ -65,6 +69,7 @@ function TourDetailPage() {
   const tour =
     catalog.catalogStatus === "loaded" && resolved ? withPublishedGarniAudio(resolved) : undefined;
   const { ticket: shownTicket = "" } = Route.useSearch();
+  const [ticketView, setTicketView] = useState<{ ticketCode: string; title: string; dateLabel: string } | null>(null);
   const linkedId = tour?.is_virtual_only ? "" : tour?.virtual_tour_id?.trim() ?? "";
   const linkedTour = linkedId
     ? catalog.tours.find((item) => item.id === linkedId && item.is_virtual_only === true)
@@ -81,6 +86,27 @@ function TourDetailPage() {
   useEffect(() => {
     hydrateAdmin();
   }, []);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV || id !== CHAT_TEST_TOUR_ID || !shownTicket) return;
+    let cancel = false;
+    void fetch("/api/tour-chat", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "isolated-ticket", ticketCode: shownTicket }),
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload: { ticket?: { ticketCode?: string; tourId?: string; title?: string; dateLabel?: string } } | null) => {
+        const ticket = payload?.ticket;
+        if (cancel || !ticket || ticket.ticketCode !== shownTicket || ticket.tourId !== id) return;
+        if (!ticket.title || !ticket.dateLabel) return;
+        setTicketView({ ticketCode: ticket.ticketCode, title: ticket.title, dateLabel: ticket.dateLabel });
+      })
+      .catch(() => undefined);
+    return () => {
+      cancel = true;
+    };
+  }, [id, shownTicket]);
 
   useEffect(() => {
     if (catalog.catalogStatus !== "loaded" || opened.current) return;
@@ -146,10 +172,19 @@ function TourDetailPage() {
                 </span>
               </div>
               <h1 className="text-2xl font-black tracking-tight sm:text-4xl">{title}</h1>
-              {shownTicket && (
+              {tour.id !== CHAT_TEST_TOUR_ID && shownTicket && (
                 <p className="w-fit rounded-full bg-primary-soft px-3 py-1 font-mono text-xs font-bold text-primary">
                   Թվային տոմս {shownTicket}
                 </p>
+              )}
+              {ticketView && (
+                <div className="space-y-1">
+                  <p className="w-fit rounded-full bg-primary-soft px-3 py-1 font-mono text-xs font-bold text-primary">
+                    Թվային տոմս {ticketView.ticketCode}
+                  </p>
+                  <p className="text-sm font-bold">Տուր՝ {ticketView.title}</p>
+                  <p className="text-sm font-bold">Մեկնման օր՝ {ticketView.dateLabel}</p>
+                </div>
               )}
               <p className="max-w-2xl text-sm text-muted-foreground sm:text-base">{summary}</p>
             </div>
@@ -228,7 +263,7 @@ function TourDetailPage() {
           <PackingList />
         </div>
 
-        <BookingPanel tour={tour} />
+        {tour.id === CHAT_TEST_TOUR_ID ? null : <BookingPanel tour={tour} />}
       </div>
     </div>
   );

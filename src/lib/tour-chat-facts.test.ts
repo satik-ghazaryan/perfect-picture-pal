@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { answerTourQuestion, answerTourChat, publicFactsFromRows, replyKeepsPublishedFacts, type ChatFacts } from "./tour-chat-facts.ts";
-import { confirmPreviewFixture, isolatedBookingChecks } from "./tour-chat-booking.ts";
+import { CHAT_TEST_OPEN_DATE, CHAT_TEST_TITLE, CHAT_TEST_TOUR_ID } from "./chat-test-fixture.ts";
+import { confirmPreviewFixture, findPreviewTicket, isolatedBookingChecks } from "./tour-chat-booking.ts";
 import { interestOfferEnabled, interestPreviewScenario, sameInterest } from "./tour-interest.ts";
 import { rateLimitTourChat, replyToTourQuestion, resetTourChatRateLimit, anonCatalogKey } from "./tour-chat.server.ts";
 
@@ -327,5 +328,31 @@ describe("public tour chat limit", () => {
     assert.equal(interestOfferEnabled({}, "production"), false);
     assert.equal(interestOfferEnabled({ TWILIO_ACCOUNT_SID: "AC", TWILIO_AUTH_TOKEN: "token", TWILIO_PHONE_NUMBER: "+37400000000" }, "production"), true);
     assert.equal(interestOfferEnabled({}, "preview"), true);
+  });
+
+  it("keeps the isolated ticket on the same test tour and open departure", () => {
+    const booked = confirmPreviewFixture({
+      departureId: "chat-test-open",
+      party: 2,
+      key: "preview-ticket-key01",
+      proof: "preview-ticket-proof",
+      expectedPrice: 12000,
+      expectedSeats: 4,
+      expectedDate: CHAT_TEST_OPEN_DATE,
+      expectedCashback: 5,
+      now,
+    });
+    assert.equal(booked.ok, true);
+    if (!booked.ok) return;
+    assert.equal(booked.tourId, CHAT_TEST_TOUR_ID);
+    assert.equal(booked.title, CHAT_TEST_TITLE);
+    assert.equal(booked.date, CHAT_TEST_OPEN_DATE);
+    assert.equal(booked.dateLabel, "20 դեկտեմբեր 2026");
+    const found = findPreviewTicket(booked.ticketCode);
+    assert.equal(found?.ticketCode, booked.ticketCode);
+    assert.equal(found?.tourId, CHAT_TEST_TOUR_ID);
+    assert.equal(found?.title, CHAT_TEST_TITLE);
+    assert.equal(found?.date, CHAT_TEST_OPEN_DATE);
+    assert.equal(findPreviewTicket("AG-TEST999"), null);
   });
 });

@@ -1,5 +1,15 @@
 import { format, parseISO } from "date-fns";
 import { hy } from "date-fns/locale";
+import {
+  CHAT_TEST_OPEN_DATE,
+  CHAT_TEST_OPEN_ID,
+  CHAT_TEST_OPEN_SEATS,
+  CHAT_TEST_OPEN_TIME,
+  CHAT_TEST_PLACE,
+  CHAT_TEST_PRICE,
+  CHAT_TEST_TITLE,
+  CHAT_TEST_TOUR_ID,
+} from "./chat-test-fixture.ts";
 import { departureBookingClosed } from "./departure-deadline.ts";
 import { nextOpenDeparture, type PublicTourFact } from "./tour-chat-facts.ts";
 
@@ -75,7 +85,7 @@ export function validConfirmationToken(value: string) {
   return /^[A-Za-z0-9_-]{16,80}$/.test(value);
 }
 
-function dateLabel(date: string) {
+export function departureDayLabel(date: string) {
   if (!DAY.test(date)) return null;
   const parsed = parseISO(date);
   if (Number.isNaN(parsed.getTime())) return null;
@@ -97,7 +107,7 @@ export function openBookingDepartures(tour: PublicTourFact, now = new Date()): C
     if (!next?.date || next.seats === null || next.id !== row.id) continue;
     if (seen.has(row.id)) continue;
     seen.add(row.id);
-    const label = dateLabel(row.date);
+    const label = departureDayLabel(row.date);
     if (!label) continue;
     choices.push({ id: row.id, date: row.date, label, seats: next.seats, time: next.time });
   }
@@ -244,7 +254,29 @@ export type IsolatedBooking = {
   key: string;
   fingerprint: string;
   ticketCode: string;
+  tourId: string;
+  title: string;
+  date: string;
+  departureId: string;
 };
+
+export type IsolatedTicket = {
+  ticketCode: string;
+  tourId: string;
+  title: string;
+  date: string;
+  dateLabel: string;
+};
+
+function ticketView(row: IsolatedBooking): IsolatedTicket {
+  return {
+    ticketCode: row.ticketCode,
+    tourId: row.tourId,
+    title: row.title,
+    date: row.date,
+    dateLabel: departureDayLabel(row.date) ?? row.date,
+  };
+}
 
 export function bookIsolated(input: {
   store: Map<string, IsolatedBooking>;
@@ -253,6 +285,7 @@ export function bookIsolated(input: {
   fingerprint: string;
   expected: BookingExpectation;
   live: BookingLive;
+  title: string;
   now?: Date;
 }) {
   if (!validConfirmationToken(input.key) || !validConfirmationToken(input.proof)) {
@@ -263,13 +296,22 @@ export function bookIsolated(input: {
     if (existing.fingerprint !== input.fingerprint) {
       return { ok: false as const, code: "confirmation_mismatch", message: "Այս հաստատումը չի համընկնում պատվերի հետ։" };
     }
-    return { ok: true as const, repeated: true, ticketCode: existing.ticketCode };
+    return { ok: true as const, repeated: true, ...ticketView(existing) };
   }
   const check = checkDepartureBooking(input.expected, input.live, input.now);
   if (!check.ok) return { ok: false as const, code: check.code, message: check.message, fresh: check.fresh };
   const ticketCode = `AG-TEST${input.store.size + 1}`;
-  input.store.set(input.key, { key: input.key, fingerprint: input.fingerprint, ticketCode });
-  return { ok: true as const, repeated: false, ticketCode };
+  const row: IsolatedBooking = {
+    key: input.key,
+    fingerprint: input.fingerprint,
+    ticketCode,
+    tourId: input.live.tourId,
+    title: input.title,
+    date: input.live.date,
+    departureId: input.live.id,
+  };
+  input.store.set(input.key, row);
+  return { ok: true as const, repeated: false, ...ticketView(row) };
 }
 
 export function isolatedBookingChecks(now = new Date("2026-11-09T10:00:00.000Z")) {
@@ -289,8 +331,8 @@ export function isolatedBookingChecks(now = new Date("2026-11-09T10:00:00.000Z")
   const key = "isolated-key-0001";
   const proof = "isolated-proof-01";
   const fingerprint = "dep-isolated-1|2|Անուն|00000000";
-  const success = bookIsolated({ store, key, proof, fingerprint, expected, live: live(), now });
-  const repeat = bookIsolated({ store, key, proof, fingerprint, expected, live: live(), now });
+  const success = bookIsolated({ store, key, proof, fingerprint, expected, live: live(), title: "Գառնի", now });
+  const repeat = bookIsolated({ store, key, proof, fingerprint, expected, live: live(), title: "Գառնի", now });
   const changedPrice = checkDepartureBooking(expected, live({ price: 15000 }), now);
   const full = checkDepartureBooking(expected, live({ seats: 1 }), now);
   const started = checkDepartureBooking(expected, live({ date: "2026-11-09", time: "08:30" }), now);
@@ -311,21 +353,21 @@ function yerevanDay(now: Date) {
 }
 
 export function previewFixtureOffer(now = new Date()): { reply: string; booking: ChatBookingOffer } {
-  const openDate = "2026-12-20";
+  const openDate = CHAT_TEST_OPEN_DATE;
   return {
     reply: "Սա միայն Preview-ի մեկուսացված փորձ է։ Արտադրական ամրագրում չի գրվում։ Ընտրեք մեկնումը։",
     booking: {
       mode: "departures",
-      tourId: "chat-test",
-      title: "Թեստային տուր",
-      place: "Արմավիր քաղաք, Կենտրոնական հրապարակ",
+      tourId: CHAT_TEST_TOUR_ID,
+      title: CHAT_TEST_TITLE,
+      place: CHAT_TEST_PLACE,
       party: 2,
-      price: 12000,
+      price: CHAT_TEST_PRICE,
       cashbackPercent: 5,
       fixture: true,
       tours: [],
       departures: [
-        { id: "chat-test-open", date: openDate, label: `${dateLabel(openDate) ?? openDate}, բաց`, seats: 4, time: "08:30" },
+        { id: CHAT_TEST_OPEN_ID, date: openDate, label: `${departureDayLabel(openDate) ?? openDate}, բաց`, seats: CHAT_TEST_OPEN_SEATS, time: CHAT_TEST_OPEN_TIME },
         { id: "chat-test-price", date: openDate, label: "Գինը կփոխվի հաստատման պահին", seats: 4, time: "08:30" },
         { id: "chat-test-full", date: openDate, label: "Տեղերը լրացած են", seats: 4, time: "08:30" },
         { id: "chat-test-closed", date: yerevanDay(now), label: "Մեկնումն արդեն սկսվել է", seats: 4, time: "00:01" },
@@ -346,19 +388,19 @@ export function confirmPreviewFixture(input: {
   now?: Date;
 }) {
   const now = input.now ?? new Date();
-  const openDate = "2026-12-20";
-  const known = ["chat-test-open", "chat-test-price", "chat-test-full", "chat-test-closed"];
+  const openDate = CHAT_TEST_OPEN_DATE;
+  const known = [CHAT_TEST_OPEN_ID, "chat-test-price", "chat-test-full", "chat-test-closed"];
   if (!known.includes(input.departureId)) {
     return { ok: false as const, code: "missing", message: "Մեկնման տվյալները չբեռնվեցին։ Թիվ չեմ նշում։" };
   }
   const live: BookingLive = {
     id: input.departureId,
-    tourId: "chat-test",
+    tourId: CHAT_TEST_TOUR_ID,
     date: input.departureId === "chat-test-closed" ? yerevanDay(now) : openDate,
-    time: input.departureId === "chat-test-closed" ? "00:01" : "08:30",
-    place: "Արմավիր քաղաք, Կենտրոնական հրապարակ",
-    price: input.departureId === "chat-test-price" ? 15000 : 12000,
-    seats: input.departureId === "chat-test-full" ? 0 : 4,
+    time: input.departureId === "chat-test-closed" ? "00:01" : CHAT_TEST_OPEN_TIME,
+    place: CHAT_TEST_PLACE,
+    price: input.departureId === "chat-test-price" ? 15000 : CHAT_TEST_PRICE,
+    seats: input.departureId === "chat-test-full" ? 0 : CHAT_TEST_OPEN_SEATS,
     cashbackPercent: 5,
   };
   const fingerprint = `${input.departureId}|${input.party}|${input.expectedPrice}|${input.expectedDate}`;
@@ -367,6 +409,7 @@ export function confirmPreviewFixture(input: {
     key: input.key,
     proof: input.proof,
     fingerprint,
+    title: CHAT_TEST_TITLE,
     expected: {
       date: input.expectedDate,
       price: input.expectedPrice,
@@ -377,4 +420,12 @@ export function confirmPreviewFixture(input: {
     live,
     now,
   });
+}
+
+export function findPreviewTicket(code: string): IsolatedTicket | null {
+  if (!/^AG-TEST\d+$/.test(code)) return null;
+  for (const row of previewBookings.values()) {
+    if (row.ticketCode === code) return ticketView(row);
+  }
+  return null;
 }
