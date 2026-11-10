@@ -2,6 +2,29 @@ import { useState } from "react";
 import { useRouterState } from "@tanstack/react-router";
 import { MessageCircle, X } from "lucide-react";
 
+function ChatText({ text, mine }: { text: string; mine: boolean }) {
+  const parts = text.split(/(\[[^\]]+\]\(\/tours\/[a-z0-9-]+\))/g);
+  return (
+    <p
+      className={
+        mine
+          ? "ml-8 rounded-2xl bg-primary px-3 py-2 text-sm leading-6 text-primary-foreground"
+          : "mr-6 rounded-2xl bg-muted px-3 py-2 text-sm leading-6 text-foreground"
+      }
+    >
+      {parts.map((part, index) => {
+        const link = /^\[([^\]]+)\]\((\/tours\/[a-z0-9-]+)\)$/.exec(part);
+        if (!link) return <span key={index}>{part}</span>;
+        return (
+          <a key={index} href={link[2]} className="font-bold underline">
+            {link[1]}
+          </a>
+        );
+      })}
+    </p>
+  );
+}
+
 type ChatMessage = {
   role: "user" | "assistant";
   text: string;
@@ -21,8 +44,8 @@ export function TourChat() {
   const [draft, setDraft] = useState("");
   const [pending, setPending] = useState(false);
   const intro = tourId
-    ? "Հարցրեք այս տուրի գնի, հաջորդ մեկնման, ժամի կամ ազատ տեղերի մասին։ Ամրագրում չեմ կատարում։"
-    : "Հարցրեք տուրի գնի, հաջորդ մեկնման կամ ազատ տեղերի մասին։ Եթե տուրը չլինի պարզ, կհարցնեմ։";
+    ? "Գրեք, թե ինչն եք ուզում իմանալ այս տուրի մասին։"
+    : "Գրեք տուրի անունը, օրինակ՝ Գառնի։";
   const [messages, setMessages] = useState<ChatMessage[]>([]);
 
   if (STAFF_PATH.test(pathname)) return null;
@@ -82,18 +105,9 @@ export function TourChat() {
             </button>
           </header>
           <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3">
-            <p className="mr-6 rounded-2xl bg-muted px-3 py-2 text-sm leading-6 text-foreground">{intro}</p>
+            <ChatText text={intro} mine={false} />
             {messages.map((item, index) => (
-              <p
-                key={`${item.role}-${index}`}
-                className={
-                  item.role === "user"
-                    ? "ml-8 rounded-2xl bg-primary px-3 py-2 text-sm leading-6 text-primary-foreground"
-                    : "mr-6 rounded-2xl bg-muted px-3 py-2 text-sm leading-6 text-foreground"
-                }
-              >
-                {item.text}
-              </p>
+              <ChatText key={`${item.role}-${index}`} text={item.text} mine={item.role === "user"} />
             ))}
           </div>
           <form

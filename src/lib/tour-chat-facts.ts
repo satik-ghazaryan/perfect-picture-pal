@@ -12,6 +12,7 @@ export type PublicTourFact = {
   title: string;
   price: number | null;
   departureTime: string | null;
+  departurePlace: string | null;
   isVirtual: boolean;
   departures: PublicDepartureFact[];
 };
@@ -89,11 +90,13 @@ export function publicFactsFromRows(tourRows: unknown, departureRows: unknown): 
     const id = typeof record["id"] === "string" ? record["id"] : "";
     const title = typeof record["title_hy"] === "string" ? record["title_hy"].trim() : "";
     if (!TOUR_ID.test(id) || !title) continue;
+    const place = typeof record["departure_place"] === "string" ? record["departure_place"].trim() : "";
     tours.push({
       id,
       title,
       price: finitePrice(record["price"]),
       departureTime: clock(record["departure_time"]),
+      departurePlace: place || null,
       isVirtual: record["is_virtual_only"] === true,
       departures: departures.get(id) ?? [],
     });
@@ -117,16 +120,6 @@ function mentioned(text: string, tours: PublicTourFact[]) {
 
 function wants(text: string, pattern: RegExp) {
   return pattern.test(normalize(text));
-}
-
-function needsTour(text: string) {
-  return (
-    wants(text, /գին|արժե|արժեք|price/) ||
-    wants(text, /մեկնում|հաջորդ|ամսաթիվ|departure/) ||
-    wants(text, /տեղ|ազատ|seat/) ||
-    wants(text, /ժամ/) ||
-    wants(text, /ամրագր|book/)
-  );
 }
 
 function dateLabel(date: string) {
@@ -169,34 +162,69 @@ function clarify(tours: PublicTourFact[]) {
   return `Ո՞ր տուրի մասին է խոսքը՝ ${names.join(", ")}։`;
 }
 
-function priceLine(tour: PublicTourFact) {
-  if (tour.price === null || tour.price === 0) return `${tour.title}։ Գինը դեռ նշված չէ։`;
-  return `${tour.title} տուրի գինը այս պահին ${tour.price} ֏ է։`;
+function pageLink(tour: PublicTourFact) {
+  return `[Բացել տուրի էջը](${tourLink(tour)})`;
 }
 
-function timeLine(tour: PublicTourFact) {
-  if (!tour.departureTime) return `${tour.title} տուրի մեկնման ժամը հրապարակված չէ։ Ժամ չեմ նշում։`;
-  return `${tour.title} տուրի մեկնման ժամը ${tour.departureTime} է։`;
+function priceSentence(tour: PublicTourFact) {
+  if (tour.price === null || tour.price === 0) return "Գինը դեռ նշված չէ։";
+  return `Գինը ${tour.price} ֏ է։`;
 }
 
-function departureLine(tour: PublicTourFact, now: Date) {
+function placeSentence(tour: PublicTourFact) {
+  if (!tour.departurePlace) return "Մեկնման վայրը նշված չէ։";
+  return `Մեկնման վայրը՝ ${tour.departurePlace}։`;
+}
+
+function timeSentence(tour: PublicTourFact) {
+  if (!tour.departureTime) return "Մեկնման ժամը նշված չէ։";
+  return `Մեկնման ժամը ${tour.departureTime} է։`;
+}
+
+function departureSentence(tour: PublicTourFact, now: Date) {
   const next = nextOpenDeparture(tour, now);
-  if (!next) return `${tour.title} տուրի առաջիկա բաց մեկնում այս պահին չկա։ Ազատ տեղերի թիվ չեմ նշում։`;
-  if (!next.date || next.seats === null) {
-    return `${tour.title} տուրի ազատ տեղերը չբեռնվեցին։ Տեղերի թիվ չեմ նշում։`;
-  }
+  if (!next) return "Առաջիկա բաց մեկնում այս պահին չկա։";
+  if (!next.date || next.seats === null) return "Ազատ տեղերը չբեռնվեցին։ Թիվ չեմ նշում։";
   const label = dateLabel(next.date);
-  if (!label) return `${tour.title} տուրի հաջորդ մեկնման ամսաթիվը չբեռնվեց։ Ամսաթիվ և տեղերի թիվ չեմ նշում։`;
-  const time = next.time ? `, ժամը ${next.time}` : "։ Մեկնման ժամը հրապարակված չէ, այդ պատճառով ժամ չեմ նշում";
-  return `${tour.title} տուրի հաջորդ բաց մեկնումը ${label} է${time}։ Ազատ տեղերը՝ ${next.seats}։`;
+  if (!label) return "Հաջորդ մեկնման ամսաթիվը չբեռնվեց։ Թիվ չեմ նշում։";
+  const time = next.time ? `, ժամը ${next.time}` : "։ Մեկնման ժամը նշված չէ";
+  return `Հաջորդ բաց մեկնումը ${label}-ն է${time}։ Ազատ տեղերը՝ ${next.seats}։`;
 }
 
-function bookingLine(tour: PublicTourFact) {
-  return `Ամրագրում չեմ կատարում և վճարում չեմ ընդունում։ ${tour.title} տուրի ամրագրման ձևը տուրի էջում է՝ ${tourLink(tour)}։ Այնտեղ կարող եք սեղմել «Ամրագրել հիմա»։`;
+function summary(tour: PublicTourFact, now: Date) {
+  const route = tour.departurePlace
+    ? `«${tour.title}» երթուղին է։ ${placeSentence(tour)}`
+    : `«${tour.title}» երթուղին է։`;
+  return [route, priceSentence(tour), departureSentence(tour, now), pageLink(tour)].join(" ");
+}
+
+function asksSomething(text: string) {
+  return (
+    wants(text, /գին|արժե|արժեք|price/) ||
+    wants(text, /մեկնում|հաջորդ|ամսաթիվ|departure/) ||
+    wants(text, /տեղ|ազատ|seat/) ||
+    wants(text, /ժամ/) ||
+    wants(text, /որտեղ|վայր/) ||
+    wants(text, /ամրագր|book/)
+  );
+}
+
+function continuesOffer(text: string) {
+  return /^(ասա|ասացիր|պատմիր|շարունակիր)( ինձ| էլի)?$/.test(normalize(text));
+}
+
+function latestUserTour(history: ChatTurn[] | undefined, tours: PublicTourFact[]) {
+  const turns = [...(history ?? [])].reverse();
+  for (const turn of turns) {
+    if (turn.role !== "user") continue;
+    const found = mentioned(turn.text, tours);
+    if (found.length === 1) return found[0] ?? null;
+  }
+  return null;
 }
 
 function unavailable() {
-  return "Տուրերի հրապարակային տվյալները հիմա չբեռնվեցին։ Գին, ժամ կամ ազատ տեղերի թիվ չեմ նշում։ Ամրագրումը մնում է տուրի էջում։";
+  return "Տուրերի հրապարակային տվյալները հիմա չբեռնվեցին։ Գին, ժամ կամ ազատ տեղերի թիվ չեմ նշում։";
 }
 
 export function answerTourQuestion(input: {
@@ -210,39 +238,29 @@ export function answerTourQuestion(input: {
   const now = input.now ?? new Date();
   if (!input.facts.ok) return unavailable();
   const tours = input.facts.tours;
-  const current = mentioned(message, tours);
-  if (current.length > 1) return clarify(tours);
-  let tour = current[0] ?? null;
+  const named = mentioned(message, tours);
+  if (named.length > 1) return clarify(tours);
   const pageId = input.pageTourId && TOUR_ID.test(input.pageTourId) ? input.pageTourId : "";
-  if (!tour && pageId) tour = tours.find((item) => item.id === pageId) ?? null;
-  if (!tour) {
-    const earlier = mentioned(
-      (input.history ?? [])
-        .filter((turn) => turn.role === "user")
-        .map((turn) => turn.text)
-        .join(" "),
-      tours,
-    );
-    if (earlier.length === 1) tour = earlier[0] ?? null;
-  }
-  if (!tour && needsTour(message)) return clarify(tours);
-  if (!tour) {
-    return "Կարող եմ ասել հրապարակված գինը, հաջորդ մեկնումը, ժամը և ազատ տեղերը։ Գրեք տուրի անունը կամ բացեք տուրի էջը։ Ամրագրում չեմ կատարում։";
-  }
-  const lines: string[] = [];
+  const tour =
+    named[0] ??
+    latestUserTour(input.history, tours) ??
+    (pageId ? (tours.find((item) => item.id === pageId) ?? null) : null);
+  if (!tour) return clarify(tours);
   const askPrice = wants(message, /գին|արժե|արժեք|price/);
   const askDeparture = wants(message, /մեկնում|հաջորդ|ամսաթիվ|departure/);
   const askSeats = wants(message, /տեղ|ազատ|seat/);
   const askTime = wants(message, /ժամ/);
+  const askPlace = wants(message, /որտեղ|վայր/);
   const askBooking = wants(message, /ամրագր|book/);
-  if (askPrice) lines.push(priceLine(tour));
-  if (askDeparture || askSeats) lines.push(departureLine(tour, now));
-  else if (askTime) lines.push(timeLine(tour));
-  if (askBooking) lines.push(bookingLine(tour));
-  if (lines.length === 0) {
-    lines.push(`${tour.title} տուրի մասին կարող եմ ասել գինը, մեկնման ժամը, հաջորդ բաց մեկնումը և ազատ տեղերը։ Ամրագրում չեմ կատարում։`);
-  }
-  if (!lines.some((line) => line.includes(tourLink(tour)))) lines.push(`Էջը՝ ${tourLink(tour)}։`);
+  if (!asksSomething(message) && (named.length === 1 || continuesOffer(message))) return summary(tour, now);
+  const lines: string[] = [];
+  if (askPrice) lines.push(priceSentence(tour));
+  if (askPlace && !askSeats) lines.push(placeSentence(tour));
+  if (askTime && !askDeparture && !askSeats) lines.push(timeSentence(tour));
+  if (askDeparture || askSeats) lines.push(departureSentence(tour, now));
+  if (askBooking) lines.push(`Ամրագրումը տուրի էջում է։`);
+  if (lines.length === 0) return "Գինը, ժամը, մեկնման վայրը, թե՞ ազատ տեղերը։";
+  lines.push(pageLink(tour));
   return lines.join(" ");
 }
 

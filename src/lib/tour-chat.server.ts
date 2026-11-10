@@ -60,7 +60,7 @@ export async function loadPublicTourFacts(): Promise<ChatFacts> {
       auth: { persistSession: false, autoRefreshToken: false },
     });
     const [tours, departures] = await Promise.all([
-      client.from("tours").select("id,title_hy,price,departure_time,is_virtual_only"),
+      client.from("tours").select("id,title_hy,price,departure_time,departure_place,is_virtual_only"),
       client.from("departures").select("tour_id,departure_date,available_seats"),
     ]);
     if (tours.error || departures.error) return { ok: false, tours: [] };

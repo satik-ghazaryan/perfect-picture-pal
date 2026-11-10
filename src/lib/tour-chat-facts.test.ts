@@ -44,7 +44,7 @@ describe("public tour chat facts", () => {
       now,
     });
     assert.match(reply, /Գինը դեռ նշված չէ/);
-    assert.match(reply, /առաջիկա բաց մեկնում այս պահին չկա/);
+    assert.match(reply, /Առաջիկա բաց մեկնում այս պահին չկա/);
     assert.match(reply, /\/tours\/tatev/);
     assert.doesNotMatch(reply, /\d/);
   });
@@ -82,9 +82,9 @@ describe("public tour chat facts", () => {
       facts: facts(),
       now,
     });
-    assert.match(reply, /Ամրագրում չեմ կատարում/);
     assert.match(reply, /\/tours\/sevan/);
-    assert.doesNotMatch(reply, /book_departure|0 ֏|անվճար/);
+    assert.match(reply, /Բացել տուրի էջը/);
+    assert.doesNotMatch(reply, /Ամրագրում չեմ կատարում|book_departure|0 ֏|անվճար/);
   });
 
   it("rejects a model reply that adds a price or drops the tour link", () => {
@@ -92,6 +92,47 @@ describe("public tour chat facts", () => {
     assert.equal(replyKeepsPublishedFacts(grounded, "Գինը 12000 ֏ է։ Էջը՝ /tours/garni։"), true);
     assert.equal(replyKeepsPublishedFacts(grounded, "Գինը 0 ֏ է։ Էջը՝ /tours/garni։"), false);
     assert.equal(replyKeepsPublishedFacts(grounded, "Գինը 12000 ֏ է։"), false);
+  });
+
+  it("summarizes a bare tour name and lets ասա continue that tour", () => {
+    const first = answerTourQuestion({ message: "գառնի", facts: facts(), now });
+    const second = answerTourQuestion({
+      message: "ասա",
+      facts: facts(),
+      now,
+      history: [
+        { role: "user", text: "գառնի" },
+        { role: "assistant", text: first },
+      ],
+    });
+    for (const reply of [first, second]) {
+      assert.match(reply, /Գառնի և Գեղարդ/);
+      assert.match(reply, /Գինը դեռ նշված չէ/);
+      assert.match(reply, /30 նոյեմբեր 2026/);
+      assert.match(reply, /Ազատ տեղերը՝ 3/);
+      assert.match(reply, /\[Բացել տուրի էջը\]\(\/tours\/garni\)/);
+      assert.doesNotMatch(reply, /կարող եմ ասել|Ամրագրում չեմ կատարում/);
+    }
+  });
+
+  it("keeps Garni for follow-up price and seats, then switches to Sevan", () => {
+    const history = [{ role: "user" as const, text: "Գառնի" }];
+    const price = answerTourQuestion({ message: "իսկ գինը", facts: facts(), now, history });
+    const seats = answerTourQuestion({
+      message: "քանի տեղ կա",
+      facts: facts(),
+      now,
+      history: [...history, { role: "assistant", text: price }, { role: "user", text: "իսկ գինը" }],
+    });
+    const sevan = answerTourQuestion({ message: "իսկ Սևանը", facts: facts(), now, history });
+    assert.match(price, /Գինը դեռ նշված չէ/);
+    assert.match(price, /\/tours\/garni/);
+    assert.doesNotMatch(price, /15000|Ազատ տեղերը/);
+    assert.match(seats, /Ազատ տեղերը՝ 3/);
+    assert.match(seats, /\/tours\/garni/);
+    assert.match(sevan, /15000 ֏/);
+    assert.match(sevan, /\/tours\/sevan/);
+    assert.doesNotMatch(sevan, /Գինը դեռ նշված չէ/);
   });
 });
 
