@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { answerTourQuestion, publicFactsFromRows, replyKeepsPublishedFacts, type ChatFacts } from "./tour-chat-facts.ts";
+import { answerTourQuestion, answerTourChat, publicFactsFromRows, replyKeepsPublishedFacts, type ChatFacts } from "./tour-chat-facts.ts";
+import { confirmPreviewFixture, isolatedBookingChecks } from "./tour-chat-booking.ts";
 import { rateLimitTourChat, replyToTourQuestion, resetTourChatRateLimit, anonCatalogKey } from "./tour-chat.server.ts";
 
 const now = new Date("2026-11-09T10:00:00.000Z");
@@ -13,10 +14,10 @@ function facts(): ChatFacts {
       { id: "tatev", title_hy: "Տաթև", price: null, departure_time: "", is_virtual_only: false },
     ],
     [
-      { tour_id: "garni", departure_date: "2026-11-09", available_seats: 4 },
-      { tour_id: "garni", departure_date: "2026-11-30", available_seats: 3 },
-      { tour_id: "garni", departure_date: "2026-12-06", available_seats: 0 },
-      { tour_id: "sevan", departure_date: "2026-11-15", available_seats: 2 },
+      { id: "garni-dep-1109", tour_id: "garni", departure_date: "2026-11-09", available_seats: 4 },
+      { id: "garni-dep-1130", tour_id: "garni", departure_date: "2026-11-30", available_seats: 3 },
+      { id: "garni-dep-1206", tour_id: "garni", departure_date: "2026-12-06", available_seats: 0 },
+      { id: "sevan-dep-1115", tour_id: "sevan", departure_date: "2026-11-15", available_seats: 2 },
     ],
   );
 }
@@ -82,8 +83,8 @@ describe("public tour chat facts", () => {
       facts: facts(),
       now,
     });
-    assert.match(reply, /\/tours\/sevan/);
-    assert.match(reply, /Բացել տուրի էջը/);
+    assert.match(reply, /15 նոյեմբեր 2026/);
+    assert.match(reply, /\[Բացել տուրի էջը\]\(\/tours\/sevan\)/);
     assert.doesNotMatch(reply, /Ամրագրում չեմ կատարում|book_departure|0 ֏|անվճար/);
   });
 
@@ -134,6 +135,21 @@ describe("public tour chat facts", () => {
     assert.match(sevan, /\/tours\/sevan/);
     assert.doesNotMatch(sevan, /Գինը դեռ նշված չէ/);
   });
+
+  it("answers a free-seat question and does not open booking", () => {
+    const answer = answerTourChat({
+      message: "քանի ազատ տեղ կա",
+      facts: facts(),
+      now,
+      history: [{ role: "user", text: "Գառնի" }],
+    });
+    assert.equal(answer.booking, null);
+    assert.match(answer.reply, /Ազատ տեղերը՝ 3/);
+    const booking = answerTourChat({ message: "ամրագրիր 2 տեղ", facts: facts(), now, history: [{ role: "user", text: "Գառնի" }] });
+    assert.equal(booking.booking?.party, 2);
+    assert.equal(booking.booking?.tourId, "garni");
+    assert.match(booking.reply, /30 նոյեմբեր 2026/);
+  });
 });
 
 describe("public tour chat limit", () => {
@@ -147,9 +163,9 @@ describe("public tour chat limit", () => {
       facts: facts(),
       now,
     });
-    assert.match(reply, /Գինը դեռ նշված չէ/);
-    assert.doesNotMatch(reply, /0 ֏|անվճար/);
-    assert.match(reply, /\/tours\/garni/);
+    assert.match(reply.reply, /Գինը դեռ նշված չէ/);
+    assert.doesNotMatch(reply.reply, /0 ֏|անվճար/);
+    assert.match(reply.reply, /\/tours\/garni/);
   });
 
   it("reads an open departure from isolated rows and the next request sees the new seat count", () => {
@@ -182,5 +198,86 @@ describe("public tour chat limit", () => {
     assert.equal(anonCatalogKey(token("anon")), true);
     assert.equal(anonCatalogKey(token("service_role")), false);
     assert.equal(anonCatalogKey("not-a-jwt"), false);
+  });
+
+  it("books isolated data once, then rejects a changed price, a full departure, a started departure, and a second confirm", () => {
+    const result = isolatedBookingChecks();
+    assert.equal(result.cancelled.booked, false);
+    assert.equal(result.success.ok && result.success.ticketCode, "AG-TEST1");
+    assert.equal(result.repeat.ok && result.repeat.repeated, true);
+    assert.equal(result.repeat.ok && result.repeat.ticketCode, "AG-TEST1");
+    assert.equal(result.changedPrice.ok, false);
+    if (!result.changedPrice.ok) {
+      assert.equal(result.changedPrice.code, "stale");
+      assert.equal(result.changedPrice.fresh?.total, 30000);
+    }
+    assert.equal(result.full.ok, false);
+    if (!result.full.ok) assert.equal(result.full.code, "sold_out");
+    assert.equal(result.started.ok, false);
+    if (!result.started.ok) assert.match(result.started.message, /արդեն փակ է/);
+    const now = new Date("2026-11-09T10:00:00.000Z");
+    const open = confirmPreviewFixture({
+      departureId: "chat-test-open",
+      party: 2,
+      key: "preview-key-open-1",
+      proof: "preview-proof-open",
+      expectedPrice: 12000,
+      expectedSeats: 4,
+      expectedDate: "2026-12-20",
+      expectedCashback: 5,
+      now,
+    });
+    const again = confirmPreviewFixture({
+      departureId: "chat-test-open",
+      party: 2,
+      key: "preview-key-open-1",
+      proof: "preview-proof-open",
+      expectedPrice: 12000,
+      expectedSeats: 4,
+      expectedDate: "2026-12-20",
+      expectedCashback: 5,
+      now,
+    });
+    assert.equal(open.ok, true);
+    assert.equal(again.ok && again.ticketCode, open.ok && open.ticketCode);
+    const price = confirmPreviewFixture({
+      departureId: "chat-test-price",
+      party: 2,
+      key: "preview-key-price-1",
+      proof: "preview-proof-price",
+      expectedPrice: 12000,
+      expectedSeats: 4,
+      expectedDate: "2026-12-20",
+      expectedCashback: 5,
+      now,
+    });
+    assert.equal(price.ok, false);
+    if (!price.ok) assert.equal(price.code, "stale");
+    const full = confirmPreviewFixture({
+      departureId: "chat-test-full",
+      party: 2,
+      key: "preview-key-full-01",
+      proof: "preview-proof-full1",
+      expectedPrice: 12000,
+      expectedSeats: 4,
+      expectedDate: "2026-12-20",
+      expectedCashback: 5,
+      now,
+    });
+    assert.equal(full.ok, false);
+    if (!full.ok) assert.equal(full.code, "sold_out");
+    const closed = confirmPreviewFixture({
+      departureId: "chat-test-closed",
+      party: 2,
+      key: "preview-key-closed1",
+      proof: "preview-proof-close",
+      expectedPrice: 12000,
+      expectedSeats: 4,
+      expectedDate: "2026-11-09",
+      expectedCashback: 5,
+      now,
+    });
+    assert.equal(closed.ok, false);
+    if (!closed.ok) assert.equal(closed.code, "closed");
   });
 });

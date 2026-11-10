@@ -1,8 +1,9 @@
 import { createClient } from "@supabase/supabase-js";
 import {
-  answerTourQuestion,
+  answerTourChat,
   publicFactsFromRows,
   replyKeepsPublishedFacts,
+  type ChatAnswer,
   type ChatFacts,
   type ChatTurn,
 } from "./tour-chat-facts.ts";
@@ -59,12 +60,16 @@ export async function loadPublicTourFacts(): Promise<ChatFacts> {
     const client = createClient(url, anonKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
-    const [tours, departures] = await Promise.all([
+    const [tours, departures, settings] = await Promise.all([
       client.from("tours").select("id,title_hy,price,departure_time,departure_place,is_virtual_only"),
-      client.from("departures").select("tour_id,departure_date,available_seats"),
+      client.from("departures").select("id,tour_id,departure_date,available_seats"),
+      client.from("site_settings").select("cashback_percent").eq("id", 1).maybeSingle(),
     ]);
     if (tours.error || departures.error) return { ok: false, tours: [] };
-    return publicFactsFromRows(tours.data, departures.data);
+    const facts = publicFactsFromRows(tours.data, departures.data);
+    const cashback = settings.data?.cashback_percent;
+    facts.cashbackPercent = typeof cashback === "number" && Number.isInteger(cashback) && cashback >= 0 ? cashback : null;
+    return facts;
   } catch {
     return { ok: false, tours: [] };
   }
@@ -112,14 +117,15 @@ export async function replyToTourQuestion(input: {
   history?: ChatTurn[];
   now?: Date;
   facts?: ChatFacts;
-}) {
+}): Promise<ChatAnswer> {
   const facts = input.facts ?? (await loadPublicTourFacts());
-  const grounded = answerTourQuestion({
+  const grounded = answerTourChat({
     message: input.message,
     pageTourId: input.pageTourId,
     history: input.history,
     now: input.now,
     facts,
   });
-  return phraseFromServerModel(grounded);
+  if (grounded.booking) return grounded;
+  return { reply: await phraseFromServerModel(grounded.reply), booking: null };
 }

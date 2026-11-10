@@ -1,9 +1,37 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouterState } from "@tanstack/react-router";
+import { format, parseISO } from "date-fns";
+import { hy } from "date-fns/locale";
 import { MessageCircle, X } from "lucide-react";
+import { completeCheckout, type PaymentProvider } from "@/lib/payments";
+import { getTouristSnapshot } from "@/lib/admin";
+import { bookingSummary, validConfirmationToken, validGuestPhone, type ChatBookingOffer, type ChatDepartureChoice } from "@/lib/tour-chat-booking";
+
+type ChatMessage = {
+  role: "user" | "assistant";
+  text: string;
+};
+
+type BookingDraft = {
+  offer: ChatBookingOffer;
+  departure: ChatDepartureChoice;
+  adults: number;
+  children: number;
+  name: string;
+  phone: string;
+  provider: PaymentProvider | null;
+  step: "form" | "review" | "done";
+  key: string;
+  proof: string;
+  ticket: string;
+  note: string;
+};
+
+const LINK = /(\[[^\]]+\]\(\/tours\/[a-z0-9-]+(?:\?ticket=AG-[A-Za-z0-9-]+)?\))/g;
+const LINK_PART = /^\[([^\]]+)\]\((\/tours\/[a-z0-9-]+(?:\?ticket=AG-[A-Za-z0-9-]+)?)\)/;
 
 function ChatText({ text, mine }: { text: string; mine: boolean }) {
-  const parts = text.split(/(\[[^\]]+\]\(\/tours\/[a-z0-9-]+\))/g);
+  const parts = text.split(LINK);
   return (
     <p
       className={
@@ -13,7 +41,7 @@ function ChatText({ text, mine }: { text: string; mine: boolean }) {
       }
     >
       {parts.map((part, index) => {
-        const link = /^\[([^\]]+)\]\((\/tours\/[a-z0-9-]+)\)$/.exec(part);
+        const link = LINK_PART.exec(part);
         if (!link) return <span key={index}>{part}</span>;
         return (
           <a key={index} href={link[2]} className="font-bold underline">
@@ -24,11 +52,6 @@ function ChatText({ text, mine }: { text: string; mine: boolean }) {
     </p>
   );
 }
-
-type ChatMessage = {
-  role: "user" | "assistant";
-  text: string;
-};
 
 const STAFF_PATH = /^\/(admin|guide|driver|login)(\/|$)/;
 
@@ -41,8 +64,11 @@ export function TourChat() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const tourId = pageTourId(pathname);
   const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState("");
+  const [input, setInput] = useState("");
   const [pending, setPending] = useState(false);
+  const [offer, setOffer] = useState<ChatBookingOffer | null>(null);
+  const [bookingDraft, setBookingDraft] = useState<BookingDraft | null>(null);
+  const saving = useRef(false);
   const intro = tourId
     ? "Գրեք, թե ինչն եք ուզում իմանալ այս տուրի մասին։"
     : "Գրեք տուրի անունը, օրինակ՝ Գառնի։";
@@ -50,11 +76,11 @@ export function TourChat() {
 
   if (STAFF_PATH.test(pathname)) return null;
 
-  async function send() {
-    const message = draft.trim();
+  async function send(text?: string) {
+    const message = (text ?? input).trim();
     if (!message || pending) return;
     const history = [{ role: "assistant" as const, text: intro }, ...messages].slice(-6);
-    setDraft("");
+    setInput("");
     setMessages((current) => [...current, { role: "user", text: message }]);
     setPending(true);
     try {
@@ -63,12 +89,13 @@ export function TourChat() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ message, tourId, history }),
       });
-      const payload = (await response.json()) as { reply?: string; error?: string };
-      const text =
+      const payload = (await response.json()) as { reply?: string; error?: string; booking?: ChatBookingOffer | null };
+      const reply =
         payload.reply ||
         payload.error ||
         "Չաթը հիմա չպատասխանեց։ Կարող եք շարունակել ամրագրումը տուրի էջում։";
-      setMessages((current) => [...current, { role: "assistant", text }]);
+      setMessages((current) => [...current, { role: "assistant", text: reply }]);
+      setOffer(payload.booking ?? null);
     } catch {
       setMessages((current) => [
         ...current,
@@ -80,6 +107,181 @@ export function TourChat() {
     } finally {
       setPending(false);
     }
+  }
+
+  function startDeparture(departure: ChatDepartureChoice) {
+    if (!offer) return;
+    const tourist = getTouristSnapshot();
+    const key = crypto.randomUUID();
+    const proof = crypto.randomUUID();
+    setBookingDraft({
+      offer,
+      departure,
+      adults: offer.party ?? 1,
+      children: 0,
+      name: tourist?.role === "tourist" ? tourist.fullName : "",
+      phone: tourist?.role === "tourist" ? tourist.phone : "",
+      provider: null,
+      step: "form",
+      key,
+      proof,
+      ticket: "",
+      note: "",
+    });
+  }
+
+  async function confirmBooking() {
+    if (!bookingDraft || saving.current) return;
+    if (!validConfirmationToken(bookingDraft.key) || !validConfirmationToken(bookingDraft.proof)) return;
+    const party = bookingDraft.adults + bookingDraft.children;
+    const price = bookingDraft.offer.price ?? 0;
+    if (price > 0 && !bookingDraft.provider) {
+      setBookingDraft({ ...bookingDraft, note: "Ընտրեք վճարման եղանակը։ Վճարումը սիմուլացված է։" });
+      return;
+    }
+    if (bookingDraft.offer.cashbackPercent == null) {
+      setBookingDraft({ ...bookingDraft, note: "Մեկնման տվյալները չբեռնվեցին։ Թիվ չեմ նշում։" });
+      return;
+    }
+    setPending(true);
+    saving.current = true;
+    try {
+      if (bookingDraft.offer.fixture) {
+        const response = await fetch("/api/tour-chat", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            action: "isolated-confirm",
+            departureId: bookingDraft.departure.id,
+            adults: bookingDraft.adults,
+            children: bookingDraft.children,
+            expectedPrice: price,
+            expectedSeats: bookingDraft.departure.seats,
+            expectedDate: bookingDraft.departure.date,
+            expectedCashback: bookingDraft.offer.cashbackPercent,
+            key: bookingDraft.key,
+            proof: bookingDraft.proof,
+          }),
+        });
+        const payload = (await response.json()) as {
+          check?: { ok: boolean; code?: string; message?: string; ticketCode?: string; fresh?: { price: number; seats: number; date: string; cashbackPercent: number } };
+        };
+        const check = payload.check;
+        if (!check?.ok) {
+          const fresh = check?.fresh;
+          setBookingDraft({
+            ...bookingDraft,
+            note: check?.message || "Ամրագրումը չհաստատվեց։",
+            offer: fresh
+              ? { ...bookingDraft.offer, price: fresh.price > 0 ? fresh.price : null, cashbackPercent: fresh.cashbackPercent }
+              : bookingDraft.offer,
+            departure: fresh
+              ? { ...bookingDraft.departure, date: fresh.date, label: freshLabel(fresh.date), seats: fresh.seats }
+              : bookingDraft.departure,
+          });
+          return;
+        }
+        const ticket = check.ticketCode || "";
+        setBookingDraft(null);
+        setMessages((current) => [
+          ...current,
+          { role: "assistant", text: `Փորձարկման ամրագրումը հաստատվեց։ Կոդը՝ ${ticket}։ Արտադրական ամրագրում չի ստեղծվել։` },
+        ]);
+        return;
+      }
+      const checkResponse = await fetch("/api/tour-chat", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "booking-check",
+          tourId: bookingDraft.offer.tourId,
+          departureId: bookingDraft.departure.id,
+          adults: bookingDraft.adults,
+          children: bookingDraft.children,
+          expectedPrice: price,
+          expectedSeats: bookingDraft.departure.seats,
+          expectedDate: bookingDraft.departure.date,
+          expectedCashback: bookingDraft.offer.cashbackPercent ?? 0,
+        }),
+      });
+      const checked = (await checkResponse.json()) as {
+        check?: { ok: boolean; code?: string; message?: string; fresh?: { price: number; seats: number; date: string; cashbackPercent: number; total: number | null } };
+        message?: string;
+      };
+      if (!checked.check?.ok) {
+        const fresh = checked.check?.fresh;
+        setBookingDraft({
+          ...bookingDraft,
+          note: checked.check?.message || checked.message || "Ամրագրումը չհաստատվեց։",
+          offer: fresh
+            ? { ...bookingDraft.offer, price: fresh.price > 0 ? fresh.price : null, cashbackPercent: fresh.cashbackPercent }
+            : bookingDraft.offer,
+          departure: fresh
+            ? { ...bookingDraft.departure, date: fresh.date, label: freshLabel(fresh.date), seats: fresh.seats }
+            : bookingDraft.departure,
+        });
+        return;
+      }
+      const result = await completeCheckout({
+        provider: bookingDraft.provider,
+        tourId: bookingDraft.offer.tourId || "",
+        tourTitle: bookingDraft.offer.title || "",
+        passengerName: bookingDraft.name.trim(),
+        phone: bookingDraft.phone.trim(),
+        adults: bookingDraft.adults,
+        children: bookingDraft.children,
+        total: price * party,
+        usePoints: false,
+        balance: 0,
+        credit: 0,
+        notify: false,
+        departureTime: bookingDraft.departure.time || "",
+        departureId: bookingDraft.departure.id,
+        expectedDate: bookingDraft.departure.date,
+        expectedPrice: price,
+        expectedSeats: bookingDraft.departure.seats,
+        expectedCashback: bookingDraft.offer.cashbackPercent ?? 0,
+        idempotencyKey: bookingDraft.key,
+        guestProof: bookingDraft.proof,
+      });
+      if (!result.ok) {
+        if (result.stale) {
+          setBookingDraft({
+            ...bookingDraft,
+            note: "Գինը կամ տեղերը փոխվել են։ Ստուգեք նոր ամփոփումը և հաստատեք նորից։",
+            offer: { ...bookingDraft.offer, price: result.stale.price > 0 ? result.stale.price : null, cashbackPercent: result.stale.cashbackPercent },
+            departure: {
+              ...bookingDraft.departure,
+              date: result.stale.departureDate,
+              label: freshLabel(result.stale.departureDate),
+              seats: result.stale.availableSeats,
+            },
+          });
+          return;
+        }
+        setBookingDraft({ ...bookingDraft, note: result.message });
+        return;
+      }
+      const ticket = result.ticketCode;
+      setBookingDraft(null);
+      setMessages((current) => [
+        ...current,
+        {
+          role: "assistant",
+          text: `Ամրագրումը հաստատվեց։ Կոդը՝ ${ticket}։ [Բացել տոմսը](/tours/${bookingDraft.offer.tourId}?ticket=${ticket})`,
+        },
+      ]);
+    } catch {
+      setBookingDraft({ ...bookingDraft, note: "Ամրագրումը չպահպանվեց։ Կրկին սեղմելը նույն ամրագրումն է, նորը չի բացվի։" });
+    } finally {
+      saving.current = false;
+      setPending(false);
+    }
+  }
+
+  function freshLabel(date: string) {
+    const parsed = parseISO(date);
+    return Number.isNaN(parsed.getTime()) ? date : format(parsed, "d MMMM yyyy", { locale: hy });
   }
 
   return (
@@ -109,6 +311,175 @@ export function TourChat() {
             {messages.map((item, index) => (
               <ChatText key={`${item.role}-${index}`} text={item.text} mine={item.role === "user"} />
             ))}
+            {offer && !bookingDraft && offer.mode === "choose-tour" && (
+              <div className="flex flex-col gap-2">
+                {offer.tours.map((tour) => (
+                  <button
+                    key={tour.id}
+                    type="button"
+                    className="min-h-11 rounded-2xl border border-border px-3 text-left text-sm font-semibold"
+                    onClick={() => void send(`ուզում եմ ամրագրել ${tour.title}`)}
+                  >
+                    {tour.title}
+                  </button>
+                ))}
+              </div>
+            )}
+            {offer && !bookingDraft && offer.mode === "departures" && offer.departures.length > 0 && (
+              <div className="flex flex-col gap-2">
+                {offer.departures.map((departure) => (
+                  <button
+                    key={departure.id}
+                    type="button"
+                    className="min-h-11 rounded-2xl border border-border px-3 text-left text-sm"
+                    onClick={() => startDeparture(departure)}
+                  >
+                    {departure.label}
+                    {departure.time ? `, ${departure.time}` : ""} · {departure.seats} ազատ
+                  </button>
+                ))}
+              </div>
+            )}
+            {bookingDraft && bookingDraft.step === "form" && (
+              <div className="space-y-2 rounded-2xl bg-muted p-3">
+                <p className="text-sm font-semibold">Ամրագրել որպես հյուր</p>
+                <label className="block text-xs" htmlFor="chat-booking-name">
+                  Անուն
+                  <input
+                    id="chat-booking-name"
+                    value={bookingDraft.name}
+                    autoComplete="name"
+                    onChange={(event) => setBookingDraft({ ...bookingDraft, name: event.target.value, note: "" })}
+                    className="mt-1 min-h-11 w-full rounded-xl border border-input bg-background px-3 text-base"
+                  />
+                </label>
+                <label className="block text-xs" htmlFor="chat-booking-phone">
+                  Հեռախոս
+                  <input
+                    id="chat-booking-phone"
+                    value={bookingDraft.phone}
+                    autoComplete="tel"
+                    inputMode="tel"
+                    onChange={(event) => setBookingDraft({ ...bookingDraft, phone: event.target.value, note: "" })}
+                    className="mt-1 min-h-11 w-full rounded-xl border border-input bg-background px-3 text-base"
+                  />
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="text-xs" htmlFor="chat-booking-adults">
+                    Մեծահասակ
+                    <input
+                      id="chat-booking-adults"
+                      type="number"
+                      min={1}
+                      max={30}
+                      value={bookingDraft.adults}
+                      onChange={(event) => setBookingDraft({ ...bookingDraft, adults: Number(event.target.value), note: "" })}
+                      className="mt-1 min-h-11 w-full rounded-xl border border-input bg-background px-3 text-base"
+                    />
+                  </label>
+                  <label className="text-xs" htmlFor="chat-booking-children">
+                    Երեխա
+                    <input
+                      id="chat-booking-children"
+                      type="number"
+                      min={0}
+                      max={30}
+                      value={bookingDraft.children}
+                      onChange={(event) => setBookingDraft({ ...bookingDraft, children: Number(event.target.value), note: "" })}
+                      className="mt-1 min-h-11 w-full rounded-xl border border-input bg-background px-3 text-base"
+                    />
+                  </label>
+                </div>
+                {bookingDraft.offer.price != null && bookingDraft.offer.price > 0 && (
+                  <div className="grid gap-2">
+                    {(
+                      [
+                        ["idram", "Idram"],
+                        ["telcell", "Telcell"],
+                        ["arca", "ArCa / Visa"],
+                      ] as const
+                    ).map(([id, label]) => (
+                      <button
+                        key={id}
+                        type="button"
+                        className={`min-h-11 rounded-xl border px-3 text-sm font-semibold ${bookingDraft.provider === id ? "border-primary bg-background" : "border-border"}`}
+                        onClick={() => setBookingDraft({ ...bookingDraft, provider: id, note: "" })}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                    <p className="text-xs text-muted-foreground">Վճարումը սիմուլացված է։</p>
+                  </div>
+                )}
+                {bookingDraft.note && <p className="text-sm text-destructive">{bookingDraft.note}</p>}
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="min-h-11 flex-1 rounded-full bg-primary px-3 text-sm font-bold text-primary-foreground"
+                    onClick={() => {
+                      const party = bookingDraft.adults + bookingDraft.children;
+                      if (bookingDraft.name.trim().length < 2) {
+                        setBookingDraft({ ...bookingDraft, note: "Գրեք անունը։" });
+                        return;
+                      }
+                      if (!validGuestPhone(bookingDraft.phone)) {
+                        setBookingDraft({ ...bookingDraft, note: "Հեռախոսը պետք է ունենա 8–15 թվանշան։" });
+                        return;
+                      }
+                      if (!Number.isInteger(party) || bookingDraft.adults < 1 || bookingDraft.children < 0 || party > 30) {
+                        setBookingDraft({ ...bookingDraft, note: "Մասնակիցների թիվը 1-ից 30 է։" });
+                        return;
+                      }
+                      if ((bookingDraft.offer.price ?? 0) > 0 && !bookingDraft.provider) {
+                        setBookingDraft({ ...bookingDraft, note: "Ընտրեք վճարման եղանակը։ Վճարումը սիմուլացված է։" });
+                        return;
+                      }
+                      setBookingDraft({ ...bookingDraft, step: "review", note: "" });
+                    }}
+                  >
+                    Շարունակել
+                  </button>
+                  <button type="button" className="min-h-11 rounded-full px-3 text-sm" onClick={() => setBookingDraft(null)}>
+                    Չեղարկել
+                  </button>
+                </div>
+              </div>
+            )}
+            {bookingDraft && bookingDraft.step === "review" && (
+              <div className="space-y-2 rounded-2xl bg-muted p-3">
+                <p className="text-sm leading-6">
+                  {bookingSummary({
+                    title: bookingDraft.offer.title || "",
+                    dateLabel: bookingDraft.departure.label,
+                    time: bookingDraft.departure.time,
+                    place: bookingDraft.offer.place,
+                    party: bookingDraft.adults + bookingDraft.children,
+                    price: bookingDraft.offer.price,
+                  })}
+                </p>
+                {bookingDraft.note && <p className="text-sm text-destructive">{bookingDraft.note}</p>}
+                <button
+                  type="button"
+                  disabled={pending}
+                  className="min-h-11 w-full rounded-full bg-primary px-3 text-sm font-bold text-primary-foreground disabled:opacity-60"
+                  onClick={() => void confirmBooking()}
+                >
+                  Հաստատել ամրագրումը
+                </button>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="min-h-11 flex-1 rounded-full border border-border px-3 text-sm"
+                    onClick={() => setBookingDraft({ ...bookingDraft, step: "form", note: "" })}
+                  >
+                    Խմբագրել
+                  </button>
+                  <button type="button" className="min-h-11 flex-1 rounded-full border border-border px-3 text-sm" onClick={() => setBookingDraft(null)}>
+                    Չեղարկել
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
           <form
             className="flex gap-2 border-t border-border p-3"
@@ -122,15 +493,15 @@ export function TourChat() {
             </label>
             <input
               id="tour-chat-message"
-              value={draft}
+              value={input}
               maxLength={500}
-              onChange={(event) => setDraft(event.target.value)}
+              onChange={(event) => setInput(event.target.value)}
               placeholder="Օրինակ՝ Գառնիի գինը"
               className="min-h-11 flex-1 rounded-full border border-input bg-background px-4 text-base"
             />
             <button
               type="submit"
-              disabled={pending || draft.trim().length === 0}
+              disabled={pending || input.trim().length === 0}
               className="inline-flex min-h-11 items-center rounded-full bg-primary px-4 text-sm font-bold text-primary-foreground disabled:opacity-60"
             >
               {pending ? "…" : "Ուղարկել"}
