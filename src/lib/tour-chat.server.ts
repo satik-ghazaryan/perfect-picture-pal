@@ -66,7 +66,7 @@ export async function loadPublicTourFacts(): Promise<ChatFacts> {
       auth: { persistSession: false, autoRefreshToken: false },
     });
     const [tours, departures, settings] = await Promise.all([
-      client.from("tours").select("id,title_hy,price,departure_time,departure_place,highlights,included,excluded,is_virtual_only"),
+      client.from("tours").select("id,title_hy,price,departure_time,departure_place,highlights,included,excluded,is_virtual_only,location_hy,region"),
       client.from("departures").select("id,tour_id,departure_date,available_seats"),
       client.from("site_settings").select("cashback_percent").eq("id", 1).maybeSingle(),
     ]);
@@ -90,7 +90,9 @@ export async function classifyChatIntent(input: {
   tour: string | null;
   tours: PublicTourFact[];
   requestId?: string | null;
+  skipModel?: boolean;
 }): Promise<ChatReading | null> {
+  if (input.skipModel) return null;
   const base = envValue("PYTHON_BACKEND_URL").replace(/\/$/, "");
   const secret = envValue("CHAT_INTENT_API_SECRET");
   const question = withoutPrivateNumbers(input.message);
@@ -176,6 +178,7 @@ export async function replyToTourQuestion(input: {
   facts?: ChatFacts;
   channel?: "live" | "mock" | "off";
   requestId?: string | null;
+  skipModel?: boolean;
 }): Promise<ChatAnswer & { understood: "openai" | "rules" }> {
   const facts = input.facts ?? (await loadPublicTourFacts());
   const channel = input.channel ?? (interestOfferEnabled() ? interestDeliveryPlan().mode : "off");
@@ -186,6 +189,7 @@ export async function replyToTourQuestion(input: {
     tour: context.tour,
     tours: facts.tours,
     requestId: input.requestId,
+    skipModel: input.skipModel,
   });
   const grounded = answerTourChat({
     message: input.message,

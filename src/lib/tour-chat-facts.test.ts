@@ -747,4 +747,97 @@ describe("public tour chat limit", () => {
     assert.equal(found?.date, CHAT_TEST_OPEN_DATE);
     assert.equal(findPreviewTicket("AG-TEST999"), null);
   });
+
+  it("finds a published tour by marz and keeps that tour for the next price question", () => {
+    const catalog = publicFactsFromRows(
+      [
+        { id: "south", title_hy: "Հարավային երթուղի", location_hy: "Տաթև", price: 11000, departure_time: "07:00", is_virtual_only: false },
+        { id: "kapan", title_hy: "Կապանի կամուրջ", region: "Սյունիք", price: 9000, departure_time: "08:00", is_virtual_only: false },
+      ],
+      [],
+    );
+    for (const message of ["Սյունիք տուր ունեք", "Սյունիքում ի՞նչ տուրեր կան", "դեպի Սյունիք տուր ունե՞ք"]) {
+      const several = answerTourChat({ message, facts: catalog, now });
+      assert.equal(several.interest, null);
+      assert.equal(several.choices?.length, 2);
+      assert.match(several.reply, /Ընտրիր մեկը/);
+    }
+    const one = publicFactsFromRows(
+      [{ id: "south", title_hy: "Հարավային երթուղի", location_hy: "Տաթև", price: null, departure_time: "", is_virtual_only: false }],
+      [],
+    );
+    const questions = ["Սյունիք տուր ունեք", "Սյունիքում ի՞նչ տուրեր կան", "դեպի Սյունիք տուր ունե՞ք"];
+    for (const message of questions) {
+      const answer = answerTourChat({ message, facts: one, now, reading: { intent: "greeting", direction: null, party: null } });
+      assert.equal(answer.interest?.tourId, "south");
+      assert.match(answer.reply, /Հարավային երթուղի/);
+      assert.match(answer.reply, /առաջիկա բաց մեկնում դեռ չկա/);
+      assert.match(answer.reply, /\/tours\/south/);
+      const price = answerTourChat({
+        message: "իսկ գինը՞",
+        facts: one,
+        now,
+        history: [
+          { role: "user", text: message },
+          { role: "assistant", text: answer.reply },
+        ],
+      });
+      assert.match(price.reply, /Հարավային երթուղի/);
+      assert.match(price.reply, /դեռ հրապարակված չէ/);
+      assert.doesNotMatch(price.reply, /Ո՞ր տուրի գինն/);
+    }
+  });
+
+  it("keeps Tatev for the price and the notice after a Syunik question", () => {
+    const catalog = facts();
+    const first = answerTourChat({ message: "Սյունիք տուր ունե՞ք", facts: catalog, now });
+    assert.equal(first.interest?.tourId, "tatev");
+    const history = [
+      { role: "user" as const, text: "Սյունիք տուր ունե՞ք" },
+      { role: "assistant" as const, text: first.reply },
+    ];
+    const price = answerTourChat({ message: "իսկ գինը՞", facts: catalog, now, history });
+    assert.match(price.reply, /Տաթևի տուրի գինը դեռ հրապարակված չէ/);
+    const followed = [
+      ...history,
+      { role: "user" as const, text: "իսկ գինը՞" },
+      { role: "assistant" as const, text: price.reply },
+    ];
+    const notice = answerTourChat({ message: "որ լինի՝ կհիշե՞ք ինձ", facts: catalog, now, history: followed });
+    assert.equal(notice.interest?.tourId, "tatev");
+    assert.match(notice.reply, /Տաթև/);
+    const ignoredGreeting = answerTourChat({
+      message: "որ լինի՝ կհիշե՞ք ինձ",
+      facts: catalog,
+      now,
+      history: followed,
+      reading: { intent: "greeting", direction: null, party: null },
+    });
+    assert.equal(ignoredGreeting.interest?.tourId, "tatev");
+    const modelNotice = answerTourChat({
+      message: "որ լինի՝ կհիշե՞ք ինձ",
+      facts: catalog,
+      now,
+      history: followed,
+      reading: { intent: "notice", direction: "Տաթև", party: null },
+    });
+    assert.equal(modelNotice.interest?.tourId, "tatev");
+    const menu = answerTourChat({
+      message: "իսկ գինը՞",
+      facts: catalog,
+      now,
+      history,
+      shownTourIds: ["garni", "sevan", "tatev"],
+    });
+    assert.match(menu.reply, /Տաթևի տուրի գինը դեռ հրապարակված չէ/);
+    const switched = answerTourChat({
+      message: "Գյումրի",
+      facts: catalog,
+      now,
+      history: followed,
+      reading: { intent: "notice", direction: "Տաթև", party: null },
+    });
+    assert.equal(switched.interest?.tourId, null);
+    assert.match(switched.reply, /Գյումրի/);
+  });
 });

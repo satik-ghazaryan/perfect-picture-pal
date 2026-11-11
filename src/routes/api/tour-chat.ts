@@ -215,6 +215,7 @@ async function handlePost({ request }: { request: Request }) {
       shownTourIds: readShown(record["shownTourIds"]),
       registered: readRegistered(record["registered"]),
       requestId: request.headers.get("x-vercel-id") ?? request.headers.get("x-request-id"),
+      skipModel: process.env.VERCEL_ENV !== "production" && request.headers.get("x-chat-intent") === "skip",
     });
     const delivery = interestDeliveryPlan();
     const channel = interestOfferEnabled() ? delivery.mode : "off";

@@ -20,6 +20,7 @@ export type PublicTourFact = {
   included: string[];
   excluded: string[];
   isVirtual: boolean;
+  location: string | null;
   departures: PublicDepartureFact[];
 };
 
@@ -122,6 +123,9 @@ export function publicFactsFromRows(tourRows: unknown, departureRows: unknown): 
     const title = typeof record["title_hy"] === "string" ? record["title_hy"].trim() : "";
     if (!TOUR_ID.test(id) || !title) continue;
     const place = typeof record["departure_place"] === "string" ? record["departure_place"].trim() : "";
+    const locationHy = typeof record["location_hy"] === "string" ? record["location_hy"].trim() : "";
+    const region = typeof record["region"] === "string" ? record["region"].trim() : "";
+    const location = [locationHy, region].filter((item, index, all) => item && all.indexOf(item) === index).join(" ");
     tours.push({
       id,
       title,
@@ -132,6 +136,7 @@ export function publicFactsFromRows(tourRows: unknown, departureRows: unknown): 
       included: textList(record["included"]),
       excluded: textList(record["excluded"]),
       isVirtual: record["is_virtual_only"] === true,
+      location: location || null,
       departures: departures.get(id) ?? [],
     });
   }
@@ -161,6 +166,60 @@ function aliases(tour: PublicTourFact) {
   if (title.length >= 3) names.add(title);
   for (const word of titleWords(tour)) names.add(word);
   return [...names];
+}
+
+const MARZ_NAMES = new Set(["սյունիք", "կոտայք", "գեղարքունիք", "տավուշ", "լոռի", "շիրակ", "արագածոտն", "արարատ", "վայոց ձոր"]);
+
+const PLACE_MARZ: Record<string, string> = {
+  տաթև: "սյունիք",
+  տաթեւ: "սյունիք",
+  tatev: "սյունիք",
+  գառնի: "կոտայք",
+  գեղարդ: "կոտայք",
+  սևան: "գեղարքունիք",
+  սեւան: "գեղարքունիք",
+  դիլիջան: "տավուշ",
+  հաղարծին: "տավուշ",
+  լոռի: "լոռի",
+  լոռու: "լոռի",
+  գյումրի: "շիրակ",
+  ամբերդ: "արագածոտն",
+};
+
+function marzesInText(text: string) {
+  const normalized = normalize(text);
+  const found = new Set<string>();
+  if (!normalized) return found;
+  if (normalized.includes("վայոց ձոր")) found.add("վայոց ձոր");
+  for (const word of normalized.split(" ")) {
+    const key = stem(word);
+    if (MARZ_NAMES.has(key)) found.add(key);
+    if (MARZ_NAMES.has(word)) found.add(word);
+  }
+  return found;
+}
+
+function tourMarzes(tour: PublicTourFact) {
+  const found = new Set<string>();
+  const sources = [tour.location ?? "", ...aliases(tour)];
+  for (const source of sources) {
+    const normalized = normalize(source);
+    if (!normalized) continue;
+    if (normalized.includes("վայոց ձոր")) found.add("վայոց ձոր");
+    for (const word of normalized.split(" ")) {
+      const key = stem(word);
+      if (MARZ_NAMES.has(key)) found.add(key);
+      const mapped = PLACE_MARZ[key] ?? PLACE_MARZ[word];
+      if (mapped) found.add(mapped);
+    }
+  }
+  return found;
+}
+
+function toursInRegion(text: string, tours: PublicTourFact[]) {
+  const asked = marzesInText(text);
+  if (asked.size === 0) return [];
+  return tours.filter((tour) => [...tourMarzes(tour)].some((marz) => asked.has(marz)));
 }
 
 function mentioned(text: string, tours: PublicTourFact[]) {
@@ -588,14 +647,23 @@ function uniqueTours(tours: PublicTourFact[]) {
 }
 
 function latestShownTours(history: ChatTurn[] | undefined, tours: PublicTourFact[]) {
-  for (const turn of [...(history ?? [])].reverse()) {
-    if (turn.role !== "assistant") continue;
+  const turns = history ?? [];
+  let listFallback: PublicTourFact[] | null = null;
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index];
+    if (!turn || turn.role !== "assistant") continue;
     const text = normalize(turn.text);
-    if (text.includes("որ տուրի գինն") || text.includes("հետաքրքրությունդ գրանցված") || text.includes("արդեն գրանցված")) continue;
+    if (text.includes("որ տուրի գինն") || text.includes("հետաքրքրությունդ գրանցված") || text.includes("արդեն գրանցված") || text.includes("ընտրիր")) continue;
     const found = uniqueTours(mentioned(turn.text, tours));
-    if (found.length > 0) return found;
+    if (found.length === 0) continue;
+    const previous = turns[index - 1];
+    if (previous?.role === "user" && /^(առաջիկա տուրեր|մեր ուղղությունները)$/.test(normalize(previous.text))) {
+      listFallback ??= found;
+      continue;
+    }
+    return found;
   }
-  return [];
+  return listFallback ?? [];
 }
 
 function awaitingPriceChoice(history: ChatTurn[] | undefined) {
@@ -612,6 +680,8 @@ function latestUserTour(history: ChatTurn[] | undefined, tours: PublicTourFact[]
     if (turn.role !== "user") continue;
     const found = mentioned(turn.text, tours);
     if (found.length === 1) return found[0] ?? null;
+    const regional = toursInRegion(turn.text, tours);
+    if (regional.length === 1) return regional[0] ?? null;
   }
   return null;
 }
@@ -646,7 +716,7 @@ const DIRECTION_STOP = new Set([
 ]);
 
 export function unknownDirection(message: string, tours: PublicTourFact[]) {
-  if (mentioned(message, tours).length > 0) return null;
+  if (mentioned(message, tours).length > 0 || toursInRegion(message, tours).length > 0) return null;
   const tokens = message.replace(/[՞՛՝]/gu, "").split(/[^\p{L}\p{N}-]+/u).filter((token) => {
     const word = normalize(token);
     return word.length >= 3 && !isDirectionStop(word) && !/^\d+$/.test(word);
@@ -681,7 +751,7 @@ function latestMissingDirection(history: ChatTurn[] | undefined, tours: PublicTo
   for (const turn of turns) {
     if (turn.role !== "user") continue;
     const text = repairTypos(turn.text);
-    if (mentioned(text, tours).length > 0) continue;
+    if (mentioned(text, tours).length > 0 || toursInRegion(text, tours).length > 0) continue;
     const found = unknownDirection(text, tours);
     if (found) return found.label;
   }
@@ -723,6 +793,31 @@ function closedDepartureReply(tour: PublicTourFact): ChatAnswer {
   };
 }
 
+function regionMatchReply(
+  matches: PublicTourFact[],
+  now: Date,
+  memory: { tourId: string | null; key: string }[],
+): ChatAnswer {
+  if (matches.length > 1) {
+    return {
+      reply: "Այդ մարզում մի քանի տուր կա։ Ընտրիր մեկը։",
+      booking: null,
+      interest: null,
+      choices: matches.map((tour) => ({ id: tour.id, title: choiceLabel(tour) })),
+    };
+  }
+  const tour = matches[0];
+  if (!tour) return plain("Այդ մարզում հրապարակված տուր չկա։");
+  const interest = visibleInterest(catalogInterest(tour, now), memory, shortName(tour));
+  const invite = interest ? " Ցանկանո՞ւմ ես գրանցել հետաքրքրությունդ" : "";
+  return {
+    reply: `«${tour.title}»։ ${departureSentence(tour, now)}${invite}\n${pageLink(tour)}`,
+    booking: null,
+    interest,
+    choices: null,
+  };
+}
+
 export type ChatIntentName =
   | "price"
   | "departure"
@@ -757,14 +852,15 @@ export function chatIntentContext(history: ChatTurn[] | undefined, tours: Public
     if (turn.role !== "user") continue;
     const text = repairTypos(turn.text);
     const found = mentioned(text, tours);
-    if (found.length === 1) {
-      const selected = found[0];
+    const resolved = found.length > 0 ? found : toursInRegion(text, tours);
+    if (resolved.length === 1) {
+      const selected = resolved[0];
       if (!selected) continue;
       tour = selected.title;
       direction = choiceLabel(selected);
       continue;
     }
-    if (found.length > 1) continue;
+    if (resolved.length > 1) continue;
     const missing = unknownDirection(text, tours);
     if (missing) direction = missing.label;
   }
@@ -774,6 +870,21 @@ export function chatIntentContext(history: ChatTurn[] | undefined, tours: Public
     direction = choiceLabel(shown[0]);
   }
   return { direction, tour };
+}
+
+function readingFits(reading: ChatReading, message: string) {
+  if (reading.intent === "greeting") return isOnlyGreeting(message);
+  if (reading.intent === "upcoming") return wants(message, /^առաջիկա տուրեր$/);
+  if (reading.intent === "directions") return wants(message, /^մեր ուղղությունները$/);
+  return true;
+}
+
+function singleResolved(message: string, tours: PublicTourFact[]) {
+  const named = mentioned(message, tours);
+  if (named.length === 1) return named[0] ?? null;
+  if (named.length > 1) return null;
+  const regional = toursInRegion(message, tours);
+  return regional.length === 1 ? regional[0] ?? null : null;
 }
 
 function partyFromReading(party: unknown, message: string) {
@@ -824,7 +935,9 @@ export function validatedChatReading(
 function tourFromDirection(direction: string | null, tours: PublicTourFact[]) {
   if (!direction) return null;
   const found = mentioned(direction, tours);
-  return found.length === 1 ? found[0] ?? null : null;
+  if (found.length === 1) return found[0] ?? null;
+  const regional = toursInRegion(direction, tours);
+  return regional.length === 1 ? regional[0] ?? null : null;
 }
 
 function remembered(memory: { tourId: string | null; key: string }[], offer: { tourId: string | null; label: string }, short = "") {
@@ -888,6 +1001,8 @@ function latestDirection(history: ChatTurn[] | undefined, tours: PublicTourFact[
     const text = repairTypos(turn.text);
     const found = mentioned(text, tours);
     if (found.length === 1) return { tour: found[0] ?? null, missing: null as string | null };
+    const regional = toursInRegion(text, tours);
+    if (regional.length === 1) return { tour: regional[0] ?? null, missing: null as string | null };
     const unknown = unknownDirection(text, tours);
     if (unknown) return { tour: null, missing: unknown.label };
   }
@@ -914,7 +1029,11 @@ export function answerTourChat(input: {
   }
   const tours = input.facts.tours;
   const memory = input.registered ?? [];
-  const reading = input.reading && input.reading.intent !== "unknown" ? input.reading : null;
+  if (!asksSomething(message) && !wantsBooking(message) && mentioned(message, tours).length === 0) {
+    const regional = toursInRegion(message, tours);
+    if (regional.length > 0) return regionMatchReply(regional, now, memory);
+  }
+  const reading = input.reading && input.reading.intent !== "unknown" && readingFits(input.reading, message) ? input.reading : null;
   if (reading?.intent === "greeting") {
     return plain("Բարև՜ 👋 Որևէ ուղղություն մտքո՞ւմ ունես, թե՞ նայենք՝ ինչ տուրեր ունենք առաջիկայում");
   }
@@ -930,7 +1049,8 @@ export function answerTourChat(input: {
   }
   const shownIds = new Set(input.shownTourIds ?? []);
   const buttonTours = tours.filter((tour) => shownIds.has(tour.id));
-  const contextTours = buttonTours.length > 0 ? buttonTours : latestShownTours(input.history, tours);
+  const menuButtons = buttonTours.length > 1 && buttonTours.length >= tours.length;
+  const contextTours = buttonTours.length > 0 && !menuButtons ? buttonTours : latestShownTours(input.history, tours);
   const namedNow = mentioned(message, tours);
   if (namedNow.length === 1 && namedNow[0] && awaitingPriceChoice(input.history)) {
     return quotedPrice(namedNow[0], now, memory, asksFuturePrice(message));
@@ -946,7 +1066,10 @@ export function answerTourChat(input: {
     if (contextTours.length === 1 && contextTours[0]) return quotedPrice(contextTours[0], now, memory, asksFuturePrice(message));
   }
   if (reading) {
-    const selected = tourFromDirection(reading.direction, tours);
+    const explicit = singleResolved(message, tours);
+    const stray = explicit ? null : unknownDirection(message, tours);
+    if (stray) return missingDirectionReply(displayLabel(stray.label));
+    const selected = explicit ?? tourFromDirection(reading.direction, tours);
     if (reading.intent === "notice") {
       if (reading.direction && !selected) {
         const label = displayLabel(reading.direction);
