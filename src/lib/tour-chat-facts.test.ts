@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { answerTourQuestion, answerTourChat, publicFactsFromRows, replyKeepsPublishedFacts, type ChatFacts } from "./tour-chat-facts.ts";
+import { answerTourQuestion, answerTourChat, publicFactsFromRows, replyKeepsPublishedFacts, validatedChatReading, type ChatFacts } from "./tour-chat-facts.ts";
 import { CHAT_TEST_OPEN_DATE, CHAT_TEST_TITLE, CHAT_TEST_TOUR_ID } from "./chat-test-fixture.ts";
 import { confirmPreviewFixture, findPreviewTicket, isolatedBookingChecks } from "./tour-chat-booking.ts";
-import { interestOfferEnabled, interestPreviewScenario, sameInterest } from "./tour-interest.ts";
+import { interestConfirmation, interestOfferEnabled, interestPreviewScenario, sameInterest } from "./tour-interest.ts";
 import { rateLimitTourChat, replyToTourQuestion, resetTourChatRateLimit, anonCatalogKey } from "./tour-chat.server.ts";
 
 const now = new Date("2026-11-09T10:00:00.000Z");
@@ -31,7 +31,7 @@ describe("public tour chat facts", () => {
       facts: facts(),
       now,
     });
-    assert.match(reply, /Գինը դեռ նշված չէ/);
+    assert.match(reply, /դեռ հրապարակված չէ/);
     assert.doesNotMatch(reply, /0 ֏|անվճար/);
     assert.match(reply, /30 նոյեմբեր 2026/);
     assert.match(reply, /08:30/);
@@ -46,8 +46,8 @@ describe("public tour chat facts", () => {
       facts: facts(),
       now,
     });
-    assert.match(reply, /Գինը դեռ նշված չէ/);
-    assert.match(reply, /Առաջիկա բաց մեկնում այս պահին չկա/);
+    assert.match(reply, /դեռ հրապարակված չէ/);
+    assert.match(reply, /առաջիկա բաց մեկնում դեռ չկա/);
     assert.match(reply, /\/tours\/tatev/);
     assert.doesNotMatch(reply, /\d/);
   });
@@ -73,7 +73,7 @@ describe("public tour chat facts", () => {
       facts: facts(),
       now,
     });
-    assert.match(onPage, /Գինը դեռ նշված չէ/);
+    assert.match(onPage, /դեռ հրապարակված չէ/);
     assert.match(onPage, /\/tours\/garni/);
     assert.doesNotMatch(onPage, /15000/);
   });
@@ -110,7 +110,7 @@ describe("public tour chat facts", () => {
     });
     for (const reply of [first, second]) {
       assert.match(reply, /Գառնի և Գեղարդ/);
-      assert.match(reply, /Գինը դեռ նշված չէ/);
+      assert.match(reply, /դեռ հրապարակված չէ/);
       assert.match(reply, /30 նոյեմբեր 2026/);
       assert.match(reply, /Ազատ տեղերը՝ 3/);
       assert.match(reply, /\[Բացել տուրի էջը\]\(\/tours\/garni\)/);
@@ -128,25 +128,403 @@ describe("public tour chat facts", () => {
       history: [...history, { role: "assistant", text: price }, { role: "user", text: "իսկ գինը" }],
     });
     const sevan = answerTourQuestion({ message: "իսկ Սևանը", facts: facts(), now, history });
-    assert.match(price, /Գինը դեռ նշված չէ/);
+    assert.match(price, /դեռ հրապարակված չէ/);
     assert.match(price, /\/tours\/garni/);
     assert.doesNotMatch(price, /15000|Ազատ տեղերը/);
     assert.match(seats, /Ազատ տեղերը՝ 3/);
     assert.match(seats, /\/tours\/garni/);
-    assert.match(sevan, /15000 ֏/);
+    assert.match(sevan, /15000 դրամ/);
     assert.match(sevan, /\/tours\/sevan/);
-    assert.doesNotMatch(sevan, /Գինը դեռ նշված չէ/);
+    assert.doesNotMatch(sevan, /դեռ հրապարակված չէ/);
   });
 
   it("offers Gyumri interest from the Tatev page instead of the open tour", () => {
     const answer = answerTourChat({ message: "Գյումրի", pageTourId: "tatev", facts: facts(), now });
     assert.equal(answer.interest?.tourId, null);
     assert.equal(answer.interest?.label, "Գյումրի");
-    assert.match(answer.reply, /«Գյումրի» ուղղությունը կատալոգում չկա/);
+    assert.match(answer.reply, /Գյումրիի ուղղությամբ այս պահին տուր չունենք/);
     assert.doesNotMatch(answer.reply, /Տաթև/);
     const page = answerTourChat({ message: "գինը", pageTourId: "tatev", facts: facts(), now });
     assert.match(page.reply, /\/tours\/tatev/);
     assert.equal(page.interest?.label.includes("Գյումրի"), false);
+  });
+
+  it("answers Lori, then included fees, seats, and switches to Dilijan choices", () => {
+    const catalog = publicFactsFromRows(
+      [
+        {
+          id: "lori",
+          title_hy: "Լոռի՝ Արմավիրից",
+          price: 9000,
+          departure_time: "08:00",
+          highlights: ["Ախթալա", "Սանահին", "Հաղպատ"],
+          included: ["Հարմարավետ տրանսպորտ"],
+          excluded: ["Մենձ Էր քարանձավի մուտք՝ 1 000 դրամ"],
+          is_virtual_only: false,
+        },
+        { id: "dilijan-autumn", title_hy: "Աշնանային Դիլիջան՝ Արմավիրից", price: 8000, departure_time: "08:00", is_virtual_only: false },
+        { id: "sevan", title_hy: "Արմավիր – Սևանա լիճ, Դիլիջան և Հաղարծին", price: 15000, departure_time: "08:00", is_virtual_only: false },
+      ],
+      [],
+    );
+    const lori = answerTourChat({ message: "Լոռի", facts: catalog, now, pageTourId: "garni" });
+    assert.equal(lori.reply, "Լոռի առաջիկա բաց մեկնում դեռ չկա։ Ցանկանո՞ւմ ես գրանցել հետաքրքրությունդ");
+    assert.equal(lori.interest?.tourId, "lori");
+    assert.equal(lori.booking, null);
+    const history = [{ role: "user" as const, text: "Լոռի" }];
+    const included = answerTourChat({ message: "ի՞նչ է ներառված", facts: catalog, now, history, pageTourId: "garni" });
+    assert.match(included.reply, /^«Լոռի՝ Արմավիրից» տուրում ներառված է/);
+    assert.match(included.reply, /Առանձին է վճարվում՝ Մենձ Էր քարանձավի մուտք՝ 1 000 դրամ/);
+    const seats = answerTourChat({ message: "իսկ տեղ կա՞", facts: catalog, now, history });
+    assert.match(seats.reply, /առաջիկա բաց մեկնում դեռ չկա/);
+    assert.equal(seats.booking, null);
+    const dilijan = answerTourChat({ message: "իսկ Դիլիջանը՞", facts: catalog, now, history, pageTourId: "lori" });
+    assert.equal(dilijan.booking, null);
+    assert.deepEqual(dilijan.choices?.map((item) => item.id).sort(), ["dilijan-autumn", "sevan"]);
+    assert.deepEqual(
+      dilijan.choices?.map((item) => item.title).sort(),
+      ["Աշնանային Դիլիջան", "Սևան, Դիլիջան և Հաղարծին"].sort(),
+    );
+    const autumn = answerTourChat({ message: "ԱՇՆԱՆԱՅԻՆ դիլիջան", facts: catalog, now, pageTourId: "lori" });
+    assert.equal(autumn.choices, null);
+    assert.match(autumn.reply, /Աշնանային Դիլիջան առաջիկա բաց մեկնում դեռ չկա/);
+    assert.doesNotMatch(autumn.reply, /Սևանա լիճ/);
+  });
+
+  it("greets first, answers the price on the first line, and keeps the phone for a contact question", () => {
+    const greeting = answerTourChat({ message: "Բարև", facts: facts(), now });
+    assert.equal(greeting.reply, "Բարև՜ 👋 Որևէ ուղղություն մտքո՞ւմ ունես, թե՞ նայենք՝ ինչ տուրեր ունենք առաջիկայում");
+    assert.equal(greeting.interest, null);
+    const price = answerTourChat({
+      message: "իսկ գինը՞",
+      facts: facts(),
+      now,
+      history: [{ role: "user", text: "Գառնի" }],
+    });
+    assert.match(price.reply, /^Գառնիի տուրի գինը դեռ հրապարակված չէ։\n/);
+    const catalog = publicFactsFromRows(
+      [{
+        id: "lori",
+        title_hy: "Լոռի՝ Արմավիրից",
+        price: 9000,
+        departure_time: "08:00",
+        highlights: ["Ախթալա", "Կապ՝ 094 15 80 20"],
+        included: ["Հարմարավետ տրանսպորտ"],
+        is_virtual_only: false,
+      }],
+      [],
+    );
+    const summary = answerTourChat({ message: "Լոռի", facts: catalog, now });
+    assert.doesNotMatch(summary.reply, /094/);
+    assert.equal(summary.reply, "Լոռի առաջիկա բաց մեկնում դեռ չկա։ Ցանկանո՞ւմ ես գրանցել հետաքրքրությունդ");
+    const contact = answerTourChat({ message: "հեռախոսը", facts: catalog, now, history: [{ role: "user", text: "Լոռի" }] });
+    assert.match(contact.reply, /^Կապվել կարող ես այս համարով՝ 094 15 80 20/);
+  });
+
+  it("keeps Gyumri apart from Lori and shows the food-court stop only in the full program", () => {
+    const catalog = publicFactsFromRows(
+      [{
+        id: "lori",
+        title_hy: "Լոռի՝ Արմավիրից",
+        price: 9000,
+        departure_time: "08:00",
+        highlights: ["Ախթալա", "Ֆուդ կորտ"],
+        included: ["Հարմարավետ տրանսպորտ"],
+        excluded: ["Սնունդ"],
+        is_virtual_only: false,
+      }],
+      [],
+    );
+    const amberd = answerTourChat({ message: "Ամբերդ", facts: catalog, now });
+    assert.match(amberd.reply, /Ամբերդի ուղղությամբ այս պահին տուր չունենք/);
+    const gyumri = answerTourChat({ message: "իսկ Գյումրի՞", facts: catalog, now });
+    assert.match(gyumri.reply, /^Գյումրիի ուղղությամբ այս պահին տուր չունենք/);
+    assert.doesNotMatch(gyumri.reply, /գրանցվել հնարավոր չէ/);
+    const lori = answerTourChat({ message: "Լոռի", facts: catalog, now });
+    assert.doesNotMatch(lori.reply, /Ֆուդ կորտ/);
+    assert.match(lori.reply, /^Լոռի առաջիկա բաց մեկնում դեռ չկա/);
+    const notice = answerTourChat({
+      message: "որ Գյումրի տոր լինի ինձ կասեք՞",
+      facts: catalog,
+      now,
+      history: [{ role: "user", text: "Լոռի" }],
+      channel: "off",
+    });
+    assert.match(notice.reply, /Գյումրիի ուղղությամբ այս պահին տուր չունենք/);
+    assert.match(notice.reply, /Ցանկանո՞ւմ ես գրանցել հետաքրքրությունդ/);
+    assert.equal(notice.interest?.label, "Գյումրի");
+    const history = [
+      { role: "user" as const, text: "Գյումրի" },
+      { role: "user" as const, text: "Լոռի" },
+      { role: "user" as const, text: "որ Գյումրի տոր լինի ինձ կասեք՞" },
+    ];
+    const full = answerTourChat({ message: "ամբողջ ինֆորմացիան", facts: catalog, now, history });
+    assert.match(full.reply, /Գյումրիի՞ մասին ես հարցնում, թե՞ Լոռու տուրի ամբողջ ծրագիրն ես ուզում տեսնել/);
+    assert.deepEqual(full.choices?.map((item) => item.title), ["Գյումրի", "Լոռու տուրի ամբողջ ծրագիրը"]);
+    const program = answerTourChat({ message: "Լոռու տուրի ամբողջ ծրագիրը", facts: catalog, now, history });
+    assert.match(program.reply, /Երթուղին՝ Ախթալա/);
+    assert.match(program.reply, /Ֆուդ կորտը սնվելու և հանգստանալու կանգառ է/);
+    assert.match(program.reply, /9000 դրամ/);
+    assert.match(program.reply, /Հարմարավետ տրանսպորտ/);
+    assert.match(program.reply, /Առանձին է վճարվում՝ Սնունդ/);
+    const remembered = validatedChatReading(
+      { intent: "notice", direction: null, party: null },
+      "որ լինի կհիշեք ինձ՞",
+      { direction: "Գյումրի", tour: null },
+      catalog.tours,
+    );
+    assert.equal(remembered?.intent, "notice");
+    assert.equal(remembered?.direction, "Գյումրի");
+    const noticeReading = answerTourChat({
+      message: "որ լինի կհիշեք ինձ՞",
+      facts: catalog,
+      now,
+      history: [{ role: "user", text: "Գյումրի" }],
+      reading: remembered,
+    });
+    assert.match(noticeReading.reply, /Գյումրիի ուղղությամբ այս պահին տուր չունենք/);
+    assert.equal(noticeReading.booking, null);
+    assert.equal(noticeReading.interest?.label, "Գյումրի");
+    const pair = validatedChatReading(
+      { intent: "price", direction: "Լոռի", party: 2 },
+      "Լոռին ինչքա՞ն կնստի երկուսիս համար",
+      { direction: "Գյումրի", tour: null },
+      catalog.tours,
+    );
+    const pairReply = answerTourChat({
+      message: "Լոռին ինչքա՞ն կնստի երկուսիս համար",
+      facts: catalog,
+      now,
+      reading: pair,
+    });
+    assert.match(pairReply.reply, /^Երկու հոգու համար՝ 18000 դրամ/);
+    assert.match(pairReply.reply, /9000 դրամ/);
+    assert.equal(pairReply.booking, null);
+    const invented = validatedChatReading(
+      { intent: "price", direction: "Փարիզ", party: 9 },
+      "ինչքան արժե",
+      { direction: null, tour: null },
+      catalog.tours,
+    );
+    assert.equal(invented?.direction, null);
+    assert.equal(invented?.party, null);
+    const switched = answerTourChat({
+      message: "Ամրագր2 տեղ ամբերդ տուրին",
+      facts: facts(),
+      now,
+      history: [{ role: "user", text: "Տաթև" }],
+    });
+    assert.equal(switched.booking, null);
+    assert.equal(switched.interest?.label, "Ամբերդ");
+    assert.match(switched.reply, /Ամբերդի ուղղությամբ այս պահին տուր չունենք/);
+    assert.doesNotMatch(switched.reply, /Տաթև/);
+    const rememberedAmberd = answerTourChat({
+      message: "Որ լինի՝ կհիշե՞ք ինձ",
+      facts: facts(),
+      now,
+      history: [{ role: "user", text: "Ամբերդ" }],
+    });
+    assert.equal(rememberedAmberd.interest?.label, "Ամբերդ");
+    assert.match(rememberedAmberd.reply, /Ամբերդի ուղղությամբ այս պահին տուր չունենք/);
+    const rulesNotice = answerTourChat({
+      message: "որ լինի կհիշեք ինձ՞",
+      facts: catalog,
+      now,
+      history: [{ role: "user", text: "Գյումրի" }],
+    });
+    assert.match(rulesNotice.reply, /Գյումրիի ուղղությամբ այս պահին տուր չունենք/);
+    const rulesPrice = answerTourChat({
+      message: "Լոռին ինչքա՞ն կնստի երկուսիս համար",
+      facts: catalog,
+      now,
+    });
+    assert.match(rulesPrice.reply, /^Երկու հոգու համար՝ 18000 դրամ/);
+    assert.equal(rulesPrice.booking, null);
+    const both = answerTourChat({ message: "ե՞րբ է ու ինչքա՞ն արժե", facts: catalog, now, history: [{ role: "user", text: "Լոռի" }] });
+    assert.match(both.reply, /առաջիկա բաց մեկնում դեռ չկա/);
+    assert.match(both.reply, /9000 դրամ/);
+    const gyumriPrice = answerTourChat({
+      message: "Գյումրի տուրը սովորաբար ինչ արժի",
+      facts: catalog,
+      now,
+      history: [{ role: "user", text: "Լոռի" }],
+    });
+    assert.match(gyumriPrice.reply, /^Գյումրիի տուրի գինը դեռ հրապարակված չէ/);
+    assert.doesNotMatch(gyumriPrice.reply, /Գինը, ժամը|Լոռի/);
+    const pairAfter = answerTourChat({
+      message: "Լոռին 2 հոգու համար ինչ արժի՞",
+      facts: catalog,
+      now,
+      history: [{ role: "user", text: "Գյումրի" }],
+      registered: [{ tourId: "lori", key: "լոռի" }],
+    });
+    assert.match(pairAfter.reply, /^Երկու հոգու համար՝ 18000 դրամ \(9000 դրամ՝ մեկ անձի համար\)/);
+    assert.match(pairAfter.reply, /Լոռի առաջիկա բաց մեկնում դեռ չկա/);
+    assert.equal(pairAfter.interest, null);
+    const time = answerTourChat({
+      message: "Իսկ ժամը՞",
+      facts: catalog,
+      now,
+      history: [{ role: "user", text: "Լոռին 2 հոգու համար ինչ արժի" }],
+      registered: [{ tourId: "lori", key: "լոռի" }],
+    });
+    assert.match(time.reply, /^Լոռի առաջիկա բաց մեկնում դեռ չկա/);
+    assert.equal(time.interest, null);
+    const again = answerTourChat({
+      message: "կարո՞ղ եք ինձ նախապես տեղեկացնել",
+      facts: catalog,
+      now,
+      history: [{ role: "user", text: "Լոռի" }],
+      registered: [{ tourId: "lori", key: "լոռի" }],
+    });
+    assert.equal(again.reply, "Լոռու տուրի նկատմամբ հետաքրքրությունդ արդեն գրանցված է");
+    assert.equal(again.interest, null);
+    const soldOut = answerTourChat({
+      message: "Առաջիկա տուրեր",
+      facts: publicFactsFromRows(
+        [{ id: "garni", title_hy: "Արմավիր – Գառնի, Գեղարդ և Քարերի Սիմֆոնիա", price: 12000, departure_time: "08:30", is_virtual_only: false }],
+        [{ id: "garni-full", tour_id: "garni", departure_date: "2026-11-30", available_seats: 0 }],
+      ),
+      now,
+    });
+    assert.equal(soldOut.reply, "Նոյեմբերի 30-ի «Արմավիր – Գառնի, Գեղարդ և Քարերի Սիմֆոնիա» տուրի բոլոր տեղերը զբաղված են։");
+    assert.equal(soldOut.choices, null);
+    const shown = "Նոյեմբերի 30-ի «Արմավիր – Գառնի, Գեղարդ և Քարերի Սիմֆոնիա» տուրի բոլոր տեղերը զբաղված են։";
+    const priced = publicFactsFromRows(
+      [{ id: "garni", title_hy: "Արմավիր – Գառնի, Գեղարդ և Քարերի Սիմֆոնիա", price: 12000, departure_time: "08:30", is_virtual_only: false }],
+      [{ id: "garni-full", tour_id: "garni", departure_date: "2026-11-30", available_seats: 0 }],
+    );
+    const howMuch = answerTourChat({
+      message: "իսկ արժեքը որքան է՞",
+      facts: priced,
+      now,
+      history: [
+        { role: "user", text: "Առաջիկա տուրեր" },
+        { role: "assistant", text: shown },
+      ],
+    });
+    assert.match(howMuch.reply, /^Գառնի–Գեղարդ տուրի հրապարակված գինը մեկ անձի համար 12000 դրամ է/);
+    assert.match(howMuch.reply, /Նոյեմբերի 30-ի/);
+    const bothTours = publicFactsFromRows(
+      [
+        { id: "garni", title_hy: "Արմավիր – Գառնի, Գեղարդ և Քարերի Սիմֆոնիա", price: 12000, departure_time: "08:30", is_virtual_only: false },
+        { id: "lori", title_hy: "Լոռի՝ Արմավիրից", price: 9000, departure_time: "08:00", is_virtual_only: false },
+      ],
+      [{ id: "garni-full", tour_id: "garni", departure_date: "2026-11-30", available_seats: 0 }],
+    );
+    const several = answerTourChat({
+      message: "իսկ արժեքը որքան է՞",
+      facts: bothTours,
+      now,
+      shownTourIds: ["garni", "lori"],
+      history: [{ role: "assistant", text: "Ընտրիր ուղղությունը։" }],
+    });
+    assert.equal(several.reply, "Ո՞ր տուրի գինն ես ուզում իմանալ");
+    const chosen = answerTourChat({
+      message: "Գառնի",
+      facts: priced,
+      now,
+      history: [{ role: "assistant", text: several.reply }],
+    });
+    assert.match(chosen.reply, /^Գառնի–Գեղարդ տուրի հրապարակված գինը մեկ անձի համար 12000 դրամ է/);
+    const later = answerTourChat({
+      message: "բայց եթե լինի ինչքան կլինի",
+      facts: priced,
+      now,
+      history: [
+        { role: "assistant", text: shown },
+        { role: "assistant", text: "Հետաքրքրությունդ գրանցված է" },
+      ],
+      registered: [{ tourId: "garni", key: "գառնի" }],
+    });
+    assert.match(later.reply, /^Գառնի–Գեղարդ տուրի հրապարակված գինը մեկ անձի համար 12000 դրամ է։ Հաջորդ մեկնման գինը կհաստատվի, երբ այն հրապարակվի/);
+    assert.equal(later.interest, null);
+    const missing = answerTourChat({
+      message: "բայց եթե լինի ինչքան կլինի",
+      facts: publicFactsFromRows(
+        [{ id: "garni", title_hy: "Արմավիր – Գառնի, Գեղարդ և Քարերի Սիմֆոնիա", price: 0, departure_time: "08:30", is_virtual_only: false }],
+        [{ id: "garni-full", tour_id: "garni", departure_date: "2026-11-30", available_seats: 0 }],
+      ),
+      now,
+      history: [{ role: "assistant", text: shown }],
+    });
+    assert.match(missing.reply, /^Գառնի–Գեղարդի հաջորդ մեկնման գինը դեռ հրապարակված չէ/);
+  });
+
+  it("answers two seats as information and opens booking only for an explicit request", () => {
+    const info = answerTourChat({
+      message: "2 տեղ կա՞",
+      facts: facts(),
+      now,
+      history: [{ role: "user", text: "Գառնի" }],
+    });
+    assert.equal(info.booking, null);
+    assert.match(info.reply, /^Այո, 2 տեղ կա/);
+    const booking = answerTourChat({
+      message: "ուզում եմ 2 տեղ ամրագրել",
+      facts: facts(),
+      now,
+      history: [{ role: "user", text: "Գառնի" }],
+    });
+    assert.equal(booking.booking?.party, 2);
+    assert.equal(booking.booking?.tourId, "garni");
+    assert.equal(booking.booking?.departures.length, 1);
+    const full = answerTourChat({
+      message: "2 տեղ ամրագրի",
+      facts: publicFactsFromRows(
+        [{ id: "garni", title_hy: "Արմավիր – Գառնի, Գեղարդ և Քարերի Սիմֆոնիա", price: 12000, departure_time: "08:30", is_virtual_only: false }],
+        [{ id: "garni-full", tour_id: "garni", departure_date: "2026-11-30", available_seats: 0 }],
+      ),
+      now,
+      history: [{ role: "user", text: "Գառնի" }],
+    });
+    assert.equal(full.booking?.departures.length, 0);
+    assert.match(full.reply, /^Նոյեմբերի 30-ի «Արմավիր – Գառնի, Գեղարդ և Քարերի Սիմֆոնիա» տուրի բոլոր տեղերը զբաղված են/);
+  });
+
+  it("answers price, departure place, and this week's published departures", () => {
+    const history = [{ role: "user" as const, text: "Գառնի" }];
+    const place = answerTourQuestion({
+      message: "որտեղի՞ց ենք շարժվում",
+      facts: publicFactsFromRows(
+        [{ id: "garni", title_hy: "Գառնի", price: 12000, departure_place: "Կենտրոնական հրապարակ", departure_time: "08:30", is_virtual_only: false }],
+        [{ id: "garni-dep", tour_id: "garni", departure_date: "2026-11-30", available_seats: 3 }],
+      ),
+      now,
+      history,
+    });
+    assert.match(place, /^Շարժվում ենք այս վայրից՝ Կենտրոնական հրապարակ/);
+    const both = answerTourQuestion({ message: "ե՞րբ է ու ինչքա՞ն արժե", facts: facts(), now, history });
+    assert.match(both, /Հաջորդ բաց մեկնումը/);
+    assert.match(both, /դեռ հրապարակված չէ/);
+    const week = answerTourQuestion({ message: "Այս շաբաթ ի՞նչ ունեք", facts: facts(), now });
+    assert.match(week, /Սևան/);
+    assert.match(week, /15 նոյեմբեր 2026/);
+    assert.doesNotMatch(week, /30 նոյեմբեր/);
+    const sold = answerTourQuestion({
+      message: "Այս շաբաթ ի՞նչ ունեք",
+      facts: publicFactsFromRows(
+        [{ id: "garni", title_hy: "Գառնի", price: 12000, departure_time: "08:30", is_virtual_only: false }],
+        [{ id: "garni-week", tour_id: "garni", departure_date: "2026-11-14", available_seats: 0 }],
+      ),
+      now,
+    });
+    assert.match(sold, /Այս շաբաթ առաջիկա մեկնում կա, բայց տեղերը սպառվել են/);
+    const empty = answerTourQuestion({
+      message: "Այս շաբաթ ի՞նչ ունեք",
+      facts: publicFactsFromRows(
+        [{ id: "tatev", title_hy: "Տաթև", price: 10000, departure_time: "07:00", is_virtual_only: false }],
+        [],
+      ),
+      now,
+    });
+    assert.match(empty, /Այս շաբաթ առաջիկա մեկնում չկա/);
+    const unread = answerTourQuestion({
+      message: "Այս շաբաթ ի՞նչ ունեք",
+      facts: { ok: false, tours: [] },
+      now,
+    });
+    assert.match(unread, /չբեռնվեցին/);
   });
 
   it("answers a free-seat question and does not open booking", () => {
@@ -177,7 +555,7 @@ describe("public tour chat limit", () => {
       facts: facts(),
       now,
     });
-    assert.match(reply.reply, /Գինը դեռ նշված չէ/);
+    assert.match(reply.reply, /դեռ հրապարակված չէ/);
     assert.doesNotMatch(reply.reply, /0 ֏|անվճար/);
     assert.match(reply.reply, /\/tours\/garni/);
   });
@@ -198,7 +576,7 @@ describe("public tour chat limit", () => {
       facts: rows(1),
       now,
     });
-    assert.match(first, /12000 ֏/);
+    assert.match(first, /12000 դրամ/);
     assert.match(first, /Ազատ տեղերը՝ 4/);
     assert.match(second, /Ազատ տեղերը՝ 1/);
     assert.doesNotMatch(second, /Ազատ տեղերը՝ 4/);
@@ -299,11 +677,12 @@ describe("public tour chat limit", () => {
     const lori = answerTourChat({ message: "Լոռի կա", facts: facts(), now });
     assert.equal(lori.interest?.label, "Լոռի");
     assert.equal(lori.interest?.tourId, null);
-    assert.match(lori.reply, /կատալոգում չկա/);
+    assert.match(lori.reply, /Լոռու ուղղությամբ այս պահին տուր չունենք/);
     assert.doesNotMatch(lori.reply, /առաջիկա բաց մեկնում/);
     const tatev = answerTourChat({ message: "Տաթև", facts: facts(), now });
     assert.equal(tatev.interest?.tourId, "tatev");
-    assert.match(tatev.reply, /բաց մեկնում այս պահին չկա/);
+    assert.match(tatev.reply, /Տաթև առաջիկա բաց մեկնում դեռ չկա/);
+    assert.match(tatev.reply, /Ցանկանո՞ւմ ես գրանցել հետաքրքրությունդ/);
     const garni = answerTourChat({ message: "Գառնի", facts: facts(), now });
     assert.equal(garni.interest, null);
     const unclear = answerTourChat({ message: "տուր", facts: facts(), now });
@@ -321,7 +700,7 @@ describe("public tour chat limit", () => {
       ),
     });
     assert.equal(unreadable.interest, null);
-    assert.match(unreadable.reply, /չբեռնվեցին/);
+    assert.match(unreadable.reply, /չեն բեռնվել/);
     const saved = interestPreviewScenario();
     assert.equal(saved.declined, false);
     assert.equal(saved.registered, true);
@@ -339,6 +718,8 @@ describe("public tour chat limit", () => {
     assert.equal(interestOfferEnabled({}, "production"), false);
     assert.equal(interestOfferEnabled({ TWILIO_ACCOUNT_SID: "AC", TWILIO_AUTH_TOKEN: "token", TWILIO_PHONE_NUMBER: "+37400000000" }, "production"), true);
     assert.equal(interestOfferEnabled({}, "preview"), true);
+    assert.equal(interestConfirmation("mock"), "Փորձնական գրանցումը հաջողվեց");
+    assert.match(interestConfirmation("live"), /կտեղեկացնեմ քեզ/);
   });
 
   it("keeps the isolated ticket on the same test tour and open departure", () => {

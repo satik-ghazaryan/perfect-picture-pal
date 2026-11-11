@@ -69,7 +69,9 @@ export function TourChat() {
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(false);
   const [offer, setOffer] = useState<ChatBookingOffer | null>(null);
+  const [choices, setChoices] = useState<{ id: string; title: string }[] | null>(null);
   const [interest, setInterest] = useState<InterestOffer | null>(null);
+  const [notifyMode, setNotifyMode] = useState<"live" | "mock" | "off">("off");
   const [interestForm, setInterestForm] = useState<{
     label: string;
     tourId: string | null;
@@ -102,9 +104,7 @@ export function TourChat() {
     if (!open) return;
     document.querySelector("[data-chat-actions]")?.scrollIntoView({ block: "nearest" });
   }, [open, interestForm, bookingDraft, keyboard, viewportHeight]);
-  const intro = tourId
-    ? "Գրեք, թե ինչն եք ուզում իմանալ այս տուրի մասին։"
-    : "Գրեք տուրի անունը, օրինակ՝ Գառնի։";
+  const intro = "Բարև՜ 👋 Ո՞ւր գնանք այս անգամ։";
   const [messages, setMessages] = useState<ChatMessage[]>([]);
 
   if (STAFF_PATH.test(pathname)) return null;
@@ -112,7 +112,7 @@ export function TourChat() {
   async function send(text?: string) {
     const message = (text ?? input).trim();
     if (!message || pending) return;
-    const history = [{ role: "assistant" as const, text: intro }, ...messages].slice(-6);
+    const history = [{ role: "assistant" as const, text: intro }, ...messages].slice(-12);
     setInput("");
     setMessages((current) => [...current, { role: "user", text: message }]);
     setPending(true);
@@ -120,28 +120,41 @@ export function TourChat() {
       const response = await fetch("/api/tour-chat", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message, tourId, history }),
+        body: JSON.stringify({
+          message,
+          tourId,
+          history,
+          shownTourIds: choices?.map((item) => item.id) ?? [],
+          registered: registeredInterest.map((item) => ({ tourId: item.tourId, key: item.key })),
+        }),
       });
       const payload = (await response.json()) as {
         reply?: string;
         error?: string;
         booking?: ChatBookingOffer | null;
+        choices?: { id: string; title: string }[] | null;
         interest?: InterestOffer | null;
         notify?: "mock" | "live" | "off";
       };
       const reply =
         payload.reply ||
         payload.error ||
-        "Չաթը հիմա չպատասխանեց։ Կարող եք շարունակել ամրագրումը տուրի էջում։";
+        "Չաթը հիմա չպատասխանեց։ Կարող ես շարունակել ամրագրումը տուրի էջում։";
       setMessages((current) => [...current, { role: "assistant", text: reply }]);
-      setOffer(payload.booking ?? null);
+      const booking = payload.booking ?? null;
+      setOffer(booking);
+      if (booking?.mode === "departures" && booking.departures.length === 1 && booking.departures[0]) {
+        openDeparture(booking, booking.departures[0]);
+      }
+      setChoices(payload.choices ?? null);
+      setNotifyMode(payload.notify === "live" || payload.notify === "mock" ? payload.notify : "off");
       if (!interestForm) setInterest(payload.interest ?? null);
     } catch {
       setMessages((current) => [
         ...current,
         {
           role: "assistant",
-          text: "Չաթը հիմա չպատասխանեց։ Կարող եք շարունակել ամրագրումը տուրի էջում։",
+          text: "Չաթը հիմա չպատասխանեց։ Կարող ես շարունակել ամրագրումը տուրի էջում։",
         },
       ]);
     } finally {
@@ -152,11 +165,11 @@ export function TourChat() {
   async function registerInterest() {
     if (!interestForm || saving.current) return;
     if (!interestForm.consent) {
-      setInterestForm({ ...interestForm, note: "Նշեք, որ համաձայն եք ծանուցում ստանալ այս ուղղության մասին։" });
+      setInterestForm({ ...interestForm, note: "Նշիր, որ համաձայն ես ծանուցում ստանալ այս ուղղության մասին։" });
       return;
     }
     if (interestForm.label.trim().length < 2) {
-      setInterestForm({ ...interestForm, note: "Գրեք ուղղությունը։" });
+      setInterestForm({ ...interestForm, note: "Գրիր ուղղությունը։" });
       return;
     }
     if (!validGuestPhone(interestForm.phone)) {
@@ -177,7 +190,7 @@ export function TourChat() {
           consent: true,
         }),
       });
-      const payload = (await response.json()) as { ok?: boolean; message?: string; delivery?: { mode?: "mock" | "live" } };
+      const payload = (await response.json()) as { ok?: boolean; repeated?: boolean; message?: string };
       if (!payload.ok) {
         setInterestForm({ ...interestForm, note: payload.message || "Հետաքրքրությունը չգրանցվեց։" });
         return;
@@ -186,14 +199,11 @@ export function TourChat() {
       const tourId = interestForm.tourId;
       setRegisteredInterest((current) => [...current, { key: directionKey(label), tourId }]);
       setInterestForm(null);
-      const promised = payload.delivery?.mode === "live";
       setMessages((current) => [
         ...current,
         {
           role: "assistant",
-          text: promised
-            ? "Հետաքրքրությունդ գրանցված է։ Երբ այս ուղղությամբ ամրագրման համար բաց մեկնում հրապարակվի, կտեղեկացնենք քեզ"
-            : "Հետաքրքրությունդ գրանցված է։ Իրական ծանուցում չի ուղարկվի, որովհետև ուղարկման ալիքը միացված չէ։",
+          text: payload.repeated ? "Հետաքրքրությունն արդեն գրանցված է" : "Հետաքրքրությունդ գրանցված է",
         },
       ]);
     } catch {
@@ -204,15 +214,14 @@ export function TourChat() {
     }
   }
 
-  function startDeparture(departure: ChatDepartureChoice) {
-    if (!offer) return;
+  function openDeparture(next: ChatBookingOffer, departure: ChatDepartureChoice) {
     const tourist = getTouristSnapshot();
     const key = crypto.randomUUID();
     const proof = crypto.randomUUID();
     setBookingDraft({
-      offer,
+      offer: next,
       departure,
-      adults: offer.party ?? 1,
+      adults: next.party ?? 1,
       children: 0,
       name: tourist?.role === "tourist" ? tourist.fullName : "",
       phone: tourist?.role === "tourist" ? tourist.phone : "",
@@ -225,13 +234,18 @@ export function TourChat() {
     });
   }
 
+  function startDeparture(departure: ChatDepartureChoice) {
+    if (!offer) return;
+    openDeparture(offer, departure);
+  }
+
   async function confirmBooking() {
     if (!bookingDraft || saving.current) return;
     if (!validConfirmationToken(bookingDraft.key) || !validConfirmationToken(bookingDraft.proof)) return;
     const party = bookingDraft.adults + bookingDraft.children;
     const price = bookingDraft.offer.price ?? 0;
     if (price > 0 && !bookingDraft.provider) {
-      setBookingDraft({ ...bookingDraft, note: "Ընտրեք վճարման եղանակը։ Վճարումը սիմուլացված է։" });
+      setBookingDraft({ ...bookingDraft, note: "Ընտրիր վճարման եղանակը։ Վճարումը սիմուլացված է։" });
       return;
     }
     if (bookingDraft.offer.cashbackPercent == null) {
@@ -346,7 +360,7 @@ export function TourChat() {
         if (result.stale) {
           setBookingDraft({
             ...bookingDraft,
-            note: "Գինը կամ տեղերը փոխվել են։ Ստուգեք նոր ամփոփումը և հաստատեք նորից։",
+            note: "Գինը կամ տեղերը փոխվել են։ Ստուգիր նոր ամփոփումը և հաստատիր նորից։",
             offer: { ...bookingDraft.offer, price: result.stale.price > 0 ? result.stale.price : null, cashbackPercent: result.stale.cashbackPercent },
             departure: {
               ...bookingDraft.departure,
@@ -411,9 +425,41 @@ export function TourChat() {
           </header>
           <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3">
             <ChatText text={intro} mine={false} />
+            {!bookingDraft && (
+              <div className="flex w-full flex-col gap-4">
+                <button
+                  type="button"
+                  className="min-h-12 w-full rounded-2xl border border-border bg-background px-4 text-left text-base font-semibold leading-6"
+                  onClick={() => void send("Առաջիկա տուրեր")}
+                >
+                  Առաջիկա տուրեր
+                </button>
+                <button
+                  type="button"
+                  className="min-h-12 w-full rounded-2xl border border-border bg-background px-4 text-left text-base font-semibold leading-6"
+                  onClick={() => void send("Մեր ուղղությունները")}
+                >
+                  Մեր ուղղությունները
+                </button>
+              </div>
+            )}
             {messages.map((item, index) => (
               <ChatText key={`${item.role}-${index}`} text={item.text} mine={item.role === "user"} />
             ))}
+            {choices && choices.length > 0 && !bookingDraft && (
+              <div className="flex flex-col gap-2">
+                {choices.map((tour) => (
+                  <button
+                    key={tour.id}
+                    type="button"
+                    className="min-h-11 rounded-2xl border border-border px-3 text-left text-sm font-semibold"
+                    onClick={() => void send(tour.title)}
+                  >
+                    {tour.title}
+                  </button>
+                ))}
+              </div>
+            )}
             {offer && !bookingDraft && offer.mode === "choose-tour" && (
               <div className="flex flex-col gap-2">
                 {offer.tours.map((tour) => (
@@ -447,21 +493,21 @@ export function TourChat() {
               sameInterest(registeredInterest, interest) ? (
                 <p className="rounded-2xl bg-muted px-3 py-2 text-sm">Հետաքրքրությունն արդեն գրանցված է</p>
               ) : (
-              <button
-                type="button"
-                className="min-h-11 rounded-2xl border border-border px-3 text-left text-sm font-semibold"
-                onClick={() =>
-                  setInterestForm({
-                    label: interest.label,
-                    tourId: interest.tourId,
-                    phone: "",
-                    consent: false,
-                    note: "",
-                  })
-                }
-              >
-                Տեղեկացրեք ինձ, երբ տուր լինի
-              </button>
+                <button
+                  type="button"
+                  className="min-h-11 rounded-2xl border border-border px-3 text-left text-sm font-semibold"
+                  onClick={() =>
+                    setInterestForm({
+                      label: interest.label,
+                      tourId: interest.tourId,
+                      phone: "",
+                      consent: false,
+                      note: "",
+                    })
+                  }
+                >
+                  Գրանցել հետաքրքրություն
+                </button>
               )
             )}
             {interestForm && (
@@ -493,6 +539,9 @@ export function TourChat() {
                     className="mt-1 min-h-11 w-full rounded-xl border border-input bg-background px-3 text-base"
                   />
                 </label>
+                {notifyMode !== "live" && (
+                  <p className="text-sm">Կարող ես գրանցել հետաքրքրությունդ։ Ավտոմատ ծանուցում այս պահին չի ուղարկվում։</p>
+                )}
                 <label className="flex min-h-11 items-start gap-2 text-sm" htmlFor="chat-interest-consent">
                   <input
                     id="chat-interest-consent"
@@ -598,7 +647,7 @@ export function TourChat() {
                     onClick={() => {
                       const party = bookingDraft.adults + bookingDraft.children;
                       if (bookingDraft.name.trim().length < 2) {
-                        setBookingDraft({ ...bookingDraft, note: "Գրեք անունը։" });
+                        setBookingDraft({ ...bookingDraft, note: "Գրիր անունը։" });
                         return;
                       }
                       if (!validGuestPhone(bookingDraft.phone)) {
@@ -610,7 +659,7 @@ export function TourChat() {
                         return;
                       }
                       if ((bookingDraft.offer.price ?? 0) > 0 && !bookingDraft.provider) {
-                        setBookingDraft({ ...bookingDraft, note: "Ընտրեք վճարման եղանակը։ Վճարումը սիմուլացված է։" });
+                        setBookingDraft({ ...bookingDraft, note: "Ընտրիր վճարման եղանակը։ Վճարումը սիմուլացված է։" });
                         return;
                       }
                       setBookingDraft({ ...bookingDraft, step: "review", note: "" });
@@ -675,7 +724,7 @@ export function TourChat() {
               value={input}
               maxLength={500}
               onChange={(event) => setInput(event.target.value)}
-              placeholder="Օրինակ՝ Գառնիի գինը"
+              placeholder="Հարցրու տուրերի մասին…"
               className="box-border h-11 w-0 min-w-0 flex-1 rounded-full border border-input bg-background px-3 text-base"
             />
             <button

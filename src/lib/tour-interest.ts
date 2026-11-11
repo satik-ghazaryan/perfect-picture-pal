@@ -40,8 +40,8 @@ export function registerInterest(
 ) {
   const label = input.label.trim().slice(0, 80);
   const key = directionKey(label);
-  if (!input.consent) return { ok: false as const, code: "consent", message: "Ծանուցման համաձայնությունը պարտադիր է։" };
-  if (key.length < 2) return { ok: false as const, code: "direction", message: "Գրեք ուղղությունը։" };
+  if (!input.consent) return { ok: false as const, code: "consent", message: "Նշիր, որ համաձայն ես ծանուցում ստանալ այս ուղղության մասին։" };
+  if (key.length < 2) return { ok: false as const, code: "direction", message: "Գրիր ուղղությունը։" };
   if (!validGuestPhone(input.phone)) return { ok: false as const, code: "phone", message: "Հեռախոսը պետք է ունենա 8–15 թվանշան։" };
   const phone = input.phone.replace(/\D/g, "");
   const existing = store.rows.find((row) => row.directionKey === key && row.phone === phone);
@@ -92,6 +92,11 @@ export function sameInterest(
 ) {
   const key = directionKey(offer.label);
   return registered.some((item) => item.key === key || (offer.tourId !== null && item.tourId === offer.tourId));
+}
+
+export function interestConfirmation(mode: "mock" | "live") {
+  if (mode === "live") return "Գրանցեցի։ Երբ այս ուղղությամբ բաց մեկնում լինի, կտեղեկացնեմ քեզ։";
+  return "Փորձնական գրանցումը հաջողվեց";
 }
 
 export function interestOfferEnabled(env: Record<string, string | undefined> = process.env, vercelEnv = env["VERCEL_ENV"]) {

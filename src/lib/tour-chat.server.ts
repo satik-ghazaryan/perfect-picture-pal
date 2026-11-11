@@ -1,12 +1,17 @@
 import { createClient } from "@supabase/supabase-js";
 import {
   answerTourChat,
+  chatIntentContext,
   publicFactsFromRows,
   replyKeepsPublishedFacts,
+  validatedChatReading,
   type ChatAnswer,
   type ChatFacts,
+  type ChatReading,
   type ChatTurn,
+  type PublicTourFact,
 } from "./tour-chat-facts.ts";
+import { interestDeliveryPlan, interestOfferEnabled } from "./tour-interest.ts";
 
 const WINDOW_MS = 60_000;
 const LIMIT = 8;
@@ -61,7 +66,7 @@ export async function loadPublicTourFacts(): Promise<ChatFacts> {
       auth: { persistSession: false, autoRefreshToken: false },
     });
     const [tours, departures, settings] = await Promise.all([
-      client.from("tours").select("id,title_hy,price,departure_time,departure_place,is_virtual_only"),
+      client.from("tours").select("id,title_hy,price,departure_time,departure_place,highlights,included,excluded,is_virtual_only"),
       client.from("departures").select("id,tour_id,departure_date,available_seats"),
       client.from("site_settings").select("cashback_percent").eq("id", 1).maybeSingle(),
     ]);
@@ -72,6 +77,56 @@ export async function loadPublicTourFacts(): Promise<ChatFacts> {
     return facts;
   } catch {
     return { ok: false, tours: [] };
+  }
+}
+
+function withoutPrivateNumbers(text: string) {
+  return text.replace(/\+?\d[\d\s-]{6,}\d/gu, " ").replace(/\s+/g, " ").trim().slice(0, 500);
+}
+
+export async function classifyChatIntent(input: {
+  message: string;
+  direction: string | null;
+  tour: string | null;
+  tours: PublicTourFact[];
+  requestId?: string | null;
+}): Promise<ChatReading | null> {
+  const base = envValue("PYTHON_BACKEND_URL").replace(/\/$/, "");
+  const secret = envValue("CHAT_INTENT_API_SECRET");
+  const question = withoutPrivateNumbers(input.message);
+  if (!base || secret.length < 16 || !question) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(base);
+  } catch {
+    return null;
+  }
+  const loopback = parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost";
+  if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && loopback)) return null;
+  const requestId = (input.requestId ?? "").trim();
+  const safeId = /^[A-Za-z0-9_.:-]{1,120}$/.test(requestId) ? requestId : "";
+  try {
+    const response = await fetch(`${parsed.origin}/api/chat-intent`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-secret": secret,
+        ...(safeId ? { "x-request-id": safeId } : {}),
+      },
+      body: JSON.stringify({
+        message: question,
+        direction: input.direction?.slice(0, 80) ?? null,
+        tour: input.tour?.slice(0, 80) ?? null,
+      }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!response.ok) return null;
+    return validatedChatReading(await response.json(), input.message, {
+      direction: input.direction,
+      tour: input.tour,
+    }, input.tours);
+  } catch {
+    return null;
   }
 }
 
@@ -115,17 +170,42 @@ export async function replyToTourQuestion(input: {
   message: string;
   pageTourId?: string | null;
   history?: ChatTurn[];
+  registered?: { tourId: string | null; key: string }[];
+  shownTourIds?: string[];
   now?: Date;
   facts?: ChatFacts;
-}): Promise<ChatAnswer> {
+  channel?: "live" | "mock" | "off";
+  requestId?: string | null;
+}): Promise<ChatAnswer & { understood: "openai" | "rules" }> {
   const facts = input.facts ?? (await loadPublicTourFacts());
+  const channel = input.channel ?? (interestOfferEnabled() ? interestDeliveryPlan().mode : "off");
+  const context = facts.ok ? chatIntentContext(input.history, facts.tours) : { direction: null, tour: null };
+  const reading = await classifyChatIntent({
+    message: input.message,
+    direction: context.direction,
+    tour: context.tour,
+    tours: facts.tours,
+    requestId: input.requestId,
+  });
   const grounded = answerTourChat({
     message: input.message,
     pageTourId: input.pageTourId,
     history: input.history,
+    registered: input.registered,
+    shownTourIds: input.shownTourIds,
     now: input.now,
     facts,
+    channel,
+    reading,
   });
-  if (grounded.booking || grounded.interest) return grounded;
-  return { reply: await phraseFromServerModel(grounded.reply), booking: null, interest: null };
+  if (reading || grounded.booking || grounded.interest || grounded.choices?.length) {
+    return { ...grounded, understood: reading ? "openai" : "rules" };
+  }
+  return {
+    reply: await phraseFromServerModel(grounded.reply),
+    booking: null,
+    interest: null,
+    choices: null,
+    understood: "rules",
+  };
 }

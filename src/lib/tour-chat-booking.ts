@@ -69,11 +69,14 @@ export function wantsBooking(text: string) {
 }
 
 export function partyFromMessage(text: string) {
-  const match = /(\d{1,2})\s*տեղ/.exec(text.toLocaleLowerCase("hy"));
-  if (!match) return null;
-  const party = Number(match[1]);
-  if (!Number.isInteger(party) || party < 1 || party > 30) return null;
-  return party;
+  const normalized = text.toLocaleLowerCase("hy");
+  const match = /(\d{1,2})\s*(?:տեղ|հոգ)/.exec(normalized);
+  if (match) {
+    const party = Number(match[1]);
+    if (Number.isInteger(party) && party >= 1 && party <= 30) return party;
+  }
+  if (/երկու|երկուս/.test(normalized)) return 2;
+  return null;
 }
 
 export function validGuestPhone(value: string) {
@@ -165,7 +168,7 @@ export function bookingOffer(input: {
   );
   const partyText = input.party ? ` ${input.party} տեղով։` : "";
   return {
-    reply: `Ընտրեք «${input.tour.title}» տուրի մեկնումը${partyText} ${lines.join(" ")} [Բացել տուրի էջը](/tours/${input.tour.id})`.trim(),
+    reply: `Ընտրիր «${input.tour.title}» տուրի մեկնումը${partyText} ${lines.join(" ")} [Բացել տուրի էջը](/tours/${input.tour.id})`.trim(),
     booking: {
       mode: "departures",
       tourId: input.tour.id,
@@ -209,7 +212,7 @@ export function checkDepartureBooking(expected: BookingExpectation, live: Bookin
     return {
       ok: false,
       code: "stale",
-      message: "Գինը կամ մեկնման տվյալները փոխվել են։ Ստուգեք նոր ամփոփումը և հաստատեք նորից։",
+      message: "Գինը կամ մեկնման տվյալները փոխվել են։ Ստուգիր նոր ամփոփումը և հաստատիր նորից։",
       fresh: {
         date: live.date,
         price: livePrice,
@@ -237,7 +240,7 @@ export function checkDepartureBooking(expected: BookingExpectation, live: Bookin
     return {
       ok: false,
       code: "stale",
-      message: "Ազատ տեղերը փոխվել են։ Ստուգեք նոր ամփոփումը և հաստատեք նորից։",
+      message: "Ազատ տեղերը փոխվել են։ Ստուգիր նոր ամփոփումը և հաստատիր նորից։",
       fresh: {
         date: live.date,
         price: livePrice,
@@ -355,7 +358,7 @@ function yerevanDay(now: Date) {
 export function previewFixtureOffer(now = new Date()): { reply: string; booking: ChatBookingOffer } {
   const openDate = CHAT_TEST_OPEN_DATE;
   return {
-    reply: "Սա միայն Preview-ի մեկուսացված փորձ է։ Արտադրական ամրագրում չի գրվում։ Ընտրեք մեկնումը։",
+    reply: "Սա միայն Preview-ի մեկուսացված փորձ է։ Արտադրական ամրագրում չի գրվում։ Ընտրիր մեկնումը։",
     booking: {
       mode: "departures",
       tourId: CHAT_TEST_TOUR_ID,

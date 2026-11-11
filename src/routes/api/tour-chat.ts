@@ -12,6 +12,29 @@ function json(status: number, body: Record<string, unknown>) {
   return Response.json(body, { status, headers: { "cache-control": "no-store" } });
 }
 
+function logChatChoice(request: Request, status: number, source: "openai" | "rules") {
+  const raw = (request.headers.get("x-vercel-id") ?? request.headers.get("x-request-id") ?? "").trim();
+  const id = /^[A-Za-z0-9_.:-]{1,120}$/.test(raw) ? raw : "none";
+  console.info(JSON.stringify({ id, status, source }));
+}
+
+function readRegistered(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 12).flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const record = item as Record<string, unknown>;
+    const tourId = typeof record["tourId"] === "string" && TOUR_ID.test(record["tourId"]) ? record["tourId"] : null;
+    const key = typeof record["key"] === "string" ? record["key"].trim().toLocaleLowerCase("hy").slice(0, 80) : "";
+    if (!tourId && key.length < 2) return [];
+    return [{ tourId, key }];
+  });
+}
+
+function readShown(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string" && TOUR_ID.test(item)).slice(0, 12);
+}
+
 function readHistory(value: unknown): ChatTurn[] {
   if (!Array.isArray(value)) return [];
   return value.slice(-6).flatMap((item) => {
@@ -73,7 +96,6 @@ async function handlePost({ request }: { request: Request }) {
     });
   }
   if (record["action"] === "interest-register") {
-    if (!interestOfferEnabled()) return json(200, { ok: false, message: "Ծանուցման ալիքը միացված չէ։" });
     const saved = registerInterest(interestStore, {
       label: interestDirection,
       tourId: interestTourId && TOUR_ID.test(interestTourId) ? interestTourId : null,
@@ -81,7 +103,16 @@ async function handlePost({ request }: { request: Request }) {
       consent: interestConsent,
     });
     if (!saved.ok) return json(200, { ok: false, message: saved.message });
-    return json(200, { ok: true, repeated: saved.repeated, delivery: interestDeliveryPlan() });
+    const delivery = interestDeliveryPlan();
+    const channel = interestOfferEnabled() ? delivery.mode : "off";
+    return json(200, {
+      ok: true,
+      repeated: saved.repeated,
+      rows: interestStore.rows.length,
+      delivery,
+      notify: channel,
+      message: saved.repeated ? "Հետաքրքրությունն արդեն գրանցված է" : "Հետաքրքրությունդ գրանցված է",
+    });
   }
   if (record["action"] === "interest-publish") {
     if (process.env.VERCEL_ENV === "production") return json(404, { error: "Չկա։" });
@@ -171,7 +202,7 @@ async function handlePost({ request }: { request: Request }) {
       ),
     });
   }
-  if (message.length < 1 || message.length > 500) return json(422, { error: "Գրեք մինչև 500 նիշանոց հարց։" });
+  if (message.length < 1 || message.length > 500) return json(422, { error: "Գրիր մինչև 500 նիշանոց հարց։" });
   try {
     if (process.env.VERCEL_ENV !== "production" && message.toLocaleLowerCase("hy").includes("թեստային ամրագրում")) {
       const fixture = previewFixtureOffer();
@@ -181,11 +212,23 @@ async function handlePost({ request }: { request: Request }) {
       message,
       pageTourId: pageTourId || null,
       history: readHistory(record["history"]),
+      shownTourIds: readShown(record["shownTourIds"]),
+      registered: readRegistered(record["registered"]),
+      requestId: request.headers.get("x-vercel-id") ?? request.headers.get("x-request-id"),
     });
     const delivery = interestDeliveryPlan();
-    const interest = interestOfferEnabled() ? answer.interest : null;
-    return json(200, { reply: answer.reply, booking: answer.booking, interest, notify: interest ? delivery.mode : "off" });
+    const channel = interestOfferEnabled() ? delivery.mode : "off";
+    logChatChoice(request, 200, answer.understood);
+    return json(200, {
+      reply: answer.reply,
+      booking: answer.booking,
+      choices: answer.choices,
+      interest: answer.interest,
+      notify: answer.interest ? channel : "off",
+      understood: answer.understood,
+    });
   } catch {
+    logChatChoice(request, 200, "rules");
     return json(200, {
       reply: "Չաթը հիմա չկարողացավ պատասխանել։ Գին, ժամ կամ տեղերի թիվ չեմ նշում։ Ամրագրումը տուրի էջում շարունակվում է։",
     });
