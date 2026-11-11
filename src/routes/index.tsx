@@ -33,9 +33,10 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { SiteHeader } from "@/components/site-header";
+import { TourCalendar } from "@/components/tour-calendar";
 import { TourCard } from "@/components/tour-card";
 import { regions, tourTypeLabels, tourTypes } from "@/data/tours";
-import { pickLocale, tourTitle, useSiteLocale } from "@/lib/locale";
+import { pickLocale, useSiteLocale } from "@/lib/locale";
 import { CatalogStatusPanel } from "@/components/catalog-status-panel";
 import { catalogIsPending, getAdminServerSnapshot, getAdminSnapshot, hydrateAdmin, retryLiveCatalog, subscribeAdmin } from "@/lib/admin";
 import heroImage from "@/assets/hero-armenia.jpg";
@@ -61,13 +62,11 @@ export const Route = createFileRoute("/")({
   component: Index,
 });
 
-function upcomingWeekend() {
+function upcomingSaturday() {
   const now = new Date();
   const saturday = new Date(now);
   saturday.setDate(now.getDate() + ((6 - now.getDay() + 7) % 7 || 7));
-  const sunday = new Date(saturday);
-  sunday.setDate(saturday.getDate() + 1);
-  return { saturday, sunday };
+  return saturday;
 }
 
 const policies = [
@@ -102,11 +101,10 @@ const policies = [
 
 function Index() {
   const catalog = useSyncExternalStore(subscribeAdmin, getAdminSnapshot, getAdminServerSnapshot);
-  const { saturday, sunday } = useMemo(upcomingWeekend, []);
+  const saturday = useMemo(upcomingSaturday, []);
   const [date, setDate] = useState<Date | undefined>(saturday);
   const [region, setRegion] = useState("all");
   const [type, setType] = useState("all");
-  const [day, setDay] = useState<"saturday" | "sunday">("saturday");
   const [policyId, setPolicyId] = useState<(typeof policies)[number]["id"] | null>(null);
   const lang = useSiteLocale();
   const policy = policies.find((item) => item.id === policyId);
@@ -122,7 +120,6 @@ function Index() {
   const filtered = tourList.filter(
     (t) => (region === "all" || t.category === region || t.location_hy === region) && (type === "all" || t.type === type),
   );
-  const weekendTours = tourList.filter((t) => t.day === day);
 
   return (
     <div id="top" className="min-h-screen bg-background font-sans">
@@ -228,52 +225,7 @@ function Index() {
         </div>
       </section>
 
-      {/* Weekend calendar widget */}
-      <section id="calendar" className="mx-auto max-w-7xl px-4 pt-12 sm:px-6">
-        <div className="min-w-0 overflow-hidden rounded-3xl bg-navy p-5 text-navy-foreground sm:p-7">
-          <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0">
-              <h2 className="text-xl font-extrabold sm:text-2xl">Այս շաբաթավերջին</h2>
-              <p className="text-xs text-navy-foreground/70 sm:text-sm">
-                Հաստատված մեկնումներ՝ {format(saturday, "d MMM", { locale: hy })} – {format(sunday, "d MMM", { locale: hy })}
-              </p>
-            </div>
-            <div className="flex shrink-0 rounded-full bg-navy-foreground/10 p-1">
-              {(["saturday", "sunday"] as const).map((d) => (
-                <button
-                  key={d}
-                  onClick={() => setDay(d)}
-                  className={cn(
-                    "rounded-full px-4 py-2 text-xs font-bold capitalize transition-colors sm:text-sm",
-                    day === d
-                      ? "bg-accent text-accent-foreground"
-                      : "text-navy-foreground/70 hover:text-navy-foreground",
-                  )}
-                >
-                    {d === "saturday" ? "Շբ" : "Կիր"} {format(d === "saturday" ? saturday : sunday, "d", { locale: hy })}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="mt-5 grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {weekendTours.map((t) => (
-              <div
-                key={t.id}
-                className="min-w-0 rounded-2xl bg-navy-foreground/10 p-4 ring-1 ring-navy-foreground/10"
-              >
-                <p className="truncate text-sm font-bold">{tourTitle(t, lang)}</p>
-                <p className="mt-1 text-xs text-navy-foreground/70">
-                  {t.departureTime} · {t.departurePlace}
-                </p>
-                <p className="mt-3 text-sm font-extrabold text-accent">
-                  Մնացել է {t.seatsLeft} տեղ
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+      <TourCalendar />
 
       {/* Tours grid */}
       <section id="tours" className="mx-auto max-w-7xl px-4 py-12 sm:px-6 sm:py-16">

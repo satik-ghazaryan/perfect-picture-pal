@@ -30,3 +30,23 @@ export function departureBookingClosed(date: string, time: string, now = new Dat
   if (!start) return true;
   return now.getTime() >= start.getTime();
 }
+
+export type UpcomingDepartureInput = {
+  id: string;
+  tourId: string;
+  departureDate: string;
+  availableSeats: number;
+  departureTime: string;
+};
+
+/** Published departures whose Yerevan start is still ahead, nearest first. Sold-out rows stay visible. */
+export function upcomingDepartures<T extends UpcomingDepartureInput>(rows: T[], now = new Date()) {
+  return rows
+    .filter((row) => !departureBookingClosed(row.departureDate, row.departureTime, now))
+    .slice()
+    .sort((left, right) => {
+      const leftStart = yerevanDepartureStart(left.departureDate, left.departureTime)?.getTime() ?? 0;
+      const rightStart = yerevanDepartureStart(right.departureDate, right.departureTime)?.getTime() ?? 0;
+      return leftStart - rightStart || left.id.localeCompare(right.id);
+    });
+}
