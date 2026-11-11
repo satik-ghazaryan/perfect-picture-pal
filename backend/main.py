@@ -32,6 +32,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import ValidationError
 
 from agent.graph import run_idea_workflow
+from chat_answer import ChatAnswerRequest, answer_public_chat
 from chat_intent import ChatIntentRequest, classify_chat_intent
 from idea_store import get_run, save_run
 from schemas import GenerateIdeasRequest, GenerateIdeasResponse, HealthResponse, ResearchBundle, TourIdea
@@ -160,6 +161,28 @@ def chat_intent(
         raise HTTPException(status_code=502, detail="Chat intent failed.") from None
     _log_chat(x_request_id, 200, "openai")
     return result.model_dump()
+
+
+@app.post("/api/chat-answer", dependencies=[Depends(require_chat_intent_secret)])
+def chat_answer(
+    body: ChatAnswerRequest,
+    x_request_id: str | None = Header(default=None, alias="x-request-id"),
+) -> dict:
+    now = time.monotonic()
+    bucket = _generate_hits["chat-answer"]
+    while bucket and now - bucket[0] > GENERATE_RATE_WINDOW_SEC:
+        bucket.popleft()
+    if len(bucket) >= 60:
+        _log_chat(x_request_id, 429, "rules")
+        raise HTTPException(status_code=429, detail="Too many requests")
+    bucket.append(now)
+    try:
+        result = answer_public_chat(body)
+    except Exception:
+        _log_chat(x_request_id, 502, "rules")
+        raise HTTPException(status_code=502, detail="Chat answer failed.") from None
+    _log_chat(x_request_id, 200, "openai")
+    return result
 
 
 @app.post("/api/generate-ideas", response_model=GenerateIdeasResponse, dependencies=[Depends(require_api_secret)])

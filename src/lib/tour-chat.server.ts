@@ -1,17 +1,20 @@
 import { createClient } from "@supabase/supabase-js";
 import {
-  answerTourChat,
-  chatIntentContext,
+  catalogFailureReply,
+  catalogSnapshot,
+  groundChatAnswer,
+  modelFailureReply,
+  openChatSection,
   publicFactsFromRows,
-  replyKeepsPublishedFacts,
   validatedChatReading,
   type ChatAnswer,
   type ChatFacts,
   type ChatReading,
+  type ChatSection,
+  type ChatToolCall,
   type ChatTurn,
   type PublicTourFact,
 } from "./tour-chat-facts.ts";
-import { interestDeliveryPlan, interestOfferEnabled } from "./tour-interest.ts";
 
 const WINDOW_MS = 60_000;
 const LIMIT = 8;
@@ -132,45 +135,95 @@ export async function classifyChatIntent(input: {
   }
 }
 
-async function phraseFromServerModel(grounded: string) {
-  const key = envValue("OPENAI_API_KEY");
-  if (!key) return grounded;
+function selectedTour(facts: ChatFacts, selectedTourId: string | null, pageTourId: string | null) {
+  const id = selectedTourId || pageTourId || "";
+  return facts.tours.find((tour) => tour.id === id) ?? null;
+}
+
+function readToolCalls(value: unknown): ChatToolCall[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 8).flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const record = item as Record<string, unknown>;
+    const name = record["name"];
+    if (
+      name !== "search_tours" && name !== "get_program" && name !== "get_price"
+      && name !== "get_departures" && name !== "get_seats" && name !== "suggest_action"
+    ) return [];
+    const tourId = typeof record["tourId"] === "string" && /^[a-z0-9-]{1,64}$/.test(record["tourId"]) ? record["tourId"] : null;
+    const party = typeof record["party"] === "number" && Number.isInteger(record["party"]) && record["party"] >= 1 && record["party"] <= 12
+      ? record["party"]
+      : null;
+    const query = typeof record["query"] === "string" ? record["query"].slice(0, 80) : null;
+    const action = record["action"] === "booking" || record["action"] === "interest" || record["action"] === "choices" || record["action"] === "none"
+      ? record["action"]
+      : null;
+    return [{ name, tourId, party, query, action }];
+  });
+}
+
+export async function answerChatWithTools(input: {
+  message: string;
+  history?: ChatTurn[];
+  selectedTourId?: string | null;
+  facts: ChatFacts;
+  now?: Date;
+  requestId?: string | null;
+  skipModel?: boolean;
+}): Promise<{ reply: string; calls: ChatToolCall[]; suggest: "none" | "booking" | "interest" | "choices" } | null> {
+  if (input.skipModel || !input.facts.ok) return null;
+  const base = envValue("PYTHON_BACKEND_URL").replace(/\/$/, "");
+  const secret = envValue("CHAT_INTENT_API_SECRET");
+  const question = withoutPrivateNumbers(input.message);
+  if (!base || secret.length < 16 || !question) return null;
+  let parsed: URL;
   try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    parsed = new URL(base);
+  } catch {
+    return null;
+  }
+  const loopback = parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost";
+  if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && loopback)) return null;
+  const requestId = (input.requestId ?? "").trim();
+  const safeId = /^[A-Za-z0-9_.:-]{1,120}$/.test(requestId) ? requestId : "";
+  const now = input.now ?? new Date();
+  const history = (input.history ?? []).slice(-8).flatMap((turn) => {
+    const text = withoutPrivateNumbers(turn.text);
+    if (!text || (turn.role !== "user" && turn.role !== "assistant")) return [];
+    return [{ role: turn.role, text }];
+  });
+  try {
+    const response = await fetch(`${parsed.origin}/api/chat-answer`, {
       method: "POST",
       headers: {
-        authorization: `Bearer ${key}`,
         "content-type": "application/json",
+        "x-api-secret": secret,
+        ...(safeId ? { "x-request-id": safeId } : {}),
       },
       body: JSON.stringify({
-        model: envValue("OPENAI_MODEL") || "gpt-4o-mini",
-        temperature: 0,
-        messages: [
-          {
-            role: "system",
-            content:
-              "Վերաշարադրիր տրված հայերեն պատասխանը կարճ և պարզ։ Պահպանիր միայն այդտեղ արդեն եղած գինը, ամսաթիվը, ժամը, տեղերի թիվը և տուրի հղումը։ Նոր թիվ մի ավելացրու։ Ամրագրում կամ վճարում մի առաջարկիր։",
-          },
-          { role: "user", content: grounded },
-        ],
+        message: question,
+        history,
+        selectedTourId: input.selectedTourId,
+        tours: catalogSnapshot(input.facts.tours, now),
       }),
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(20000),
     });
-    if (!response.ok) return grounded;
-    const payload = (await response.json()) as {
-      choices?: { message?: { content?: string } }[];
-    };
-    const text = payload.choices?.[0]?.message?.content?.trim() ?? "";
-    if (!text || text.length > 1200 || !replyKeepsPublishedFacts(grounded, text)) return grounded;
-    return text;
+    if (!response.ok) return null;
+    const payload = (await response.json()) as Record<string, unknown>;
+    const reply = typeof payload["reply"] === "string" ? payload["reply"].slice(0, 1200) : "";
+    const suggest = payload["suggest"] === "booking" || payload["suggest"] === "interest" || payload["suggest"] === "choices"
+      ? payload["suggest"]
+      : "none";
+    return { reply, calls: readToolCalls(payload["calls"]), suggest };
   } catch {
-    return grounded;
+    return null;
   }
 }
 
 export async function replyToTourQuestion(input: {
   message: string;
   pageTourId?: string | null;
+  selectedTourId?: string | null;
   history?: ChatTurn[];
   registered?: { tourId: string | null; key: string }[];
   shownTourIds?: string[];
@@ -179,37 +232,45 @@ export async function replyToTourQuestion(input: {
   channel?: "live" | "mock" | "off";
   requestId?: string | null;
   skipModel?: boolean;
-}): Promise<ChatAnswer & { understood: "openai" | "rules" }> {
+  section?: ChatSection | null;
+}): Promise<ChatAnswer & { understood: "openai" | "rules"; selectedTourId: string | null }> {
   const facts = input.facts ?? (await loadPublicTourFacts());
-  const channel = input.channel ?? (interestOfferEnabled() ? interestDeliveryPlan().mode : "off");
-  const context = facts.ok ? chatIntentContext(input.history, facts.tours) : { direction: null, tour: null };
-  const reading = await classifyChatIntent({
+  if (input.section) {
+    const opened = openChatSection({
+      section: input.section,
+      tourId: input.selectedTourId ?? input.pageTourId,
+      facts,
+      now: input.now,
+      registered: input.registered,
+    });
+    return { ...opened, understood: "rules", selectedTourId: input.selectedTourId ?? input.pageTourId ?? null };
+  }
+  if (!facts.ok) return { ...catalogFailureReply(), understood: "rules", selectedTourId: null };
+  const pageTour = selectedTour(facts, input.selectedTourId ?? null, input.pageTourId ?? null);
+  const model = await answerChatWithTools({
     message: input.message,
-    direction: context.direction,
-    tour: context.tour,
-    tours: facts.tours,
+    history: input.history,
+    selectedTourId: pageTour?.id ?? null,
+    facts,
+    now: input.now,
     requestId: input.requestId,
     skipModel: input.skipModel,
   });
-  const grounded = answerTourChat({
-    message: input.message,
-    pageTourId: input.pageTourId,
-    history: input.history,
-    registered: input.registered,
-    shownTourIds: input.shownTourIds,
-    now: input.now,
+  if (!model) return { ...modelFailureReply(facts.tours), understood: "rules", selectedTourId: pageTour?.id ?? null };
+  const grounded = groundChatAnswer({
+    reply: model.reply,
+    calls: model.calls,
+    suggest: model.suggest,
     facts,
-    channel,
-    reading,
+    now: input.now,
+    registered: input.registered,
   });
-  if (reading || grounded.booking || grounded.interest || grounded.choices?.length) {
-    return { ...grounded, understood: reading ? "openai" : "rules" };
-  }
   return {
-    reply: await phraseFromServerModel(grounded.reply),
-    booking: null,
-    interest: null,
-    choices: null,
-    understood: "rules",
+    reply: grounded.reply,
+    booking: grounded.booking,
+    interest: grounded.interest,
+    choices: grounded.choices,
+    understood: grounded.grounded ? "openai" : "rules",
+    selectedTourId: grounded.selectedTourId ?? pageTour?.id ?? null,
   };
 }

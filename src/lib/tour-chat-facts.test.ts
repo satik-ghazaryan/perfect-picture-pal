@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { answerTourQuestion, answerTourChat, publicFactsFromRows, replyKeepsPublishedFacts, validatedChatReading, type ChatFacts } from "./tour-chat-facts.ts";
+import { answerTourQuestion, answerTourChat, groundChatAnswer, openChatSection, publicFactsFromRows, replyKeepsPublishedFacts, validatedChatReading, type ChatFacts } from "./tour-chat-facts.ts";
 import { CHAT_TEST_OPEN_DATE, CHAT_TEST_TITLE, CHAT_TEST_TOUR_ID } from "./chat-test-fixture.ts";
 import { confirmPreviewFixture, findPreviewTicket, isolatedBookingChecks } from "./tour-chat-booking.ts";
 import { interestConfirmation, interestOfferEnabled, interestPreviewScenario, sameInterest } from "./tour-interest.ts";
@@ -554,10 +554,12 @@ describe("public tour chat limit", () => {
       message: "Գառնիի գինը",
       facts: facts(),
       now,
+      skipModel: true,
     });
-    assert.match(reply.reply, /դեռ հրապարակված չէ/);
-    assert.doesNotMatch(reply.reply, /0 ֏|անվճար/);
-    assert.match(reply.reply, /\/tours\/garni/);
+    assert.equal(reply.understood, "rules");
+    assert.match(reply.reply, /բացել կատալոգը/);
+    assert.equal(reply.choices?.some((item) => item.id === "garni"), true);
+    assert.doesNotMatch(reply.reply, /0 ֏|անվճար|\d/);
   });
 
   it("reads an open departure from isolated rows and the next request sees the new seat count", () => {
@@ -839,5 +841,80 @@ describe("public tour chat limit", () => {
     });
     assert.equal(switched.interest?.tourId, null);
     assert.match(switched.reply, /Գյումրի/);
+  });
+});
+
+describe("catalog tools for free text", () => {
+  it("opens a button section without asking the model", () => {
+    const upcoming = openChatSection({ section: "upcoming", facts: facts(), now });
+    assert.match(upcoming.reply, /Սևան/);
+    assert.equal(upcoming.booking, null);
+    const tour = openChatSection({ section: "tour", tourId: "tatev", facts: facts(), now });
+    assert.match(tour.reply, /դեռ հրապարակված չէ/);
+    assert.match(tour.reply, /բաց մեկնում դեռ չկա/);
+    assert.equal(tour.interest?.tourId, "tatev");
+    const failed = openChatSection({ section: "directions", facts: { ok: false, tours: [] }, now });
+    assert.match(failed.reply, /չհաջողվեց ստանալ/);
+  });
+
+  it("keeps a model price only when the total comes from the catalog", () => {
+    const priced = publicFactsFromRows(
+      [{ id: "lori", title_hy: "Լոռի", price: 9000, departure_time: "08:00", location_hy: "Լոռի", region: "Լոռի", is_virtual_only: false }],
+      [{ id: "lori-open", tour_id: "lori", departure_date: "2026-11-20", available_seats: 4 }],
+    );
+    const accepted = groundChatAnswer({
+      reply: "Երկուսով կարժենա 18000 դրամ։ Մեկ անձի համար՝ 9000 դրամ։",
+      calls: [{ name: "get_price", tourId: "lori", party: 2, query: null, action: null }],
+      suggest: "none",
+      facts: priced,
+      now,
+    });
+    assert.equal(accepted.grounded, true);
+    assert.match(accepted.reply, /18000/);
+    assert.match(accepted.reply, /\/tours\/lori/);
+    const invented = groundChatAnswer({
+      reply: "Երկուսով կարժենա 5000 դրամ։",
+      calls: [{ name: "get_price", tourId: "lori", party: 2, query: null, action: null }],
+      suggest: "none",
+      facts: priced,
+      now,
+    });
+    assert.match(invented.reply, /18000 դրամ/);
+    assert.doesNotMatch(invented.reply, /5000/);
+    const missing = groundChatAnswer({
+      reply: "Տաթևն արժե 10000 դրամ։",
+      calls: [
+        { name: "get_price", tourId: "tatev", party: null, query: null, action: null },
+        { name: "get_departures", tourId: "tatev", party: null, query: null, action: null },
+      ],
+      suggest: "interest",
+      facts: facts(),
+      now,
+    });
+    assert.match(missing.reply, /Տաթևի տուրի գինը դեռ հրապարակված չէ/);
+    assert.match(missing.reply, /բաց մեկնում դեռ չկա/);
+    assert.equal(missing.interest?.tourId, "tatev");
+    assert.doesNotMatch(missing.reply, /10000/);
+  });
+
+  it("searches a region from the catalog and offers a choice when several tours match", () => {
+    const catalog = publicFactsFromRows(
+      [
+        { id: "tatev", title_hy: "Հարավային երթուղի", price: null, location_hy: "Տաթև", region: "Սյունիք", is_virtual_only: false },
+        { id: "garni", title_hy: "Գառնի", price: 9000, region: "Կոտայք", is_virtual_only: false },
+      ],
+      [],
+    );
+    const one = groundChatAnswer({
+      reply: "Գտա մի տուր, արժե 1 դրամ։",
+      calls: [{ name: "search_tours", tourId: null, party: null, query: "Սյունիքում", action: null }],
+      suggest: "interest",
+      facts: catalog,
+      now,
+    });
+    assert.match(one.reply, /Հարավային երթուղի/);
+    assert.match(one.reply, /դեռ հրապարակված չէ/);
+    assert.equal(one.selectedTourId, "tatev");
+    assert.doesNotMatch(one.reply, /1 դրամ/);
   });
 });

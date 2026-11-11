@@ -202,15 +202,23 @@ async function handlePost({ request }: { request: Request }) {
       ),
     });
   }
-  if (message.length < 1 || message.length > 500) return json(422, { error: "Գրիր մինչև 500 նիշանոց հարց։" });
+  const selectedTourId = typeof record["selectedTourId"] === "string" && TOUR_ID.test(record["selectedTourId"])
+    ? record["selectedTourId"]
+    : "";
+  const section = record["section"];
+  const openSection = record["action"] === "open-section"
+    && (section === "upcoming" || section === "directions" || section === "tour" || section === "booking");
+  if (!openSection && (message.length < 1 || message.length > 500)) return json(422, { error: "Գրիր մինչև 500 նիշանոց հարց։" });
   try {
-    if (process.env.VERCEL_ENV !== "production" && message.toLocaleLowerCase("hy").includes("թեստային ամրագրում")) {
+    if (!openSection && process.env.VERCEL_ENV !== "production" && message.toLocaleLowerCase("hy").includes("թեստային ամրագրում")) {
       const fixture = previewFixtureOffer();
       return json(200, { reply: fixture.reply, booking: fixture.booking });
     }
     const answer = await replyToTourQuestion({
       message,
+      section: openSection ? section : null,
       pageTourId: pageTourId || null,
+      selectedTourId: selectedTourId || pageTourId || null,
       history: readHistory(record["history"]),
       shownTourIds: readShown(record["shownTourIds"]),
       registered: readRegistered(record["registered"]),
@@ -227,11 +235,12 @@ async function handlePost({ request }: { request: Request }) {
       interest: answer.interest,
       notify: answer.interest ? channel : "off",
       understood: answer.understood,
+      selectedTourId: answer.selectedTourId,
     });
   } catch {
     logChatChoice(request, 200, "rules");
     return json(200, {
-      reply: "Չաթը հիմա չկարողացավ պատասխանել։ Գին, ժամ կամ տեղերի թիվ չեմ նշում։ Ամրագրումը տուրի էջում շարունակվում է։",
+      reply: "Չաթը հիմա չկարողացավ պատասխանել։ Կարող ես բացել կատալոգը։",
     });
   }
 }

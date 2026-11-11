@@ -70,6 +70,7 @@ export function TourChat() {
   const [pending, setPending] = useState(false);
   const [offer, setOffer] = useState<ChatBookingOffer | null>(null);
   const [choices, setChoices] = useState<{ id: string; title: string }[] | null>(null);
+  const [selectedTourId, setSelectedTourId] = useState("");
   const [interest, setInterest] = useState<InterestOffer | null>(null);
   const [notifyMode, setNotifyMode] = useState<"live" | "mock" | "off">("off");
   const [interestForm, setInterestForm] = useState<{
@@ -109,12 +110,14 @@ export function TourChat() {
 
   if (STAFF_PATH.test(pathname)) return null;
 
-  async function send(text?: string) {
+  async function send(text?: string, command?: { section: "upcoming" | "directions" | "tour" | "booking"; tourId?: string }) {
     const message = (text ?? input).trim();
-    if (!message || pending) return;
+    if ((!message && !command) || pending) return;
     const history = [{ role: "assistant" as const, text: intro }, ...messages].slice(-12);
+    const nextTourId = command?.tourId || selectedTourId;
+    if (command?.tourId) setSelectedTourId(command.tourId);
     setInput("");
-    setMessages((current) => [...current, { role: "user", text: message }]);
+    if (message) setMessages((current) => [...current, { role: "user", text: message }]);
     setPending(true);
     try {
       const response = await fetch("/api/tour-chat", {
@@ -123,9 +126,11 @@ export function TourChat() {
         body: JSON.stringify({
           message,
           tourId,
+          selectedTourId: nextTourId,
           history,
           shownTourIds: choices?.map((item) => item.id) ?? [],
           registered: registeredInterest.map((item) => ({ tourId: item.tourId, key: item.key })),
+          ...(command ? { action: "open-section", section: command.section } : {}),
         }),
       });
       const payload = (await response.json()) as {
@@ -135,6 +140,7 @@ export function TourChat() {
         choices?: { id: string; title: string }[] | null;
         interest?: InterestOffer | null;
         notify?: "mock" | "live" | "off";
+        selectedTourId?: string | null;
       };
       const reply =
         payload.reply ||
@@ -147,6 +153,7 @@ export function TourChat() {
         openDeparture(booking, booking.departures[0]);
       }
       setChoices(payload.choices ?? null);
+      if (payload.selectedTourId) setSelectedTourId(payload.selectedTourId);
       setNotifyMode(payload.notify === "live" || payload.notify === "mock" ? payload.notify : "off");
       if (!interestForm) setInterest(payload.interest ?? null);
     } catch {
@@ -430,14 +437,14 @@ export function TourChat() {
                 <button
                   type="button"
                   className="min-h-12 w-full rounded-2xl border border-border bg-background px-4 text-left text-base font-semibold leading-6"
-                  onClick={() => void send("Առաջիկա տուրեր")}
+                  onClick={() => void send("Առաջիկա տուրեր", { section: "upcoming" })}
                 >
                   Առաջիկա տուրեր
                 </button>
                 <button
                   type="button"
                   className="min-h-12 w-full rounded-2xl border border-border bg-background px-4 text-left text-base font-semibold leading-6"
-                  onClick={() => void send("Մեր ուղղությունները")}
+                  onClick={() => void send("Մեր ուղղությունները", { section: "directions" })}
                 >
                   Մեր ուղղությունները
                 </button>
@@ -453,7 +460,7 @@ export function TourChat() {
                     key={tour.id}
                     type="button"
                     className="min-h-11 rounded-2xl border border-border px-3 text-left text-sm font-semibold"
-                    onClick={() => void send(tour.title)}
+                    onClick={() => void send(tour.title, { section: "tour", tourId: tour.id })}
                   >
                     {tour.title}
                   </button>
@@ -467,7 +474,7 @@ export function TourChat() {
                     key={tour.id}
                     type="button"
                     className="min-h-11 rounded-2xl border border-border px-3 text-left text-sm font-semibold"
-                    onClick={() => void send(`ուզում եմ ամրագրել ${tour.title}`)}
+                    onClick={() => void send(tour.title, { section: "booking", tourId: tour.id })}
                   >
                     {tour.title}
                   </button>

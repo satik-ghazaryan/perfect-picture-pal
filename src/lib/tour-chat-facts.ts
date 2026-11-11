@@ -1277,3 +1277,199 @@ export function replyKeepsPublishedFacts(grounded: string, candidate: string) {
   const link = grounded.match(/\/tours\/[a-z0-9-]+/);
   return !link || candidate.includes(link[0]);
 }
+
+export type ChatSection = "upcoming" | "directions" | "tour" | "booking";
+
+export function openChatSection(input: {
+  section: ChatSection;
+  tourId?: string | null;
+  facts: ChatFacts;
+  now?: Date;
+  registered?: { tourId: string | null; key: string }[];
+}): ChatAnswer {
+  const now = input.now ?? new Date();
+  if (!input.facts.ok) return catalogFailureReply();
+  const tours = input.facts.tours;
+  const memory = input.registered ?? [];
+  if (input.section === "upcoming") return plain(upcomingReply(tours, now));
+  if (input.section === "directions") {
+    if (tours.length === 0) return plain("Հրապարակված ուղղություն դեռ չկա։");
+    return {
+      reply: "Ընտրիր ուղղությունը։",
+      booking: null,
+      interest: null,
+      choices: tours.map((tour) => ({ id: tour.id, title: choiceLabel(tour) })),
+    };
+  }
+  const tour = input.tourId ? tours.find((item) => item.id === input.tourId) ?? null : null;
+  if (!tour) return plain("Այդ տուրը կատալոգում չկա։");
+  if (input.section === "booking") {
+    const offer = bookingOffer({
+      tour,
+      tours,
+      party: null,
+      now,
+      cashbackPercent: input.facts.cashbackPercent ?? null,
+    });
+    return {
+      reply: offer.reply,
+      booking: offer.booking,
+      interest: offer.booking.departures.length === 0
+        ? visibleInterest(catalogInterest(tour, now), memory, shortName(tour))
+        : null,
+      choices: null,
+    };
+  }
+  return plain(summary(tour, now), visibleInterest(catalogInterest(tour, now), memory, shortName(tour)));
+}
+
+export function catalogFailureReply(): ChatAnswer {
+  return {
+    reply: "Տվյալները չհաջողվեց ստանալ։",
+    booking: null,
+    interest: null,
+    choices: null,
+  };
+}
+
+export function modelFailureReply(tours: PublicTourFact[]): ChatAnswer {
+  return {
+    reply: "Չաթը հիմա չկարողացավ պատասխանել։ Կարող ես բացել կատալոգը։",
+    booking: null,
+    interest: null,
+    choices: tours.slice(0, 8).map((tour) => ({ id: tour.id, title: choiceLabel(tour) })),
+  };
+}
+
+export function searchPublicTours(query: string, tours: PublicTourFact[]) {
+  const text = repairTypos(query.trim());
+  const merged = uniqueTours([...mentioned(text, tours), ...toursInRegion(text, tours)]);
+  if (merged.length > 0) return merged;
+  const normalized = normalize(text);
+  if (normalized.length < 3) return [];
+  return tours.filter((tour) =>
+    aliases(tour).some((name) => name.length >= 4 && (normalized.includes(name) || name.includes(normalized))),
+  );
+}
+
+export function catalogSnapshot(tours: PublicTourFact[], now = new Date()) {
+  return tours.slice(0, 30).map((tour) => ({
+    id: tour.id,
+    title: tour.title.slice(0, 120),
+    location: tour.location?.slice(0, 80) ?? null,
+    aliases: [...new Set([...aliases(tour), ...tourMarzes(tour)])].slice(0, 24),
+    price: tour.price && tour.price > 0 ? tour.price : null,
+    priceMissing: unpublishedPrice(shortName(tour)),
+    departureLine: departureSentence(tour, now),
+    seatLine: seatSentence(tour, now, null),
+    programLine: fullProgram(tour, now).slice(0, 900),
+    link: tourLink(tour),
+  }));
+}
+
+export type ChatToolCall = {
+  name: "search_tours" | "get_program" | "get_price" | "get_departures" | "get_seats" | "suggest_action";
+  tourId: string | null;
+  party: number | null;
+  query: string | null;
+  action: "none" | "booking" | "interest" | "choices" | null;
+};
+
+const TOOL_NAMES = new Set<ChatToolCall["name"]>([
+  "search_tours", "get_program", "get_price", "get_departures", "get_seats", "suggest_action",
+]);
+
+function toolFact(call: ChatToolCall, tours: PublicTourFact[], now: Date) {
+  if (call.name === "search_tours") {
+    const found = searchPublicTours(call.query ?? "", tours);
+    return { text: found.map((tour) => `${tour.title}\n${pageLink(tour)}`).join("\n"), tours: found };
+  }
+  if (call.name === "suggest_action") return { text: "", tours: [] as PublicTourFact[] };
+  const tour = call.tourId ? tours.find((item) => item.id === call.tourId) ?? null : null;
+  if (!tour) return { text: "", tours: [] as PublicTourFact[] };
+  if (call.name === "get_price") return { text: groupPriceSentence(tour, call.party), tours: [tour] };
+  if (call.name === "get_departures") return { text: departureSentence(tour, now), tours: [tour] };
+  if (call.name === "get_seats") return { text: seatSentence(tour, now, call.party), tours: [tour] };
+  return { text: fullProgram(tour, now), tours: [tour] };
+}
+
+export function groundChatAnswer(input: {
+  reply: string;
+  calls: ChatToolCall[];
+  suggest: "none" | "booking" | "interest" | "choices";
+  facts: ChatFacts;
+  now?: Date;
+  registered?: { tourId: string | null; key: string }[];
+}): ChatAnswer & { selectedTourId: string | null; grounded: boolean } {
+  if (!input.facts.ok) return { ...catalogFailureReply(), selectedTourId: null, grounded: false };
+  const now = input.now ?? new Date();
+  const tours = input.facts.tours;
+  const memory = input.registered ?? [];
+  const calls = input.calls.filter((call) => TOOL_NAMES.has(call.name));
+  const pieces = calls.map((call) => toolFact(call, tours, now));
+  const factText = pieces.map((item) => item.text).join("\n");
+  const usedTours = uniqueTours(pieces.flatMap((item) => item.tours));
+  const reply = input.reply.replace(/\+?\d[\d\s-]{6,}\d/gu, "").trim().slice(0, 1200);
+  const allowed = new Set(factText.match(/\d+/g) ?? []);
+  const allowedLinks = new Set(factText.match(/\/tours\/[a-z0-9-]+/g) ?? []);
+  const numbersOk = (reply.match(/\d+/g) ?? []).every((value) => allowed.has(value));
+  const linksOk = (reply.match(/\/tours\/[a-z0-9-]+/g) ?? []).every((link) => allowedLinks.has(link));
+  const priceCall = calls.find((call) => call.name === "get_price" && call.tourId);
+  const priceTour = priceCall?.tourId ? tours.find((item) => item.id === priceCall.tourId) ?? null : null;
+  const priceMissing = Boolean(priceTour && (priceTour.price === null || priceTour.price === 0));
+  const departureCall = calls.find((call) => (call.name === "get_departures" || call.name === "get_seats") && call.tourId);
+  const departureTour = departureCall?.tourId ? tours.find((item) => item.id === departureCall.tourId) ?? null : null;
+  const closed = departureTour ? readDeparture(departureTour, now).kind === "none" : false;
+  const natural = reply.length > 0
+    && numbersOk
+    && linksOk
+    && (!priceMissing || reply.includes("դեռ հրապարակված չէ"))
+    && (!closed || reply.includes("բաց մեկնում դեռ չկա"));
+  const onlySearch = calls.length > 0 && calls.every((call) => call.name === "search_tours" || call.name === "suggest_action");
+  let text = "";
+  if (natural) text = reply;
+  else if (onlySearch && usedTours.length > 1) text = "Այդ ուղղությամբ մի քանի տուր կա։ Ընտրիր մեկը։";
+  else if (onlySearch && usedTours.length === 1 && usedTours[0]) text = summary(usedTours[0], now);
+  else text = pieces.map((item) => item.text).filter(Boolean).join("\n");
+  if (!text) return { ...modelFailureReply(tours), selectedTourId: null, grounded: false };
+  const focus = usedTours.length === 1 ? usedTours[0] ?? null : null;
+  if (focus && !text.includes(tourLink(focus))) text = `${text}\n${pageLink(focus)}`;
+  if (focus && input.suggest === "booking") {
+    const party = calls.find((call) => call.party)?.party ?? null;
+    const offer = bookingOffer({
+      tour: focus,
+      tours,
+      party,
+      now,
+      cashbackPercent: input.facts.cashbackPercent ?? null,
+    });
+    return {
+      reply: text,
+      booking: offer.booking,
+      interest: offer.booking.departures.length === 0
+        ? visibleInterest(catalogInterest(focus, now), memory, shortName(focus))
+        : null,
+      choices: null,
+      selectedTourId: focus.id,
+      grounded: true,
+    };
+  }
+  if (usedTours.length > 1) {
+    return {
+      reply: text,
+      booking: null,
+      interest: null,
+      choices: usedTours.map((tour) => ({ id: tour.id, title: choiceLabel(tour) })),
+      selectedTourId: null,
+      grounded: true,
+    };
+  }
+  return {
+    reply: text,
+    booking: null,
+    interest: focus ? visibleInterest(catalogInterest(focus, now), memory, shortName(focus)) : null,
+    choices: null,
+    selectedTourId: focus?.id ?? null,
+    grounded: true,
+  };
+}
