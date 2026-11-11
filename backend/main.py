@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hmac
+import json
 import os
+import re
 import sys
 import time
 from collections import defaultdict, deque
@@ -30,6 +32,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import ValidationError
 
 from agent.graph import run_idea_workflow
+from chat_intent import ChatIntentRequest, classify_chat_intent
 from idea_store import get_run, save_run
 from schemas import GenerateIdeasRequest, GenerateIdeasResponse, HealthResponse, ResearchBundle, TourIdea
 
@@ -40,6 +43,20 @@ _generate_hits: dict[str, deque[float]] = defaultdict(deque)
 
 def _ideas_api_secret() -> str:
     return os.getenv("IDEAS_API_SECRET", "").strip()
+
+
+def _chat_intent_secret() -> str:
+    return os.getenv("CHAT_INTENT_API_SECRET", "").strip()
+
+
+_REQUEST_ID = re.compile(r"^[A-Za-z0-9_.:-]{1,120}$")
+
+
+def _log_chat(request_id: str | None, status: int, source: str) -> None:
+    raw = (request_id or "").strip()
+    safe_id = raw if _REQUEST_ID.fullmatch(raw) else "none"
+    choice = "openai" if source == "openai" else "rules"
+    print(json.dumps({"id": safe_id, "status": status, "source": choice}, separators=(",", ":")), flush=True)
 
 
 def cors_origins() -> list[str]:
@@ -64,6 +81,16 @@ def _secret_matches(given: str | None, expected: str) -> bool:
 def require_api_secret(x_api_secret: str | None = Header(default=None, alias="x-api-secret")) -> None:
     expected = _ideas_api_secret()
     if not expected or not _secret_matches(x_api_secret, expected):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+def require_chat_intent_secret(
+    x_api_secret: str | None = Header(default=None, alias="x-api-secret"),
+    x_request_id: str | None = Header(default=None, alias="x-request-id"),
+) -> None:
+    expected = _chat_intent_secret()
+    if len(expected) < 16 or not _secret_matches(x_api_secret, expected):
+        _log_chat(x_request_id, 401, "rules")
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 
@@ -111,6 +138,28 @@ def health_check() -> dict[str, str]:
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     return HealthResponse(status="ok")
+
+
+@app.post("/api/chat-intent", dependencies=[Depends(require_chat_intent_secret)])
+def chat_intent(
+    body: ChatIntentRequest,
+    x_request_id: str | None = Header(default=None, alias="x-request-id"),
+) -> dict[str, str | int | None]:
+    now = time.monotonic()
+    bucket = _generate_hits["chat-intent"]
+    while bucket and now - bucket[0] > GENERATE_RATE_WINDOW_SEC:
+        bucket.popleft()
+    if len(bucket) >= 60:
+        _log_chat(x_request_id, 429, "rules")
+        raise HTTPException(status_code=429, detail="Too many requests")
+    bucket.append(now)
+    try:
+        result = classify_chat_intent(body)
+    except Exception:
+        _log_chat(x_request_id, 502, "rules")
+        raise HTTPException(status_code=502, detail="Chat intent failed.") from None
+    _log_chat(x_request_id, 200, "openai")
+    return result.model_dump()
 
 
 @app.post("/api/generate-ideas", response_model=GenerateIdeasResponse, dependencies=[Depends(require_api_secret)])
