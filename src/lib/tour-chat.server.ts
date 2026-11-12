@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import {
   catalogFailureReply,
@@ -54,6 +55,25 @@ export function anonCatalogKey(key: string) {
     return false;
   }
 }
+function sameSecret(given: string, expected: string) {
+  const incoming = Buffer.from(given);
+  const wanted = Buffer.from(expected);
+  if (incoming.length !== wanted.length || wanted.length < 16) {
+    timingSafeEqual(wanted, wanted);
+    return false;
+  }
+  return timingSafeEqual(incoming, wanted);
+}
+
+export function telegramRateKey(request: Request) {
+  if (request.headers.get("x-chat-client") !== "telegram") return null;
+  const expected = envValue("CHAT_INTENT_API_SECRET");
+  const given = request.headers.get("x-api-secret") ?? "";
+  if (!sameSecret(given, expected)) return null;
+  const chatId = request.headers.get("x-chat-id") ?? "";
+  return /^[0-9]{1,20}$/.test(chatId) ? `telegram:${chatId}` : null;
+}
+
 export function clientAddress(request: Request) {
   const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "";
   const candidate = forwarded || request.headers.get("x-real-ip")?.trim() || "unknown";

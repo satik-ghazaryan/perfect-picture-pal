@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { clientAddress, loadPublicTourFacts, rateLimitTourChat, replyToTourQuestion } from "@/lib/tour-chat.server";
+import { clientAddress, loadPublicTourFacts, rateLimitTourChat, replyToTourQuestion, telegramRateKey } from "@/lib/tour-chat.server";
 import { checkDepartureBooking, confirmPreviewFixture, findPreviewTicket, isolatedBookingChecks, previewFixtureOffer, type BookingLive } from "@/lib/tour-chat-booking";
 import { createInterestStore, interestDeliveryPlan, interestOfferEnabled, interestPreviewScenario, publishInterestDeparture, registerInterest } from "@/lib/tour-interest";
 import type { ChatTurn } from "@/lib/tour-chat-facts";
@@ -75,7 +75,7 @@ async function handlePost({ request }: { request: Request }) {
   const message = typeof record["message"] === "string" ? record["message"].trim() : "";
   const pageTourId = typeof record["tourId"] === "string" ? record["tourId"].trim() : "";
   if (pageTourId && !TOUR_ID.test(pageTourId)) return json(422, { error: "Տուրի էջը չճանաչվեց։" });
-  if (!rateLimitTourChat(clientAddress(request))) {
+  if (!rateLimitTourChat(telegramRateKey(request) ?? clientAddress(request))) {
     return json(429, { error: "Շատ հարց եկավ կարճ ժամանակում։ Մի րոպե հետո նորից փորձեք։ Ամրագրումը էջում բաց է մնում։" });
   }
   if (record["action"] === "interest-preview") {

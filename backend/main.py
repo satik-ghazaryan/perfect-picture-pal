@@ -34,6 +34,7 @@ from pydantic import ValidationError
 from agent.graph import run_idea_workflow
 from chat_answer import ChatAnswerRequest, answer_public_chat
 from chat_intent import ChatIntentRequest, classify_chat_intent
+from telegram_bot import ChatStore, UpdateLedger, answer_for, register_webhook, send_message, webhook_authorized
 from idea_store import get_run, save_run
 from schemas import GenerateIdeasRequest, GenerateIdeasResponse, HealthResponse, ResearchBundle, TourIdea
 
@@ -110,6 +111,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     if len(_ideas_api_secret()) < 32:
         raise RuntimeError("IDEAS_API_SECRET is not configured.")
     _log_openai_key_status()
+    register_webhook()
     yield
 
 
@@ -183,6 +185,44 @@ def chat_answer(
         raise HTTPException(status_code=502, detail="Chat answer failed.") from None
     _log_chat(x_request_id, 200, "openai")
     return result
+
+
+_telegram_updates = UpdateLedger()
+_telegram_chats = ChatStore()
+
+
+@app.post("/api/telegram/webhook")
+def telegram_webhook(
+    update: dict,
+    x_telegram_bot_api_secret_token: str | None = Header(default=None, alias="X-Telegram-Bot-Api-Secret-Token"),
+) -> dict[str, bool]:
+    if not webhook_authorized(x_telegram_bot_api_secret_token):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    update_id = update.get("update_id") if isinstance(update, dict) else None
+    if not isinstance(update_id, int) or update_id < 0:
+        raise HTTPException(status_code=422, detail="Incomplete update.")
+    if not _telegram_updates.once(update_id):
+        return {"ok": True}
+    message = update.get("message") if isinstance(update.get("message"), dict) else None
+    chat = message.get("chat") if isinstance(message, dict) and isinstance(message.get("chat"), dict) else None
+    text = message.get("text") if isinstance(message, dict) and isinstance(message.get("text"), str) else ""
+    chat_id = chat.get("id") if isinstance(chat, dict) else None
+    if chat.get("type") != "private" if isinstance(chat, dict) else True:
+        return {"ok": True}
+    if not isinstance(chat_id, int) or not text.strip():
+        return {"ok": True}
+    memory = _telegram_chats.get(chat_id)
+    try:
+        reply, source = answer_for(memory, text.strip()[:500], chat_id)
+        send_message(chat_id, reply, memory.choices)
+        print(json.dumps({"update": update_id, "status": 200, "source": source}, separators=(",", ":")), flush=True)
+    except Exception:
+        print(json.dumps({"update": update_id, "status": 200, "source": "rules"}, separators=(",", ":")), flush=True)
+        try:
+            send_message(chat_id, "Չաթը հիմա չկարողացավ պատասխանել։ Կարող ես բացել կատալոգը։")
+        except Exception:
+            pass
+    return {"ok": True}
 
 
 @app.post("/api/generate-ideas", response_model=GenerateIdeasResponse, dependencies=[Depends(require_api_secret)])

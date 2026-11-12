@@ -4,7 +4,7 @@ import { answerTourQuestion, answerTourChat, groundChatAnswer, openChatSection, 
 import { CHAT_TEST_OPEN_DATE, CHAT_TEST_TITLE, CHAT_TEST_TOUR_ID } from "./chat-test-fixture.ts";
 import { confirmPreviewFixture, findPreviewTicket, isolatedBookingChecks } from "./tour-chat-booking.ts";
 import { interestConfirmation, interestOfferEnabled, interestPreviewScenario, sameInterest } from "./tour-interest.ts";
-import { rateLimitTourChat, replyToTourQuestion, resetTourChatRateLimit, anonCatalogKey } from "./tour-chat.server.ts";
+import { rateLimitTourChat, replyToTourQuestion, resetTourChatRateLimit, anonCatalogKey, telegramRateKey } from "./tour-chat.server.ts";
 
 const now = new Date("2026-11-09T10:00:00.000Z");
 
@@ -841,6 +841,23 @@ describe("public tour chat limit", () => {
     });
     assert.equal(switched.interest?.tourId, null);
     assert.match(switched.reply, /Գյումրի/);
+  });
+});
+
+describe("telegram chat bucket", () => {
+  it("keeps a telegram chat separate only when the server secret matches", () => {
+    const previous = process.env.CHAT_INTENT_API_SECRET;
+    process.env.CHAT_INTENT_API_SECRET = "1234567890abcdef";
+    const accepted = new Request("https://example.test/api/tour-chat", {
+      headers: { "x-chat-client": "telegram", "x-api-secret": "1234567890abcdef", "x-chat-id": "42" },
+    });
+    const rejected = new Request("https://example.test/api/tour-chat", {
+      headers: { "x-chat-client": "telegram", "x-api-secret": "zzzzzzzzzzzzzzzz", "x-chat-id": "42" },
+    });
+    assert.equal(telegramRateKey(accepted), "telegram:42");
+    assert.equal(telegramRateKey(rejected), null);
+    if (previous === undefined) delete process.env.CHAT_INTENT_API_SECRET;
+    else process.env.CHAT_INTENT_API_SECRET = previous;
   });
 });
 
