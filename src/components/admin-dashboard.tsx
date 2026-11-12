@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { useSyncExternalStore } from "react";
 import { format, parseISO } from "date-fns";
@@ -62,7 +62,7 @@ import {
 } from "@/lib/admin";
 import { CatalogTransferPanel } from "@/components/catalog-transfer-panel";
 import { assignedWeekendDay, formatAssignedDepartureDate, weekendScheduleLabel } from "@/lib/calendar-date";
-import { getPortalServerSnapshot, getPortalSnapshot, subscribePortal, upcomingDepartureDate, type AssignedTour, type BookingRecord } from "@/lib/guide-api";
+import { getPortalServerSnapshot, getPortalSnapshot, subscribePortal, upcomingDepartureDate, uploadTourCover, type AssignedTour, type BookingRecord } from "@/lib/guide-api";
 import {
   adjustLoyaltyPoints,
   getLoyaltyServerSnapshot,
@@ -73,6 +73,7 @@ import {
   subscribeLoyalty,
 } from "@/lib/loyalty";
 import { downloadPassengerWorkbook } from "@/lib/passenger-export";
+import { coverImageToStore } from "@/lib/tour-cover-upload";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import { formatStopTitleHy, formatVerifyNoteHy, generateTourIdeas, normalizeResearch, readCachedIdeaRun, saveTourIdeaDraft, searchStatusNote } from "@/lib/tour-ideas";
 import type { TourIdeaInput, TourIdeaResearch, TourIdeaResult } from "@/types";
@@ -557,13 +558,40 @@ function ToursSection({
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [coverPreview, setCoverPreview] = useState<string | null>(null);
+  const [coverError, setCoverError] = useState<string | null>(null);
+  const coverInput = useRef<HTMLInputElement>(null);
+
+  const clearCoverSelection = () => {
+    setCoverFile(null);
+    setCoverPreview((current) => {
+      if (current?.startsWith("blob:")) URL.revokeObjectURL(current);
+      return null;
+    });
+    if (coverInput.current) coverInput.current.value = "";
+  };
+
+  const openDraft = (next: Draft) => {
+    setFormLang("hy");
+    setCoverError(null);
+    clearCoverSelection();
+    setDraft(next);
+  };
 
   useEffect(() => {
     if (!seedDraft || mode !== "departures") return;
     setFormLang("hy");
+    clearCoverSelection();
     setDraft(seedDraft);
     onSeedApplied?.();
   }, [seedDraft, mode, onSeedApplied]);
+
+  useEffect(() => {
+    return () => {
+      if (coverPreview?.startsWith("blob:")) URL.revokeObjectURL(coverPreview);
+    };
+  }, [coverPreview]);
 
   const update = (patch: Partial<Draft>) => {
     setDraft((current) => (current ? { ...current, ...patch } : current));
@@ -603,9 +631,24 @@ function ToursSection({
     const linkedVirtual = !virtualOnly
       ? tours.find((item) => item.id === draft.virtualTourId && item.is_virtual_only === true && item.id !== id)
       : undefined;
-    const image = draft.image.trim() || (virtualOnly ? "" : existing?.image_url || tours[0]?.image_url || "");
+    const previousImage = draft.image.trim() || (virtualOnly ? "" : existing?.image_url || tours[0]?.image_url || "");
+    setSaving(true);
+    let image = previousImage;
+    if (coverFile) {
+      try {
+        image = coverImageToStore(previousImage, await uploadTourCover(id, coverFile));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Նկարը չվերբեռնվեց։ Նախկին նկարը պահպանված է։";
+        toast.error(message);
+        clearCoverSelection();
+        setCoverError(message);
+        setSaving(false);
+        return;
+      }
+    }
     if (!image) {
       toast.error("Ավելացրեք նկարի հղում։");
+      setSaving(false);
       return;
     }
     const description = trimLocalized(draft.summary);
@@ -648,10 +691,11 @@ function ToursSection({
     };
     if (existing?.oldPrice !== undefined) next.oldPrice = existing.oldPrice;
     if (virtualTourUrl) next.virtual_tour_url = virtualTourUrl;
-    setSaving(true);
     try {
       await saveTour(next);
       toast.success(draft.id ? "Տուրը թարմացվեց" : "Տուրը ավելացվեց");
+      clearCoverSelection();
+      setCoverError(null);
       setDraft(null);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Չպահպանվեց։");
@@ -686,7 +730,7 @@ function ToursSection({
               : "Արմավիրից մեկնող մեկօրյա տուրեր"}
           </p>
         </div>
-        <Button type="button" className="rounded-full font-bold" onClick={() => { setFormLang("hy"); setDraft(emptyDraft(mode === "virtual")); }}>
+        <Button type="button" className="rounded-full font-bold" onClick={() => openDraft(emptyDraft(mode === "virtual"))}>
           <Plus className="h-4 w-4" />
           {mode === "virtual" ? "Նոր վիրտուալ տուր" : "Նոր տուր"}
         </Button>
@@ -731,7 +775,7 @@ function ToursSection({
                 <Button type="button" variant="outline" size="sm" className="rounded-full" asChild>
                   <Link to="/tours/$id" params={{ id: tour.id }}>Դիտել</Link>
                 </Button>
-                <Button type="button" variant="outline" size="sm" className="rounded-full" onClick={() => { setFormLang("hy"); setDraft(draftFromTour(tour)); }}>
+                <Button type="button" variant="outline" size="sm" className="rounded-full" onClick={() => openDraft(draftFromTour(tour))}>
                   Խմբագրել
                 </Button>
                 {confirmId === tour.id ? (
@@ -763,6 +807,45 @@ function ToursSection({
               ? draft.id ? "Խմբագրել վիրտուալ տուրը" : "Նոր վիրտուալ տուր"
               : draft.id ? "Խմբագրել տուրը" : "Նոր տուր"}
           </h2>
+          <div className="space-y-3">
+            <input
+              ref={coverInput}
+              id="tour-cover-file"
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (!file) return;
+                if (!file.type.startsWith("image/")) {
+                  setCoverError("Ընտրեք լուսանկար։");
+                  return;
+                }
+                setCoverError(null);
+                setCoverFile(file);
+                setCoverPreview((current) => {
+                  if (current?.startsWith("blob:")) URL.revokeObjectURL(current);
+                  return URL.createObjectURL(file);
+                });
+              }}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full rounded-full font-bold sm:w-auto"
+              onClick={() => coverInput.current?.click()}
+            >
+              {draft.image.trim() ? "Փոխել նկարը" : "Ավելացնել նկար"}
+            </Button>
+            {coverPreview && (
+              <img src={coverPreview} alt="Ընտրված նկար" className="h-40 w-full max-w-md rounded-2xl object-cover" />
+            )}
+            {coverError && <p className="text-sm text-destructive">{coverError}</p>}
+            <p className="text-xs text-muted-foreground">
+              {coverFile ? "Նախադիտումը երևում է վերևում։ Նկարը կվերբեռնվի Պահպանել սեղմելիս։" : "Նոր նկար չընտրելու դեպքում կմնա եղածը։"}
+            </p>
+          </div>
           <div className="space-y-4 rounded-2xl border border-border bg-muted/40 p-3 sm:p-4">
             <div className="flex flex-wrap gap-2" role="tablist" aria-label="Լեզու">
               {formLanguages.map(({ code, label }) => {
@@ -929,7 +1012,7 @@ function ToursSection({
             <Button type="submit" className="rounded-full font-bold" disabled={saving}>
               {saving ? "Պահվում է" : "Պահպանել"}
             </Button>
-            <Button type="button" variant="outline" className="rounded-full" onClick={() => setDraft(null)}>
+            <Button type="button" variant="outline" className="rounded-full" onClick={() => { clearCoverSelection(); setCoverError(null); setDraft(null); }}>
               Փակել
             </Button>
           </div>
