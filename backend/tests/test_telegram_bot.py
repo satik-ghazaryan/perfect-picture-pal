@@ -178,3 +178,48 @@ def test_chat_memory_stays_local_without_a_database(monkeypatch):
     assert save_memory(1, ChatMemory()) is False
     store = ChatStore()
     assert store.get(1) is store.get(1)
+
+
+def test_webhook_status_reports_what_telegram_says_without_secrets():
+    import json as _json
+
+    from telegram_bot import webhook_status
+
+    token = "123456:secret-token-value-abcdefgh"
+
+    class _Http:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def get(self, url, timeout):
+            assert url.endswith("/getWebhookInfo")
+            return _Response(self.payload)
+
+    backend = "https://perfect-picture-pal.onrender.com"
+    status = webhook_status(
+        token,
+        backend,
+        http=_Http(
+            {
+                "ok": True,
+                "result": {
+                    "url": f"{backend}/api/telegram/webhook",
+                    "pending_update_count": 3,
+                    "last_error_date": 1794580000,
+                    "last_error_message": "Wrong response from the webhook: 401 Unauthorized",
+                },
+            }
+        ),
+    )
+    parsed = _json.loads(status)
+    assert parsed == {
+        "points_here": True,
+        "host": "perfect-picture-pal.onrender.com",
+        "pending": 3,
+        "last_error_at": 1794580000,
+        "last_error": "Wrong response from the webhook: 401 Unauthorized",
+    }
+    assert token not in status and "secret" not in status
+    elsewhere = _json.loads(webhook_status(token, backend, http=_Http({"result": {"url": "https://other.example/hook"}})))
+    assert elsewhere["points_here"] is False and elsewhere["host"] == "other.example"
+    assert webhook_status(token, backend, http=_Http({"ok": False})) == "unavailable"
