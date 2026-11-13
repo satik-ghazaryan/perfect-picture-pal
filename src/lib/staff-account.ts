@@ -46,9 +46,11 @@ export function normalizeStaffAccountInput(
   const digits = phone.replace(/\D/g, "");
   if (!role) return { ok: false, message: "Ընտրեք զբոսավար կամ վարորդ։" };
   if (fullName.length < 2) return { ok: false, message: "Գրեք անունը և ազգանունը։" };
-  if (digits.length < 8 || digits.length > 15) return { ok: false, message: "Գրեք գործող հեռախոսահամար։" };
+  if (digits.length < 8 || digits.length > 15)
+    return { ok: false, message: "Գրեք գործող հեռախոսահամար։" };
   if (!EMAIL_PATTERN.test(email)) return { ok: false, message: "Գրեք գործող էլ. փոստ։" };
-  if (input.password.length < 6) return { ok: false, message: "Գաղտնաբառը առնվազն 6 նիշ պետք է լինի։" };
+  if (input.password.length < 6)
+    return { ok: false, message: "Գաղտնաբառը առնվազն 6 նիշ պետք է լինի։" };
   return {
     ok: true,
     value: {
@@ -91,7 +93,11 @@ export async function createStaffAccountRecord(
     if (isDuplicateStaffAuthError(message)) {
       return { ok: false, code: "duplicate", message: "Այս էլ. փոստով հաշիվ արդեն կա։" };
     }
-    return { ok: false, code: "profile_failed", message: "Հաշիվը չստեղծվեց։ Կրկնեք գործողությունը։" };
+    return {
+      ok: false,
+      code: "profile_failed",
+      message: "Հաշիվը չստեղծվեց։ Կրկնեք գործողությունը։",
+    };
   }
   const account: StaffAccountRecord = {
     id: created.id,
@@ -110,7 +116,11 @@ export async function createStaffAccountRecord(
     } catch {
       /* The auth row could not be removed. Retry must not adopt it. */
     }
-    return { ok: false, code: "profile_failed", message: "Հաշիվը չստեղծվեց։ Կրկնեք գործողությունը։" };
+    return {
+      ok: false,
+      code: "profile_failed",
+      message: "Հաշիվը չստեղծվեց։ Կրկնեք գործողությունը։",
+    };
   }
   return { ok: true, account };
 }

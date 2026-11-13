@@ -40,9 +40,16 @@ export function registerInterest(
 ) {
   const label = input.label.trim().slice(0, 80);
   const key = directionKey(label);
-  if (!input.consent) return { ok: false as const, code: "consent", message: "Նշիր, որ համաձայն ես ծանուցում ստանալ այս ուղղության մասին։" };
-  if (key.length < 2) return { ok: false as const, code: "direction", message: "Գրիր ուղղությունը։" };
-  if (!validGuestPhone(input.phone)) return { ok: false as const, code: "phone", message: "Հեռախոսը պետք է ունենա 8–15 թվանշան։" };
+  if (!input.consent)
+    return {
+      ok: false as const,
+      code: "consent",
+      message: "Նշիր, որ համաձայն ես ծանուցում ստանալ այս ուղղության մասին։",
+    };
+  if (key.length < 2)
+    return { ok: false as const, code: "direction", message: "Գրիր ուղղությունը։" };
+  if (!validGuestPhone(input.phone))
+    return { ok: false as const, code: "phone", message: "Հեռախոսը պետք է ունենա 8–15 թվանշան։" };
   const phone = input.phone.replace(/\D/g, "");
   const existing = store.rows.find((row) => row.directionKey === key && row.phone === phone);
   if (existing) return { ok: true as const, repeated: true, id: existing.id };
@@ -58,14 +65,32 @@ export function registerInterest(
   return { ok: true as const, repeated: false, id: row.id };
 }
 
-export function interestMessage(input: { label: string; dateLabel: string; time: string | null; link: string }) {
+export function interestMessage(input: {
+  label: string;
+  dateLabel: string;
+  time: string | null;
+  link: string;
+}) {
   const time = input.time ? `Ժամը՝ ${input.time}` : "Ժամը նշված չէ։";
-  return [`Արի Գնանք`, `«${input.label}» ուղղությամբ բաց մեկնում կա։`, `Ամսաթիվ՝ ${input.dateLabel}`, time, `Տուրի էջ՝ ${input.link}`].join("\n");
+  return [
+    `Արի Գնանք`,
+    `«${input.label}» ուղղությամբ բաց մեկնում կա։`,
+    `Ամսաթիվ՝ ${input.dateLabel}`,
+    time,
+    `Տուրի էջ՝ ${input.link}`,
+  ].join("\n");
 }
 
 export function publishInterestDeparture(
   store: InterestStore,
-  input: { tourId: string; label: string; dateLabel: string; time: string | null; departureId: string; link: string },
+  input: {
+    tourId: string;
+    label: string;
+    dateLabel: string;
+    time: string | null;
+    departureId: string;
+    link: string;
+  },
 ) {
   const key = directionKey(input.label);
   const created: InterestNotice[] = [];
@@ -78,7 +103,12 @@ export function publishInterestDeparture(
       interestId: row.id,
       departureId: input.departureId,
       phone: row.phone,
-      body: interestMessage({ label: row.label, dateLabel: input.dateLabel, time: input.time, link: input.link }),
+      body: interestMessage({
+        label: row.label,
+        dateLabel: input.dateLabel,
+        time: input.time,
+        link: input.link,
+      }),
     };
     store.notices.push(notice);
     created.push(notice);
@@ -91,7 +121,9 @@ export function sameInterest(
   offer: { label: string; tourId: string | null },
 ) {
   const key = directionKey(offer.label);
-  return registered.some((item) => item.key === key || (offer.tourId !== null && item.tourId === offer.tourId));
+  return registered.some(
+    (item) => item.key === key || (offer.tourId !== null && item.tourId === offer.tourId),
+  );
 }
 
 export function interestConfirmation(mode: "mock" | "live") {
@@ -99,18 +131,26 @@ export function interestConfirmation(mode: "mock" | "live") {
   return "Փորձնական գրանցումը հաջողվեց";
 }
 
-export function interestOfferEnabled(env: Record<string, string | undefined> = process.env, vercelEnv = env["VERCEL_ENV"]) {
+export function interestOfferEnabled(
+  env: Record<string, string | undefined> = process.env,
+  vercelEnv = env["VERCEL_ENV"],
+) {
   if (vercelEnv === "production" && interestDeliveryPlan(env).mode !== "live") return false;
   return true;
 }
 
 export function interestDeliveryPlan(env: Record<string, string | undefined> = process.env) {
   const webhook = Boolean(env["SMS_GATEWAY_URL"] || env["WHATSAPP_GATEWAY_URL"]);
-  const twilio = Boolean(env["TWILIO_ACCOUNT_SID"] && env["TWILIO_AUTH_TOKEN"] && env["TWILIO_PHONE_NUMBER"]);
+  const twilio = Boolean(
+    env["TWILIO_ACCOUNT_SID"] && env["TWILIO_AUTH_TOKEN"] && env["TWILIO_PHONE_NUMBER"],
+  );
   if (webhook || twilio) return { mode: "live" as const, missing: [] as string[] };
   return {
     mode: "mock" as const,
-    missing: ["SMS_GATEWAY_URL կամ WHATSAPP_GATEWAY_URL", "TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN և TWILIO_PHONE_NUMBER"],
+    missing: [
+      "SMS_GATEWAY_URL կամ WHATSAPP_GATEWAY_URL",
+      "TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN և TWILIO_PHONE_NUMBER",
+    ],
   };
 }
 

@@ -20,7 +20,12 @@ import {
   subscribeLoyalty,
   type LoyaltyAccount,
 } from "@/lib/loyalty";
-import { getAdminServerSnapshot, getAdminSnapshot, hydrateAdmin, subscribeAdmin } from "@/lib/admin";
+import {
+  getAdminServerSnapshot,
+  getAdminSnapshot,
+  hydrateAdmin,
+  subscribeAdmin,
+} from "@/lib/admin";
 import { tourTitle, useSiteLocale } from "@/lib/locale";
 import { getPortalServerSnapshot, getPortalSnapshot, subscribePortal } from "@/lib/guide-api";
 import { notificationsForPhone, hydrateNotifications } from "@/lib/notifications";
@@ -39,7 +44,11 @@ export const Route = createFileRoute("/loyalty")({
 });
 
 function LoyaltyPage() {
-  const wallet = useSyncExternalStore(subscribeLoyalty, getLoyaltySnapshot, getLoyaltyServerSnapshot);
+  const wallet = useSyncExternalStore(
+    subscribeLoyalty,
+    getLoyaltySnapshot,
+    getLoyaltyServerSnapshot,
+  );
   const catalog = useSyncExternalStore(subscribeAdmin, getAdminSnapshot, getAdminServerSnapshot);
   const portal = useSyncExternalStore(subscribePortal, getPortalSnapshot, getPortalServerSnapshot);
   const cashback = catalog.settings.cashbackPercent;
@@ -57,7 +66,7 @@ function LoyaltyPage() {
     setReady(true);
   }, []);
 
-  const shown = account ?? (phoneKey(phone) ? wallet.accounts[phoneKey(phone)] ?? null : null);
+  const shown = account ?? (phoneKey(phone) ? (wallet.accounts[phoneKey(phone)] ?? null) : null);
   const bookingPhone = phoneKey(shown?.phone || phone);
   const myBookings = bookingPhone
     ? portal.bookings.filter((booking) => phoneKey(booking.phone) === bookingPhone)
@@ -88,8 +97,8 @@ function LoyaltyPage() {
         <p className="text-xs font-bold uppercase tracking-wide text-primary">Հավատարմություն</p>
         <h1 className="mt-2 text-3xl font-black tracking-tight">Իմ միավորները</h1>
         <p className="mt-2 max-w-xl text-sm text-muted-foreground">
-          Արմավիրից ամրագրված յուրաքանչյուր տուրի վճարված գումարի {cashback}%-ը
-          վերադառնում է միավորներով։ 1 միավոր = 1 ֏ զեղչ հաջորդ ամրագրման ժամանակ։
+          Արմավիրից ամրագրված յուրաքանչյուր տուրի վճարված գումարի {cashback}%-ը վերադառնում է
+          միավորներով։ 1 միավոր = 1 ֏ զեղչ հաջորդ ամրագրման ժամանակ։
         </p>
 
         {!ready ? (
@@ -126,7 +135,9 @@ function LoyaltyPage() {
                   <p className="text-xs font-semibold text-muted-foreground">Կուտակված միավորներ</p>
                   <p className="mt-1 text-4xl font-black text-primary">{shown?.points ?? 0}</p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {shown?.fullName ? shown.fullName : "Միավորները կապված են ամրագրման հեռախոսահամարին"}
+                    {shown?.fullName
+                      ? shown.fullName
+                      : "Միավորները կապված են ամրագրման հեռախոսահամարին"}
                   </p>
                 </div>
                 <span className="grid h-12 w-12 place-items-center rounded-2xl bg-card text-primary">
@@ -140,14 +151,19 @@ function LoyaltyPage() {
               {shown && shown.history.length > 0 ? (
                 <ul className="mt-3 divide-y divide-border">
                   {shown.history.map((entry) => (
-                    <li key={entry.id} className="flex items-start justify-between gap-3 py-3 text-sm">
+                    <li
+                      key={entry.id}
+                      className="flex items-start justify-between gap-3 py-3 text-sm"
+                    >
                       <div className="min-w-0">
                         <p className="font-semibold">{entry.note}</p>
                         <p className="text-xs text-muted-foreground">
                           {format(new Date(entry.createdAt), "d MMMM, HH:mm", { locale: hy })}
                         </p>
                       </div>
-                      <span className={entry.kind === "earn" ? "font-bold text-primary" : "font-bold"}>
+                      <span
+                        className={entry.kind === "earn" ? "font-bold text-primary" : "font-bold"}
+                      >
                         {entry.kind === "earn" ? "+" : "−"}
                         {entry.points}
                       </span>

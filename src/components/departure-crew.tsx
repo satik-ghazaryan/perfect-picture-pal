@@ -50,7 +50,11 @@ export function DepartureCrew({
   guideId: string | null;
   driverId: string | null;
 }) {
-  const users = useSyncExternalStore(subscribeAdmin, getAdminSnapshot, getAdminServerSnapshot).users;
+  const users = useSyncExternalStore(
+    subscribeAdmin,
+    getAdminSnapshot,
+    getAdminServerSnapshot,
+  ).users;
   const remaining = timeUntilDeparture(departureDate, departureTime);
   const revealed = crewRevealed(departureDate, departureTime);
   const guide = users.find((user) => user.id === guideId && user.role === "guide") ?? null;
@@ -59,7 +63,9 @@ export function DepartureCrew({
   return (
     <section className="rounded-3xl border border-border bg-card p-4">
       {remaining !== null && (
-        <p className="text-xs font-semibold text-muted-foreground">{formatTimeRemaining(remaining)}</p>
+        <p className="text-xs font-semibold text-muted-foreground">
+          {formatTimeRemaining(remaining)}
+        </p>
       )}
       {revealed ? (
         <>

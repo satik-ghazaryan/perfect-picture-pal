@@ -38,7 +38,10 @@ export const Route = createFileRoute("/guide")({
   head: () => ({
     meta: [
       { title: "Զբոսավարի պորտալ — Արի Գնանք" },
-      { name: "description", content: "Զբոսավարի նշանակված մեկնումները և ուղևորների ներկայությունը։" },
+      {
+        name: "description",
+        content: "Զբոսավարի նշանակված մեկնումները և ուղևորների ներկայությունը։",
+      },
     ],
   }),
   component: GuidePage,
@@ -47,9 +50,21 @@ export const Route = createFileRoute("/guide")({
 function GuidePage() {
   const navigate = useNavigate();
   const portal = useSyncExternalStore(subscribePortal, getPortalSnapshot, getPortalServerSnapshot);
-  const currentUser = useSyncExternalStore(subscribeTourist, getTouristSnapshot, getTouristServerSnapshot);
-  const accountStatus = useSyncExternalStore(subscribeTourist, getAccountStatus, () => "ready" as const);
-  const users = useSyncExternalStore(subscribeAdmin, getAdminSnapshot, getAdminServerSnapshot).users;
+  const currentUser = useSyncExternalStore(
+    subscribeTourist,
+    getTouristSnapshot,
+    getTouristServerSnapshot,
+  );
+  const accountStatus = useSyncExternalStore(
+    subscribeTourist,
+    getAccountStatus,
+    () => "ready" as const,
+  );
+  const users = useSyncExternalStore(
+    subscribeAdmin,
+    getAdminSnapshot,
+    getAdminServerSnapshot,
+  ).users;
   const [ready, setReady] = useState(false);
   const [bootError, setBootError] = useState("");
 
@@ -57,7 +72,8 @@ function GuidePage() {
     let cancelled = false;
     ensureAccountRestored()
       .catch((error: unknown) => {
-        if (!cancelled) setBootError(error instanceof Error ? error.message : "Մուտքը չվերականգնվեց։");
+        if (!cancelled)
+          setBootError(error instanceof Error ? error.message : "Մուտքը չվերականգնվեց։");
       })
       .finally(() => {
         if (!cancelled) setReady(true);
@@ -84,9 +100,13 @@ function GuidePage() {
     <div className="min-h-screen bg-background">
       <SiteHeader />
       <main className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-10">
-        {(!ready || !accountReady) && <p className="text-sm text-muted-foreground">Բեռնվում է...</p>}
+        {(!ready || !accountReady) && (
+          <p className="text-sm text-muted-foreground">Բեռնվում է...</p>
+        )}
         {ready && bootError && (
-          <p className="mb-4 rounded-2xl bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive">{bootError}</p>
+          <p className="mb-4 rounded-2xl bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive">
+            {bootError}
+          </p>
         )}
         {denied && <p className="text-sm text-muted-foreground">Բեռնվում է...</p>}
         {ready && accountReady && !denied && !profile && <GuideSignIn />}
@@ -123,17 +143,35 @@ function GuideSignIn() {
       }}
     >
       <h1 className="text-2xl font-black tracking-tight">Զբոսավարի մուտք</h1>
-      <p className="text-sm text-muted-foreground">Մուտք գործեք զբոսավարի հաշվով՝ տեսնելու միայն ձեզ նշանակված մեկնումները։</p>
+      <p className="text-sm text-muted-foreground">
+        Մուտք գործեք զբոսավարի հաշվով՝ տեսնելու միայն ձեզ նշանակված մեկնումները։
+      </p>
       {import.meta.env.DEV && !isSupabaseConfigured && (
-        <p className="rounded-2xl bg-primary-soft px-3 py-2 text-xs">Տեղային նախադիտում. seed զբոսավարի հաշիվը միայն DEV ռեժիմում է։</p>
+        <p className="rounded-2xl bg-primary-soft px-3 py-2 text-xs">
+          Տեղային նախադիտում. seed զբոսավարի հաշիվը միայն DEV ռեժիմում է։
+        </p>
       )}
       <div className="space-y-1.5">
         <Label htmlFor="guide-email">Էլ. փոստ</Label>
-        <Input id="guide-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="username" className="h-11 rounded-2xl" />
+        <Input
+          id="guide-email"
+          type="email"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          autoComplete="username"
+          className="h-11 rounded-2xl"
+        />
       </div>
       <div className="space-y-1.5">
         <Label htmlFor="guide-password">Գաղտնաբառ</Label>
-        <Input id="guide-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" className="h-11 rounded-2xl" />
+        <Input
+          id="guide-password"
+          type="password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          autoComplete="current-password"
+          className="h-11 rounded-2xl"
+        />
       </div>
       {error && <p className="text-xs font-medium text-destructive">{error}</p>}
       <Button type="submit" className="h-11 w-full rounded-full font-bold" disabled={pending}>
@@ -148,7 +186,14 @@ function GuideHome({
   users,
 }: {
   profile: StaffProfile;
-  users: { id: string; fullName: string; phone: string; avatarUrl: string; bio: string; role: string }[];
+  users: {
+    id: string;
+    fullName: string;
+    phone: string;
+    avatarUrl: string;
+    bio: string;
+    role: string;
+  }[];
 }) {
   const portal = useSyncExternalStore(subscribePortal, getPortalSnapshot, getPortalServerSnapshot);
   const tours = portal.tours.filter((tour) => tour.guideId === profile.id);
@@ -159,7 +204,7 @@ function GuideHome({
 
   useEffect(() => {
     const ids = tourKey ? tourKey.split("|") : [];
-    const next = ids.includes(openId) ? openId : ids[0] ?? "";
+    const next = ids.includes(openId) ? openId : (ids[0] ?? "");
     if (next !== openId) setOpenId(next);
   }, [tourKey, openId]);
 
@@ -206,7 +251,12 @@ function GuideHome({
         email: "",
         seats: booking.adults + booking.children,
         paymentStatus: booking.paymentStatus === "SUCCESS" ? "Վճարված" : "Սիմուլացված",
-        notes: booking.attendance === "present" ? "Ներկա" : booking.attendance === "absent" ? "Բացակա" : "",
+        notes:
+          booking.attendance === "present"
+            ? "Ներկա"
+            : booking.attendance === "absent"
+              ? "Բացակա"
+              : "",
       })),
     });
   };
@@ -236,32 +286,49 @@ function GuideHome({
         </p>
       ) : (
         tours.map((tour) => {
-          const driver = users.find((user) => user.id === tour.driverId && user.role === "driver") ?? null;
+          const driver =
+            users.find((user) => user.id === tour.driverId && user.role === "driver") ?? null;
           const open = tour.departureId === openId;
           const passengers = portal.bookings
             .filter((booking) => booking.departureId === tour.departureId)
             .slice()
             .sort((a, b) => a.seatNumber - b.seatNumber);
           return (
-            <article key={tour.departureId} className="space-y-4 rounded-3xl border border-border bg-card p-4 sm:p-5">
-              <button type="button" className="w-full text-left" aria-expanded={open} onClick={() => setOpenId(tour.departureId)}>
+            <article
+              key={tour.departureId}
+              className="space-y-4 rounded-3xl border border-border bg-card p-4 sm:p-5"
+            >
+              <button
+                type="button"
+                className="w-full text-left"
+                aria-expanded={open}
+                onClick={() => setOpenId(tour.departureId)}
+              >
                 <h2 className="text-lg font-black leading-snug">{tour.title}</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
                   {formatAssignedDepartureDate(tour.departureDate)} · մեկնում {tour.departureTime}
                 </p>
-                <p className="mt-1 text-sm font-semibold">Ամրագրված ուղևորներ՝ {passengers.length}</p>
+                <p className="mt-1 text-sm font-semibold">
+                  Ամրագրված ուղևորներ՝ {passengers.length}
+                </p>
               </button>
               <div className="rounded-2xl bg-muted px-3 py-3">
                 <p className="text-xs font-semibold text-muted-foreground">Վարորդ</p>
                 {driver ? (
                   <div className="mt-2 flex gap-3">
                     {driver.avatarUrl ? (
-                      <img src={driver.avatarUrl} alt="" className="h-12 w-12 rounded-full object-cover" />
+                      <img
+                        src={driver.avatarUrl}
+                        alt=""
+                        className="h-12 w-12 rounded-full object-cover"
+                      />
                     ) : null}
                     <div>
                       <p className="text-sm font-bold">{driver.fullName}</p>
                       <p className="text-xs">{driver.phone || "Հեռախոսը նշված չէ"}</p>
-                      {driver.bio && <p className="mt-1 text-xs text-muted-foreground">{driver.bio}</p>}
+                      {driver.bio && (
+                        <p className="mt-1 text-xs text-muted-foreground">{driver.bio}</p>
+                      )}
                     </div>
                   </div>
                 ) : (
@@ -269,57 +336,73 @@ function GuideHome({
                 )}
               </div>
               {open && (
-              <div className="space-y-3">
-                <QrScanner onScan={scan} />
-                {scanMessage && <p className="text-sm font-medium">{scanMessage}</p>}
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h3 className="text-sm font-bold">Ուղևորացուցակ</h3>
-                  <Button type="button" variant="outline" className="rounded-full" onClick={exportPassengers}>
-                    Արտահանել Excel
-                  </Button>
+                <div className="space-y-3">
+                  <QrScanner onScan={scan} />
+                  {scanMessage && <p className="text-sm font-medium">{scanMessage}</p>}
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-sm font-bold">Ուղևորացուցակ</h3>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="rounded-full"
+                      onClick={exportPassengers}
+                    >
+                      Արտահանել Excel
+                    </Button>
+                  </div>
+                  {passengers.length === 0 ? (
+                    <p className="mt-2 rounded-2xl bg-muted px-3 py-3 text-sm text-muted-foreground">
+                      Այս տուրի համար դեռևս գրանցված զբոսաշրջիկներ չկան
+                    </p>
+                  ) : (
+                    <ul className="mt-2 divide-y divide-border">
+                      {passengers.map((booking) => (
+                        <li
+                          key={booking.id}
+                          className="flex flex-wrap items-center justify-between gap-3 py-3"
+                        >
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold">{booking.passengerName}</p>
+                            <p className="text-xs text-muted-foreground">
+                              Տոմս՝ {booking.ticketCode || "—"}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              Հեռախոսահամար՝ {booking.phone || "—"}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              Տեղերի քանակ՝ {booking.adults + booking.children}
+                            </p>
+                          </div>
+                          <div className="flex gap-2">
+                            {(
+                              [
+                                ["present", "Ներկա"],
+                                ["absent", "Բացակա"],
+                              ] as const
+                            ).map(([value, label]) => (
+                              <button
+                                key={value}
+                                type="button"
+                                aria-pressed={booking.attendance === value}
+                                onClick={() =>
+                                  void mark(booking.id, booking.attendance === value ? null : value)
+                                }
+                                className={cn(
+                                  "rounded-full border px-3 py-1.5 text-xs font-bold",
+                                  booking.attendance === value
+                                    ? "border-primary bg-primary text-primary-foreground"
+                                    : "border-border bg-background",
+                                )}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
-                {passengers.length === 0 ? (
-                  <p className="mt-2 rounded-2xl bg-muted px-3 py-3 text-sm text-muted-foreground">
-                    Այս տուրի համար դեռևս գրանցված զբոսաշրջիկներ չկան
-                  </p>
-                ) : (
-                  <ul className="mt-2 divide-y divide-border">
-                    {passengers.map((booking) => (
-                      <li key={booking.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
-                        <div className="min-w-0">
-                          <p className="text-sm font-bold">{booking.passengerName}</p>
-                          <p className="text-xs text-muted-foreground">Տոմս՝ {booking.ticketCode || "—"}</p>
-                          <p className="text-xs text-muted-foreground">Հեռախոսահամար՝ {booking.phone || "—"}</p>
-                          <p className="text-xs text-muted-foreground">Տեղերի քանակ՝ {booking.adults + booking.children}</p>
-                        </div>
-                        <div className="flex gap-2">
-                          {(
-                            [
-                              ["present", "Ներկա"],
-                              ["absent", "Բացակա"],
-                            ] as const
-                          ).map(([value, label]) => (
-                            <button
-                              key={value}
-                              type="button"
-                              aria-pressed={booking.attendance === value}
-                              onClick={() => void mark(booking.id, booking.attendance === value ? null : value)}
-                              className={cn(
-                                "rounded-full border px-3 py-1.5 text-xs font-bold",
-                                booking.attendance === value
-                                  ? "border-primary bg-primary text-primary-foreground"
-                                  : "border-border bg-background",
-                              )}
-                            >
-                              {label}
-                            </button>
-                          ))}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
               )}
             </article>
           );

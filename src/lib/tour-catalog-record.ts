@@ -1,4 +1,5 @@
 import type { AudioChapter, Hotspot, ItineraryStop, Tour } from "@/data/tours";
+import { coverPositionFromHotspots, hotspotsWithCover, visibleHotspots } from "@/lib/cover-frame";
 import { catalogDayFromRow } from "@/lib/calendar-date";
 import { localized, type LocalizedText } from "@/lib/locale";
 
@@ -249,7 +250,7 @@ export function serializeTourCatalog(tour: CatalogTour): TourCatalogRow {
     included: tour.included,
     excluded: tour.excluded,
     audio_chapters: tour.audioChapters,
-    hotspots: tour.hotspots,
+    hotspots: hotspotsWithCover(tour.hotspots, tour.coverPosition),
     panorama_url: tour.panoramaUrl || null,
     virtual_tour_url: virtualUrl,
     is_virtual_only: tour.is_virtual_only === true,
@@ -276,7 +277,7 @@ export function serializeVirtualTour(tour: CatalogTour): VirtualTourRow {
     image_url: tour.image_url || null,
     panorama_url: tour.panoramaUrl || embed,
     virtual_tour_url: embed,
-    hotspots: tour.hotspots,
+    hotspots: hotspotsWithCover(tour.hotspots, tour.coverPosition),
   };
 }
 
@@ -435,11 +436,16 @@ export function normalizeCatalogTour(
       : seedFallback
         ? (base?.audioChapters ?? [])
         : [],
-    hotspots: Array.isArray(raw["hotspots"])
-      ? raw["hotspots"].filter(isHotspot)
-      : seedFallback
-        ? (base?.hotspots ?? [])
-        : [],
+    hotspots: visibleHotspots(
+      Array.isArray(raw["hotspots"])
+        ? raw["hotspots"].filter(isHotspot)
+        : seedFallback
+          ? (base?.hotspots ?? [])
+          : [],
+    ),
+    coverPosition: coverPositionFromHotspots(
+      Array.isArray(raw["hotspots"]) ? raw["hotspots"].filter(isHotspot) : [],
+    ),
     panoramaUrl: panorama,
     is_virtual_only:
       typeof raw["is_virtual_only"] === "boolean"

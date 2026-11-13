@@ -1,6 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { Clock, Headphones, MapPin, Rotate3d, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { TourCover } from "@/components/tour-cover";
 import { formatAmd, tourTypeLabels, type Tour } from "@/data/tours";
 import { pickLocale, tourTitle, useSiteLocale } from "@/lib/locale";
 
@@ -18,14 +19,7 @@ export function TourCard({ tour }: { tour: Tour }) {
       className="group flex cursor-pointer flex-col overflow-hidden rounded-3xl border border-border bg-card shadow-card transition-all duration-300 hover:-translate-y-1 hover:shadow-float"
     >
       <div className="relative">
-        <img
-          src={tour.image_url}
-          alt={title}
-          loading="lazy"
-          width={1024}
-          height={768}
-          className="h-48 w-full object-cover transition-transform duration-500 group-hover:scale-105 sm:h-52"
-        />
+        <TourCover src={tour.image_url} alt={title} position={tour.coverPosition} variant="card" />
         <div className="absolute inset-x-3 top-3 flex flex-wrap gap-1.5">
           {tour.virtual_tour_id?.trim() && (
             <span className="inline-flex items-center gap-1 rounded-full bg-navy/85 px-2.5 py-1 text-[11px] font-semibold text-navy-foreground backdrop-blur">
@@ -66,7 +60,9 @@ export function TourCard({ tour }: { tour: Tour }) {
             <MapPin className="h-3.5 w-3.5 shrink-0" />
             <span className="truncate">{tour.departurePlace}</span>
           </p>
-          <p>{tour.reviews} կարծիք · {typeLabel}</p>
+          <p>
+            {tour.reviews} կարծիք · {typeLabel}
+          </p>
         </div>
 
         <div className="mt-auto flex items-end justify-between gap-3 pt-1">

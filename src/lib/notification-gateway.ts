@@ -40,7 +40,10 @@ function twilioReady(config: GatewayConfig) {
   return Boolean(config.sid && config.token && config.from);
 }
 
-async function postWebhook(url: string, payload: { channel: NotificationChannel; to: string; body: string }) {
+async function postWebhook(
+  url: string,
+  payload: { channel: NotificationChannel; to: string; body: string },
+) {
   const response = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json", accept: "application/json" },
@@ -51,7 +54,12 @@ async function postWebhook(url: string, payload: { channel: NotificationChannel;
   }
 }
 
-async function postTwilio(config: GatewayConfig, channel: NotificationChannel, phone: string, body: string) {
+async function postTwilio(
+  config: GatewayConfig,
+  channel: NotificationChannel,
+  phone: string,
+  body: string,
+) {
   const to = toE164(phone);
   const whatsappFrom = config.whatsappFrom || config.from;
   const from =

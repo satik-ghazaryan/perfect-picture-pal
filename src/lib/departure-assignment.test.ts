@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { assigneeRoleError, isExplicitDepartureDate, planLegacyDepartureLinks } from "./departure-assignment";
+import {
+  assigneeRoleError,
+  isExplicitDepartureDate,
+  planLegacyDepartureLinks,
+} from "./departure-assignment";
 
 const guide = { id: "guide-1", role: "guide" };
 const driver = { id: "driver-1", role: "driver" };
@@ -38,7 +42,15 @@ describe("departure assignment", () => {
   it("keeps a conflicting assignee unchanged", () => {
     const plan = planLegacyDepartureLinks(
       [{ id: "1-ui", departureDate: "2026-11-14", guideId: "guide-1", driverId: null }],
-      [{ id: "dep-1", tourId: "1-ui", departureDate: "2026-11-14", guideId: "guide-2", driverId: null }],
+      [
+        {
+          id: "dep-1",
+          tourId: "1-ui",
+          departureDate: "2026-11-14",
+          guideId: "guide-2",
+          driverId: null,
+        },
+      ],
       [guide, { id: "guide-2", role: "guide" }],
     );
     assert.equal(plan.apply.length, 0);

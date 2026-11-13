@@ -1,15 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  Expand,
-  MapPin,
-  Minimize2,
-  Pause,
-  Play,
-  RotateCw,
-  ZoomIn,
-  ZoomOut,
-  X,
-} from "lucide-react";
+import { Expand, MapPin, Minimize2, Pause, Play, RotateCw, ZoomIn, ZoomOut, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Hotspot } from "@/data/tours";
 
@@ -61,7 +51,7 @@ export function PanoramaViewer({ image, title, hotspots }: Props) {
     const el = containerRef.current;
     if (!drag || !el) return;
     const delta = ((clientX - drag.startX) / el.clientWidth) * 60;
-    setOffset(((drag.startOffset - delta) % 100 + 100) % 100);
+    setOffset((((drag.startOffset - delta) % 100) + 100) % 100);
   };
 
   const endDrag = () => {
@@ -103,7 +93,7 @@ export function PanoramaViewer({ image, title, hotspots }: Props) {
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-navy/70 via-transparent to-navy/30" />
 
         {hotspots.map((h) => {
-          const left = ((h.x - offset * 1.4) % 100 + 100) % 100;
+          const left = (((h.x - offset * 1.4) % 100) + 100) % 100;
           return (
             <button
               key={h.id}
@@ -148,9 +138,7 @@ export function PanoramaViewer({ image, title, hotspots }: Props) {
             onClick={() => setAutoRotate((v) => !v)}
           >
             {autoRotate ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-            <span className="hidden sm:inline">
-              {autoRotate ? "Կանգնեցնել" : "Պտտել"}
-            </span>
+            <span className="hidden sm:inline">{autoRotate ? "Կանգնեցնել" : "Պտտել"}</span>
           </Button>
           <Button
             size="sm"

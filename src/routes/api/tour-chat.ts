@@ -1,7 +1,28 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { clientAddress, loadPublicTourFacts, rateLimitTourChat, replyToTourQuestion, telegramRateKey } from "@/lib/tour-chat.server";
-import { checkDepartureBooking, confirmPreviewFixture, findPreviewTicket, isolatedBookingChecks, previewFixtureOffer, type BookingLive } from "@/lib/tour-chat-booking";
-import { createInterestStore, interestDeliveryPlan, interestOfferEnabled, interestPreviewScenario, publishInterestDeparture, registerInterest } from "@/lib/tour-interest";
+import {
+  HISTORY_TURNS,
+  clientAddress,
+  loadPublicTourFacts,
+  rateLimitTourChat,
+  replyToTourQuestion,
+  telegramRateKey,
+} from "@/lib/tour-chat.server";
+import {
+  checkDepartureBooking,
+  confirmPreviewFixture,
+  findPreviewTicket,
+  isolatedBookingChecks,
+  previewFixtureOffer,
+  type BookingLive,
+} from "@/lib/tour-chat-booking";
+import {
+  createInterestStore,
+  interestDeliveryPlan,
+  interestOfferEnabled,
+  interestPreviewScenario,
+  publishInterestDeparture,
+  registerInterest,
+} from "@/lib/tour-interest";
 import type { ChatTurn } from "@/lib/tour-chat-facts";
 
 const TOUR_ID = /^[a-z0-9-]{1,64}$/;
@@ -13,7 +34,11 @@ function json(status: number, body: Record<string, unknown>) {
 }
 
 function logChatChoice(request: Request, status: number, source: "openai" | "rules") {
-  const raw = (request.headers.get("x-vercel-id") ?? request.headers.get("x-request-id") ?? "").trim();
+  const raw = (
+    request.headers.get("x-vercel-id") ??
+    request.headers.get("x-request-id") ??
+    ""
+  ).trim();
   const id = /^[A-Za-z0-9_.:-]{1,120}$/.test(raw) ? raw : "none";
   console.info(JSON.stringify({ id, status, source }));
 }
@@ -23,8 +48,14 @@ function readRegistered(value: unknown) {
   return value.slice(0, 12).flatMap((item) => {
     if (!item || typeof item !== "object") return [];
     const record = item as Record<string, unknown>;
-    const tourId = typeof record["tourId"] === "string" && TOUR_ID.test(record["tourId"]) ? record["tourId"] : null;
-    const key = typeof record["key"] === "string" ? record["key"].trim().toLocaleLowerCase("hy").slice(0, 80) : "";
+    const tourId =
+      typeof record["tourId"] === "string" && TOUR_ID.test(record["tourId"])
+        ? record["tourId"]
+        : null;
+    const key =
+      typeof record["key"] === "string"
+        ? record["key"].trim().toLocaleLowerCase("hy").slice(0, 80)
+        : "";
     if (!tourId && key.length < 2) return [];
     return [{ tourId, key }];
   });
@@ -32,15 +63,18 @@ function readRegistered(value: unknown) {
 
 function readShown(value: unknown) {
   if (!Array.isArray(value)) return [];
-  return value.filter((item): item is string => typeof item === "string" && TOUR_ID.test(item)).slice(0, 12);
+  return value
+    .filter((item): item is string => typeof item === "string" && TOUR_ID.test(item))
+    .slice(0, 12);
 }
 
 function readHistory(value: unknown): ChatTurn[] {
   if (!Array.isArray(value)) return [];
-  return value.slice(-6).flatMap((item) => {
+  return value.slice(-HISTORY_TURNS).flatMap((item) => {
     if (!item || typeof item !== "object") return [];
     const record = item as Record<string, unknown>;
-    const role = record["role"] === "assistant" ? "assistant" : record["role"] === "user" ? "user" : null;
+    const role =
+      record["role"] === "assistant" ? "assistant" : record["role"] === "user" ? "user" : null;
     const text = typeof record["text"] === "string" ? record["text"].trim().slice(0, 500) : "";
     if (!role || !text) return [];
     return [{ role, text }];
@@ -49,7 +83,8 @@ function readHistory(value: unknown): ChatTurn[] {
 
 async function handlePost({ request }: { request: Request }) {
   const declared = Number(request.headers.get("content-length") ?? "");
-  if (Number.isFinite(declared) && declared > MAX_BODY) return json(413, { error: "Հարցը չափազանց երկար է։" });
+  if (Number.isFinite(declared) && declared > MAX_BODY)
+    return json(413, { error: "Հարցը չափազանց երկար է։" });
   let raw = "";
   try {
     raw = await request.text();
@@ -67,8 +102,10 @@ async function handlePost({ request }: { request: Request }) {
   const record = parsed as Record<string, unknown>;
   const interestPhone = typeof record["phone"] === "string" ? record["phone"] : "";
   const interestConsent = record["consent"] === true;
-  const interestDirection = typeof record["direction"] === "string" ? record["direction"].trim().slice(0, 80) : "";
-  const interestTourId = typeof record["interestTourId"] === "string" ? record["interestTourId"].trim() : "";
+  const interestDirection =
+    typeof record["direction"] === "string" ? record["direction"].trim().slice(0, 80) : "";
+  const interestTourId =
+    typeof record["interestTourId"] === "string" ? record["interestTourId"].trim() : "";
   delete record["name"];
   delete record["phone"];
   delete record["passengerName"];
@@ -76,10 +113,13 @@ async function handlePost({ request }: { request: Request }) {
   const pageTourId = typeof record["tourId"] === "string" ? record["tourId"].trim() : "";
   if (pageTourId && !TOUR_ID.test(pageTourId)) return json(422, { error: "Տուրի էջը չճանաչվեց։" });
   if (!rateLimitTourChat(telegramRateKey(request) ?? clientAddress(request))) {
-    return json(429, { error: "Շատ հարց եկավ կարճ ժամանակում։ Մի րոպե հետո նորից փորձեք։ Ամրագրումը էջում բաց է մնում։" });
+    return json(429, {
+      error:
+        "Շատ հարց եկավ կարճ ժամանակում։ Մի րոպե հետո նորից փորձեք։ Ամրագրումը էջում բաց է մնում։",
+    });
   }
   if (record["action"] === "interest-preview") {
-    if (process.env.VERCEL_ENV === "production") return json(404, { error: "Չկա։" });
+    if (process.env["VERCEL_ENV"] === "production") return json(404, { error: "Չկա։" });
     const scenario = interestPreviewScenario();
     return json(200, {
       unknown: scenario.loriNotified === false,
@@ -115,9 +155,10 @@ async function handlePost({ request }: { request: Request }) {
     });
   }
   if (record["action"] === "interest-publish") {
-    if (process.env.VERCEL_ENV === "production") return json(404, { error: "Չկա։" });
+    if (process.env["VERCEL_ENV"] === "production") return json(404, { error: "Չկա։" });
     const departureId = typeof record["departureId"] === "string" ? record["departureId"] : "";
-    const dateLabel = typeof record["dateLabel"] === "string" ? record["dateLabel"].slice(0, 40) : "";
+    const dateLabel =
+      typeof record["dateLabel"] === "string" ? record["dateLabel"].slice(0, 40) : "";
     const time = typeof record["time"] === "string" ? record["time"].slice(0, 5) : "";
     const label = typeof record["label"] === "string" ? record["label"].slice(0, 80) : "";
     const link = TOUR_ID.test(pageTourId) ? `/tours/${pageTourId}` : "";
@@ -137,18 +178,18 @@ async function handlePost({ request }: { request: Request }) {
     });
   }
   if (record["action"] === "isolated-booking") {
-    if (process.env.VERCEL_ENV === "production") return json(404, { error: "Չկա։" });
+    if (process.env["VERCEL_ENV"] === "production") return json(404, { error: "Չկա։" });
     return json(200, { isolated: isolatedBookingChecks() });
   }
   if (record["action"] === "isolated-ticket") {
-    if (process.env.VERCEL_ENV === "production") return json(404, { error: "Չկա։" });
+    if (process.env["VERCEL_ENV"] === "production") return json(404, { error: "Չկա։" });
     const code = typeof record["ticketCode"] === "string" ? record["ticketCode"] : "";
     const ticket = findPreviewTicket(code);
     if (!ticket) return json(404, { error: "Տոմսը չի գտնվել։" });
     return json(200, { ticket });
   }
   if (record["action"] === "isolated-confirm") {
-    if (process.env.VERCEL_ENV === "production") return json(404, { error: "Չկա։" });
+    if (process.env["VERCEL_ENV"] === "production") return json(404, { error: "Չկա։" });
     const adults = typeof record["adults"] === "number" ? record["adults"] : 0;
     const children = typeof record["children"] === "number" ? record["children"] : 0;
     return json(200, {
@@ -160,7 +201,8 @@ async function handlePost({ request }: { request: Request }) {
         expectedPrice: typeof record["expectedPrice"] === "number" ? record["expectedPrice"] : -1,
         expectedSeats: typeof record["expectedSeats"] === "number" ? record["expectedSeats"] : -1,
         expectedDate: typeof record["expectedDate"] === "string" ? record["expectedDate"] : "",
-        expectedCashback: typeof record["expectedCashback"] === "number" ? record["expectedCashback"] : -1,
+        expectedCashback:
+          typeof record["expectedCashback"] === "number" ? record["expectedCashback"] : -1,
       }),
     });
   }
@@ -170,14 +212,21 @@ async function handlePost({ request }: { request: Request }) {
     const departureId = typeof record["departureId"] === "string" ? record["departureId"] : "";
     const adults = typeof record["adults"] === "number" ? record["adults"] : 0;
     const children = typeof record["children"] === "number" ? record["children"] : 0;
-    const expectedPrice = typeof record["expectedPrice"] === "number" ? record["expectedPrice"] : -1;
-    const expectedSeats = typeof record["expectedSeats"] === "number" ? record["expectedSeats"] : -1;
+    const expectedPrice =
+      typeof record["expectedPrice"] === "number" ? record["expectedPrice"] : -1;
+    const expectedSeats =
+      typeof record["expectedSeats"] === "number" ? record["expectedSeats"] : -1;
     const expectedDate = typeof record["expectedDate"] === "string" ? record["expectedDate"] : "";
-    const expectedCashback = typeof record["expectedCashback"] === "number" ? record["expectedCashback"] : -1;
+    const expectedCashback =
+      typeof record["expectedCashback"] === "number" ? record["expectedCashback"] : -1;
     const tour = facts.tours.find((item) => item.id === tourId);
     const row = tour?.departures.find((item) => item.id === departureId);
     if (!facts.ok || !tour || !row || row.seats === null || facts.cashbackPercent == null) {
-      return json(200, { ok: false, code: "missing", message: "Մեկնման տվյալները չբեռնվեցին։ Թիվ չեմ նշում։" });
+      return json(200, {
+        ok: false,
+        code: "missing",
+        message: "Մեկնման տվյալները չբեռնվեցին։ Թիվ չեմ նշում։",
+      });
     }
     const live: BookingLive = {
       id: row.id,
@@ -202,15 +251,25 @@ async function handlePost({ request }: { request: Request }) {
       ),
     });
   }
-  const selectedTourId = typeof record["selectedTourId"] === "string" && TOUR_ID.test(record["selectedTourId"])
-    ? record["selectedTourId"]
-    : "";
+  const selectedTourId =
+    typeof record["selectedTourId"] === "string" && TOUR_ID.test(record["selectedTourId"])
+      ? record["selectedTourId"]
+      : "";
   const section = record["section"];
-  const openSection = record["action"] === "open-section"
-    && (section === "upcoming" || section === "directions" || section === "tour" || section === "booking");
-  if (!openSection && (message.length < 1 || message.length > 500)) return json(422, { error: "Գրիր մինչև 500 նիշանոց հարց։" });
+  const openSection =
+    record["action"] === "open-section" &&
+    (section === "upcoming" ||
+      section === "directions" ||
+      section === "tour" ||
+      section === "booking");
+  if (!openSection && (message.length < 1 || message.length > 500))
+    return json(422, { error: "Գրիր մինչև 500 նիշանոց հարց։" });
   try {
-    if (!openSection && process.env.VERCEL_ENV !== "production" && message.toLocaleLowerCase("hy").includes("թեստային ամրագրում")) {
+    if (
+      !openSection &&
+      process.env["VERCEL_ENV"] !== "production" &&
+      message.toLocaleLowerCase("hy").includes("թեստային ամրագրում")
+    ) {
       const fixture = previewFixtureOffer();
       return json(200, { reply: fixture.reply, booking: fixture.booking });
     }
@@ -223,7 +282,9 @@ async function handlePost({ request }: { request: Request }) {
       shownTourIds: readShown(record["shownTourIds"]),
       registered: readRegistered(record["registered"]),
       requestId: request.headers.get("x-vercel-id") ?? request.headers.get("x-request-id"),
-      skipModel: process.env.VERCEL_ENV !== "production" && request.headers.get("x-chat-intent") === "skip",
+      skipModel:
+        process.env["VERCEL_ENV"] !== "production" &&
+        request.headers.get("x-chat-intent") === "skip",
     });
     const delivery = interestDeliveryPlan();
     const channel = interestOfferEnabled() ? delivery.mode : "off";

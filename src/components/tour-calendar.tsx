@@ -1,5 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { TourCover } from "@/components/tour-cover";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatAssignedDepartureDate } from "@/lib/calendar-date";
@@ -112,14 +113,15 @@ export function TourCalendar() {
                 const title = tourTitle(tour, lang);
                 const soldOut = row.availableSeats <= 0;
                 return (
-                  <article key={row.id} className="flex flex-col overflow-hidden rounded-3xl border border-border bg-card shadow-card">
-                    <img
+                  <article
+                    key={row.id}
+                    className="flex flex-col overflow-hidden rounded-3xl border border-border bg-card shadow-card"
+                  >
+                    <TourCover
                       src={tour.image_url}
                       alt={title}
-                      loading="lazy"
-                      width={1024}
-                      height={768}
-                      className="h-48 w-full object-cover sm:h-52"
+                      position={tour.coverPosition}
+                      variant="card"
                     />
                     <div className="flex flex-1 flex-col gap-3 p-4">
                       <h3 className="text-base font-bold leading-snug">{title}</h3>
@@ -134,7 +136,9 @@ export function TourCalendar() {
                       <Button
                         className="mt-auto rounded-full font-semibold"
                         disabled={soldOut}
-                        onClick={() => navigate({ to: "/tours/$id", params: { id: tour.id }, hash: "book" })}
+                        onClick={() =>
+                          navigate({ to: "/tours/$id", params: { id: tour.id }, hash: "book" })
+                        }
                       >
                         Ամրագրել
                       </Button>
@@ -154,14 +158,15 @@ export function TourCalendar() {
               {published.map((tour) => {
                 const title = tourTitle(tour, lang);
                 return (
-                  <article key={tour.id} className="flex flex-col overflow-hidden rounded-3xl border border-border bg-card shadow-card">
-                    <img
+                  <article
+                    key={tour.id}
+                    className="flex flex-col overflow-hidden rounded-3xl border border-border bg-card shadow-card"
+                  >
+                    <TourCover
                       src={tour.image_url}
                       alt={title}
-                      loading="lazy"
-                      width={1024}
-                      height={768}
-                      className="h-48 w-full object-cover sm:h-52"
+                      position={tour.coverPosition}
+                      variant="card"
                     />
                     <div className="flex flex-1 flex-col gap-3 p-4">
                       <h3 className="text-base font-bold leading-snug">{title}</h3>

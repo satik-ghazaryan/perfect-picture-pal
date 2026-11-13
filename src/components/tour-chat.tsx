@@ -5,7 +5,13 @@ import { hy } from "date-fns/locale";
 import { MessageCircle, X } from "lucide-react";
 import { completeCheckout, type PaymentProvider } from "@/lib/payments";
 import { getTouristSnapshot } from "@/lib/admin";
-import { bookingSummary, validConfirmationToken, validGuestPhone, type ChatBookingOffer, type ChatDepartureChoice } from "@/lib/tour-chat-booking";
+import {
+  bookingSummary,
+  validConfirmationToken,
+  validGuestPhone,
+  type ChatBookingOffer,
+  type ChatDepartureChoice,
+} from "@/lib/tour-chat-booking";
 import type { InterestOffer } from "@/lib/tour-interest";
 import { directionKey, sameInterest } from "@/lib/tour-interest";
 
@@ -80,7 +86,9 @@ export function TourChat() {
     consent: boolean;
     note: string;
   } | null>(null);
-  const [registeredInterest, setRegisteredInterest] = useState<{ key: string; tourId: string | null }[]>([]);
+  const [registeredInterest, setRegisteredInterest] = useState<
+    { key: string; tourId: string | null }[]
+  >([]);
   const [bookingDraft, setBookingDraft] = useState<BookingDraft | null>(null);
   const [keyboard, setKeyboard] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
@@ -110,10 +118,13 @@ export function TourChat() {
 
   if (STAFF_PATH.test(pathname)) return null;
 
-  async function send(text?: string, command?: { section: "upcoming" | "directions" | "tour" | "booking"; tourId?: string }) {
+  async function send(
+    text?: string,
+    command?: { section: "upcoming" | "directions" | "tour" | "booking"; tourId?: string },
+  ) {
     const message = (text ?? input).trim();
     if ((!message && !command) || pending) return;
-    const history = [{ role: "assistant" as const, text: intro }, ...messages].slice(-12);
+    const history = [{ role: "assistant" as const, text: intro }, ...messages].slice(-16);
     const nextTourId = command?.tourId || selectedTourId;
     if (command?.tourId) setSelectedTourId(command.tourId);
     setInput("");
@@ -149,12 +160,18 @@ export function TourChat() {
       setMessages((current) => [...current, { role: "assistant", text: reply }]);
       const booking = payload.booking ?? null;
       setOffer(booking);
-      if (booking?.mode === "departures" && booking.departures.length === 1 && booking.departures[0]) {
+      if (
+        booking?.mode === "departures" &&
+        booking.departures.length === 1 &&
+        booking.departures[0]
+      ) {
         openDeparture(booking, booking.departures[0]);
       }
       setChoices(payload.choices ?? null);
       if (payload.selectedTourId) setSelectedTourId(payload.selectedTourId);
-      setNotifyMode(payload.notify === "live" || payload.notify === "mock" ? payload.notify : "off");
+      setNotifyMode(
+        payload.notify === "live" || payload.notify === "mock" ? payload.notify : "off",
+      );
       if (!interestForm) setInterest(payload.interest ?? null);
     } catch {
       setMessages((current) => [
@@ -172,7 +189,10 @@ export function TourChat() {
   async function registerInterest() {
     if (!interestForm || saving.current) return;
     if (!interestForm.consent) {
-      setInterestForm({ ...interestForm, note: "Նշիր, որ համաձայն ես ծանուցում ստանալ այս ուղղության մասին։" });
+      setInterestForm({
+        ...interestForm,
+        note: "Նշիր, որ համաձայն ես ծանուցում ստանալ այս ուղղության մասին։",
+      });
       return;
     }
     if (interestForm.label.trim().length < 2) {
@@ -197,9 +217,16 @@ export function TourChat() {
           consent: true,
         }),
       });
-      const payload = (await response.json()) as { ok?: boolean; repeated?: boolean; message?: string };
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        repeated?: boolean;
+        message?: string;
+      };
       if (!payload.ok) {
-        setInterestForm({ ...interestForm, note: payload.message || "Հետաքրքրությունը չգրանցվեց։" });
+        setInterestForm({
+          ...interestForm,
+          note: payload.message || "Հետաքրքրությունը չգրանցվեց։",
+        });
         return;
       }
       const label = interestForm.label.trim();
@@ -210,7 +237,9 @@ export function TourChat() {
         ...current,
         {
           role: "assistant",
-          text: payload.repeated ? "Հետաքրքրությունն արդեն գրանցված է" : "Հետաքրքրությունդ գրանցված է",
+          text: payload.repeated
+            ? "Հետաքրքրությունն արդեն գրանցված է"
+            : "Հետաքրքրությունդ գրանցված է",
         },
       ]);
     } catch {
@@ -248,7 +277,8 @@ export function TourChat() {
 
   async function confirmBooking() {
     if (!bookingDraft || saving.current) return;
-    if (!validConfirmationToken(bookingDraft.key) || !validConfirmationToken(bookingDraft.proof)) return;
+    if (!validConfirmationToken(bookingDraft.key) || !validConfirmationToken(bookingDraft.proof))
+      return;
     const party = bookingDraft.adults + bookingDraft.children;
     const price = bookingDraft.offer.price ?? 0;
     if (price > 0 && !bookingDraft.provider) {
@@ -280,7 +310,13 @@ export function TourChat() {
           }),
         });
         const payload = (await response.json()) as {
-          check?: { ok: boolean; code?: string; message?: string; ticketCode?: string; fresh?: { price: number; seats: number; date: string; cashbackPercent: number } };
+          check?: {
+            ok: boolean;
+            code?: string;
+            message?: string;
+            ticketCode?: string;
+            fresh?: { price: number; seats: number; date: string; cashbackPercent: number };
+          };
         };
         const check = payload.check;
         if (!check?.ok) {
@@ -289,10 +325,19 @@ export function TourChat() {
             ...bookingDraft,
             note: check?.message || "Ամրագրումը չհաստատվեց։",
             offer: fresh
-              ? { ...bookingDraft.offer, price: fresh.price > 0 ? fresh.price : null, cashbackPercent: fresh.cashbackPercent }
+              ? {
+                  ...bookingDraft.offer,
+                  price: fresh.price > 0 ? fresh.price : null,
+                  cashbackPercent: fresh.cashbackPercent,
+                }
               : bookingDraft.offer,
             departure: fresh
-              ? { ...bookingDraft.departure, date: fresh.date, label: freshLabel(fresh.date), seats: fresh.seats }
+              ? {
+                  ...bookingDraft.departure,
+                  date: fresh.date,
+                  label: freshLabel(fresh.date),
+                  seats: fresh.seats,
+                }
               : bookingDraft.departure,
           });
           return;
@@ -324,7 +369,18 @@ export function TourChat() {
         }),
       });
       const checked = (await checkResponse.json()) as {
-        check?: { ok: boolean; code?: string; message?: string; fresh?: { price: number; seats: number; date: string; cashbackPercent: number; total: number | null } };
+        check?: {
+          ok: boolean;
+          code?: string;
+          message?: string;
+          fresh?: {
+            price: number;
+            seats: number;
+            date: string;
+            cashbackPercent: number;
+            total: number | null;
+          };
+        };
         message?: string;
       };
       if (!checked.check?.ok) {
@@ -333,10 +389,19 @@ export function TourChat() {
           ...bookingDraft,
           note: checked.check?.message || checked.message || "Ամրագրումը չհաստատվեց։",
           offer: fresh
-            ? { ...bookingDraft.offer, price: fresh.price > 0 ? fresh.price : null, cashbackPercent: fresh.cashbackPercent }
+            ? {
+                ...bookingDraft.offer,
+                price: fresh.price > 0 ? fresh.price : null,
+                cashbackPercent: fresh.cashbackPercent,
+              }
             : bookingDraft.offer,
           departure: fresh
-            ? { ...bookingDraft.departure, date: fresh.date, label: freshLabel(fresh.date), seats: fresh.seats }
+            ? {
+                ...bookingDraft.departure,
+                date: fresh.date,
+                label: freshLabel(fresh.date),
+                seats: fresh.seats,
+              }
             : bookingDraft.departure,
         });
         return;
@@ -368,7 +433,11 @@ export function TourChat() {
           setBookingDraft({
             ...bookingDraft,
             note: "Գինը կամ տեղերը փոխվել են։ Ստուգիր նոր ամփոփումը և հաստատիր նորից։",
-            offer: { ...bookingDraft.offer, price: result.stale.price > 0 ? result.stale.price : null, cashbackPercent: result.stale.cashbackPercent },
+            offer: {
+              ...bookingDraft.offer,
+              price: result.stale.price > 0 ? result.stale.price : null,
+              cashbackPercent: result.stale.cashbackPercent,
+            },
             departure: {
               ...bookingDraft.departure,
               date: result.stale.departureDate,
@@ -391,7 +460,10 @@ export function TourChat() {
         },
       ]);
     } catch {
-      setBookingDraft({ ...bookingDraft, note: "Ամրագրումը չպահպանվեց։ Կրկին սեղմելը նույն ամրագրումն է, նորը չի բացվի։" });
+      setBookingDraft({
+        ...bookingDraft,
+        note: "Ամրագրումը չպահպանվեց։ Կրկին սեղմելը նույն ամրագրումն է, նորը չի բացվի։",
+      });
     } finally {
       saving.current = false;
       setPending(false);
@@ -403,7 +475,8 @@ export function TourChat() {
     return Number.isNaN(parsed.getTime()) ? date : format(parsed, "d MMMM yyyy", { locale: hy });
   }
 
-  const panelHeight = viewportHeight > 0 ? Math.min(512, Math.max(240, viewportHeight - 88)) : undefined;
+  const panelHeight =
+    viewportHeight > 0 ? Math.min(512, Math.max(240, viewportHeight - 88)) : undefined;
   return (
     <div
       className="fixed inset-x-2 z-40 flex w-auto max-w-full flex-col items-stretch gap-2 sm:inset-x-auto sm:right-4 sm:w-[22rem] sm:items-end"
@@ -451,7 +524,11 @@ export function TourChat() {
               </div>
             )}
             {messages.map((item, index) => (
-              <ChatText key={`${item.role}-${index}`} text={item.text} mine={item.role === "user"} />
+              <ChatText
+                key={`${item.role}-${index}`}
+                text={item.text}
+                mine={item.role === "user"}
+              />
             ))}
             {choices && choices.length > 0 && !bookingDraft && (
               <div className="flex flex-col gap-2">
@@ -481,24 +558,31 @@ export function TourChat() {
                 ))}
               </div>
             )}
-            {offer && !bookingDraft && offer.mode === "departures" && offer.departures.length > 0 && (
-              <div className="flex flex-col gap-2">
-                {offer.departures.map((departure) => (
-                  <button
-                    key={departure.id}
-                    type="button"
-                    className="min-h-11 rounded-2xl border border-border px-3 text-left text-sm"
-                    onClick={() => startDeparture(departure)}
-                  >
-                    {departure.label}
-                    {departure.time ? `, ${departure.time}` : ""} · {departure.seats} ազատ
-                  </button>
-                ))}
-              </div>
-            )}
-            {interest && !interestForm && !bookingDraft && (
-              sameInterest(registeredInterest, interest) ? (
-                <p className="rounded-2xl bg-muted px-3 py-2 text-sm">Հետաքրքրությունն արդեն գրանցված է</p>
+            {offer &&
+              !bookingDraft &&
+              offer.mode === "departures" &&
+              offer.departures.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  {offer.departures.map((departure) => (
+                    <button
+                      key={departure.id}
+                      type="button"
+                      className="min-h-11 rounded-2xl border border-border px-3 text-left text-sm"
+                      onClick={() => startDeparture(departure)}
+                    >
+                      {departure.label}
+                      {departure.time ? `, ${departure.time}` : ""} · {departure.seats} ազատ
+                    </button>
+                  ))}
+                </div>
+              )}
+            {interest &&
+              !interestForm &&
+              !bookingDraft &&
+              (sameInterest(registeredInterest, interest) ? (
+                <p className="rounded-2xl bg-muted px-3 py-2 text-sm">
+                  Հետաքրքրությունն արդեն գրանցված է
+                </p>
               ) : (
                 <button
                   type="button"
@@ -515,8 +599,7 @@ export function TourChat() {
                 >
                   Գրանցել հետաքրքրություն
                 </button>
-              )
-            )}
+              ))}
             {interestForm && (
               <div className="space-y-2 rounded-2xl bg-muted p-3">
                 <label className="block text-xs" htmlFor="chat-interest-direction">
@@ -528,7 +611,8 @@ export function TourChat() {
                       setInterestForm({
                         ...interestForm,
                         label: event.target.value,
-                        tourId: event.target.value.trim() === interest?.label ? interest.tourId : null,
+                        tourId:
+                          event.target.value.trim() === interest?.label ? interest.tourId : null,
                         note: "",
                       })
                     }
@@ -542,25 +626,39 @@ export function TourChat() {
                     value={interestForm.phone}
                     autoComplete="tel"
                     inputMode="tel"
-                    onChange={(event) => setInterestForm({ ...interestForm, phone: event.target.value, note: "" })}
+                    onChange={(event) =>
+                      setInterestForm({ ...interestForm, phone: event.target.value, note: "" })
+                    }
                     className="mt-1 min-h-11 w-full rounded-xl border border-input bg-background px-3 text-base"
                   />
                 </label>
                 {notifyMode !== "live" && (
-                  <p className="text-sm">Կարող ես գրանցել հետաքրքրությունդ։ Ավտոմատ ծանուցում այս պահին չի ուղարկվում։</p>
+                  <p className="text-sm">
+                    Կարող ես գրանցել հետաքրքրությունդ։ Ավտոմատ ծանուցում այս պահին չի ուղարկվում։
+                  </p>
                 )}
-                <label className="flex min-h-11 items-start gap-2 text-sm" htmlFor="chat-interest-consent">
+                <label
+                  className="flex min-h-11 items-start gap-2 text-sm"
+                  htmlFor="chat-interest-consent"
+                >
                   <input
                     id="chat-interest-consent"
                     type="checkbox"
                     checked={interestForm.consent}
-                    onChange={(event) => setInterestForm({ ...interestForm, consent: event.target.checked, note: "" })}
+                    onChange={(event) =>
+                      setInterestForm({ ...interestForm, consent: event.target.checked, note: "" })
+                    }
                     className="mt-1 h-5 w-5"
                   />
                   Համաձայն եմ այս ուղղության մասին ծանուցում ստանալ
                 </label>
-                {interestForm.note && <p className="text-sm text-destructive">{interestForm.note}</p>}
-                <div data-chat-actions="" className="sticky bottom-0 flex flex-col gap-2 bg-muted pt-1">
+                {interestForm.note && (
+                  <p className="text-sm text-destructive">{interestForm.note}</p>
+                )}
+                <div
+                  data-chat-actions=""
+                  className="sticky bottom-0 flex flex-col gap-2 bg-muted pt-1"
+                >
                   <button
                     type="button"
                     disabled={pending || !interestForm.consent}
@@ -569,7 +667,11 @@ export function TourChat() {
                   >
                     Գրանցել հետաքրքրություն
                   </button>
-                  <button type="button" className="min-h-11 w-full rounded-full px-3 text-sm" onClick={() => setInterestForm(null)}>
+                  <button
+                    type="button"
+                    className="min-h-11 w-full rounded-full px-3 text-sm"
+                    onClick={() => setInterestForm(null)}
+                  >
                     Չեղարկել
                   </button>
                 </div>
@@ -584,7 +686,9 @@ export function TourChat() {
                     id="chat-booking-name"
                     value={bookingDraft.name}
                     autoComplete="name"
-                    onChange={(event) => setBookingDraft({ ...bookingDraft, name: event.target.value, note: "" })}
+                    onChange={(event) =>
+                      setBookingDraft({ ...bookingDraft, name: event.target.value, note: "" })
+                    }
                     className="mt-1 min-h-11 w-full rounded-xl border border-input bg-background px-3 text-base"
                   />
                 </label>
@@ -595,7 +699,9 @@ export function TourChat() {
                     value={bookingDraft.phone}
                     autoComplete="tel"
                     inputMode="tel"
-                    onChange={(event) => setBookingDraft({ ...bookingDraft, phone: event.target.value, note: "" })}
+                    onChange={(event) =>
+                      setBookingDraft({ ...bookingDraft, phone: event.target.value, note: "" })
+                    }
                     className="mt-1 min-h-11 w-full rounded-xl border border-input bg-background px-3 text-base"
                   />
                 </label>
@@ -608,7 +714,13 @@ export function TourChat() {
                       min={1}
                       max={30}
                       value={bookingDraft.adults}
-                      onChange={(event) => setBookingDraft({ ...bookingDraft, adults: Number(event.target.value), note: "" })}
+                      onChange={(event) =>
+                        setBookingDraft({
+                          ...bookingDraft,
+                          adults: Number(event.target.value),
+                          note: "",
+                        })
+                      }
                       className="mt-1 min-h-11 w-full rounded-xl border border-input bg-background px-3 text-base"
                     />
                   </label>
@@ -620,7 +732,13 @@ export function TourChat() {
                       min={0}
                       max={30}
                       value={bookingDraft.children}
-                      onChange={(event) => setBookingDraft({ ...bookingDraft, children: Number(event.target.value), note: "" })}
+                      onChange={(event) =>
+                        setBookingDraft({
+                          ...bookingDraft,
+                          children: Number(event.target.value),
+                          note: "",
+                        })
+                      }
                       className="mt-1 min-h-11 w-full rounded-xl border border-input bg-background px-3 text-base"
                     />
                   </label>
@@ -646,8 +764,13 @@ export function TourChat() {
                     <p className="text-xs text-muted-foreground">Վճարումը սիմուլացված է։</p>
                   </div>
                 )}
-                {bookingDraft.note && <p className="text-sm text-destructive">{bookingDraft.note}</p>}
-                <div data-chat-actions="" className="sticky bottom-0 flex flex-col gap-2 bg-muted pt-1">
+                {bookingDraft.note && (
+                  <p className="text-sm text-destructive">{bookingDraft.note}</p>
+                )}
+                <div
+                  data-chat-actions=""
+                  className="sticky bottom-0 flex flex-col gap-2 bg-muted pt-1"
+                >
                   <button
                     type="button"
                     className="min-h-11 w-full whitespace-normal rounded-full bg-primary px-3 py-2 text-sm font-bold leading-5 text-primary-foreground"
@@ -658,15 +781,26 @@ export function TourChat() {
                         return;
                       }
                       if (!validGuestPhone(bookingDraft.phone)) {
-                        setBookingDraft({ ...bookingDraft, note: "Հեռախոսը պետք է ունենա 8–15 թվանշան։" });
+                        setBookingDraft({
+                          ...bookingDraft,
+                          note: "Հեռախոսը պետք է ունենա 8–15 թվանշան։",
+                        });
                         return;
                       }
-                      if (!Number.isInteger(party) || bookingDraft.adults < 1 || bookingDraft.children < 0 || party > 30) {
+                      if (
+                        !Number.isInteger(party) ||
+                        bookingDraft.adults < 1 ||
+                        bookingDraft.children < 0 ||
+                        party > 30
+                      ) {
                         setBookingDraft({ ...bookingDraft, note: "Մասնակիցների թիվը 1-ից 30 է։" });
                         return;
                       }
                       if ((bookingDraft.offer.price ?? 0) > 0 && !bookingDraft.provider) {
-                        setBookingDraft({ ...bookingDraft, note: "Ընտրիր վճարման եղանակը։ Վճարումը սիմուլացված է։" });
+                        setBookingDraft({
+                          ...bookingDraft,
+                          note: "Ընտրիր վճարման եղանակը։ Վճարումը սիմուլացված է։",
+                        });
                         return;
                       }
                       setBookingDraft({ ...bookingDraft, step: "review", note: "" });
@@ -674,7 +808,11 @@ export function TourChat() {
                   >
                     Շարունակել
                   </button>
-                  <button type="button" className="min-h-11 w-full rounded-full px-3 text-sm" onClick={() => setBookingDraft(null)}>
+                  <button
+                    type="button"
+                    className="min-h-11 w-full rounded-full px-3 text-sm"
+                    onClick={() => setBookingDraft(null)}
+                  >
                     Չեղարկել
                   </button>
                 </div>
@@ -692,8 +830,13 @@ export function TourChat() {
                     price: bookingDraft.offer.price,
                   })}
                 </p>
-                {bookingDraft.note && <p className="text-sm text-destructive">{bookingDraft.note}</p>}
-                <div data-chat-actions="" className="sticky bottom-0 flex flex-col gap-2 bg-muted pt-1">
+                {bookingDraft.note && (
+                  <p className="text-sm text-destructive">{bookingDraft.note}</p>
+                )}
+                <div
+                  data-chat-actions=""
+                  className="sticky bottom-0 flex flex-col gap-2 bg-muted pt-1"
+                >
                   <button
                     type="button"
                     disabled={pending}
@@ -709,7 +852,11 @@ export function TourChat() {
                   >
                     Խմբագրել
                   </button>
-                  <button type="button" className="min-h-11 w-full rounded-full border border-border px-3 text-sm" onClick={() => setBookingDraft(null)}>
+                  <button
+                    type="button"
+                    className="min-h-11 w-full rounded-full border border-border px-3 text-sm"
+                    onClick={() => setBookingDraft(null)}
+                  >
                     Չեղարկել
                   </button>
                 </div>

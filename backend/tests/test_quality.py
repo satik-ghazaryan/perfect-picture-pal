@@ -94,10 +94,9 @@ class QualityFixTests(unittest.TestCase):
             km_notes=notes,
             has_away_stop=True,
         )
-        self.assertIsNotNone(idea["price"])
-        self.assertGreater(idea["price"], 0)
+        self.assertIsNone(idea["price"])
         self.assertEqual(idea["breakdown"]["transport_amd"], 0)
-        self.assertIn(PRICE_NEEDS_DISTANCE, idea["verify"])
+        self.assertTrue(any(PRICE_NEEDS_DISTANCE in item for item in idea["verify"]))
 
     def test_evidence_money_strings_are_stripped(self) -> None:
         idea = apply_unit_economics(_idea_with_copy(), route_km=201.6, km_sourced=True, has_away_stop=True)
@@ -120,7 +119,9 @@ class QualityFixTests(unittest.TestCase):
         self.assertNotIn("Computed figures", blob)
         self.assertNotIn("will be filled by Python", blob)
         self.assertNotIn("Ari Gnank", updated["description_en"])
-        self.assertIn("No competitor data was found.", " ".join(updated["highlights"]))
+        # Highlights become customer copy; the competitor note belongs to the admin's verify list.
+        self.assertNotIn("competitor", " ".join(updated["highlights"]).lower())
+        self.assertIn("No competitor data was found", updated["verify"])
         self.assertIn(str(updated["price"]), updated["breakdown"]["notes"])
 
     def test_own_brand_never_competitor_even_with_offers(self) -> None:

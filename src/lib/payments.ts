@@ -1,7 +1,16 @@
 import { peekNextSeat, registerBooking } from "@/lib/guide-api";
 import { partySize, shouldDeliverTicket } from "@/lib/departure-booking";
+import { requestCarriesPaymentSecret, serverPaymentSecret } from "@/lib/payment-secret";
 import { supabase } from "@/lib/supabase";
-import { accountForPhone, activeCreditTotal, commitLoyalty, loadLoyalty, quoteCheckout, revertLoyalty, takePromoCredits } from "@/lib/loyalty";
+import {
+  accountForPhone,
+  activeCreditTotal,
+  commitLoyalty,
+  loadLoyalty,
+  quoteCheckout,
+  revertLoyalty,
+  takePromoCredits,
+} from "@/lib/loyalty";
 import {
   formatSeatNumbers,
   publishBookingNotices,
@@ -45,12 +54,12 @@ const PROVIDERS: Record<PaymentProvider, { label: string; path: string }> = {
   arca: { label: "ArCa / Visa", path: "/api/payment/arca-callback" },
 };
 
-function serverPaymentSecret() {
-  if (typeof process === "undefined" || !process.env) return "";
-  return process.env["PAYMENT_SECRET"]?.trim() || "";
-}
-
-function checksumWithSecret(secret: string, provider: PaymentProvider, billNo: string, amount: number) {
+function checksumWithSecret(
+  secret: string,
+  provider: PaymentProvider,
+  billNo: string,
+  amount: number,
+) {
   const raw = `${secret}|${provider}|${billNo}|${amount}`;
   let hash = 2166136261;
   for (let index = 0; index < raw.length; index += 1) {
@@ -64,7 +73,12 @@ export function paymentChecksum(provider: PaymentProvider, billNo: string, amoun
   return checksumWithSecret("", provider, billNo, amount);
 }
 
-function checksumAccepted(provider: PaymentProvider, billNo: string, amount: number, checksum: string) {
+function checksumAccepted(
+  provider: PaymentProvider,
+  billNo: string,
+  amount: number,
+  checksum: string,
+) {
   if (checksum === checksumWithSecret("", provider, billNo, amount)) return true;
   const secret = serverPaymentSecret();
   return Boolean(secret) && checksum === checksumWithSecret(secret, provider, billNo, amount);
@@ -91,11 +105,19 @@ function asAmount(value: unknown) {
   return Number.isFinite(amount) ? Math.round(amount) : Number.NaN;
 }
 
-function failed(provider: PaymentProvider, billNo: string, amount: number, message: string): PaymentResult {
+function failed(
+  provider: PaymentProvider,
+  billNo: string,
+  amount: number,
+  message: string,
+): PaymentResult {
   return { status: "FAILED", provider, billNo, amount, message };
 }
 
-export function interpretCallback(provider: PaymentProvider, body: Record<string, unknown>): PaymentResult {
+export function interpretCallback(
+  provider: PaymentProvider,
+  body: Record<string, unknown>,
+): PaymentResult {
   const label = providerLabel(provider);
   const billNo = String(
     field(body, "EDP_BILL_NO", "issuer_id", "invoice", "orderNumber", "orderId", "billNo") ?? "",
@@ -123,7 +145,11 @@ export function interpretCallback(provider: PaymentProvider, body: Record<string
       message: `${label} վճարումը սպասման մեջ է։`,
     };
   }
-  if (telcell === "REJECTED" || arca === "6" || String(field(body, "gatewayStatus") ?? "") === "FAILED") {
+  if (
+    telcell === "REJECTED" ||
+    arca === "6" ||
+    String(field(body, "gatewayStatus") ?? "") === "FAILED"
+  ) {
     return failed(provider, billNo, amount, `${label} վճարումը մերժվեց։`);
   }
   if (telcell === "PAID" || arca === "2" || precheck === "" || precheck === "CONFIRM") {
@@ -153,7 +179,15 @@ function readNotice(value: unknown): BookingNotice | null {
   const ticketCode = textField(notice, "ticketCode");
   const seatNumbers = textField(notice, "seatNumbers");
   const departureTime = textField(notice, "departureTime");
-  if (!phone || !customerName || !tourName || !tourId || !ticketCode || !seatNumbers || !departureTime) {
+  if (
+    !phone ||
+    !customerName ||
+    !tourName ||
+    !tourId ||
+    !ticketCode ||
+    !seatNumbers ||
+    !departureTime
+  ) {
     return null;
   }
   return { phone, customerName, tourName, tourId, ticketCode, seatNumbers, departureTime };
@@ -204,13 +238,24 @@ export async function readCallbackRequest(provider: PaymentProvider, request: Re
   return interpretCallback(provider, payload);
 }
 
-export async function respondToCallback(provider: PaymentProvider, request: Request): Promise<PaymentResult> {
+export async function respondToCallback(
+  provider: PaymentProvider,
+  request: Request,
+): Promise<PaymentResult> {
   const payload = await readPayload(provider, request);
-  if ("status" in payload && "provider" in payload && "message" in payload && !("EDP_BILL_NO" in payload)) {
+  if (
+    "status" in payload &&
+    "provider" in payload &&
+    "message" in payload &&
+    !("EDP_BILL_NO" in payload)
+  ) {
     return payload as PaymentResult;
   }
   const result = interpretCallback(provider, payload);
   if (result.status !== "SUCCESS") return result;
+  // The sandbox checksum is public, so it must never be enough to reach a real phone.
+  // Messages go out only when the caller also proves it knows PAYMENT_SECRET.
+  if (!requestCarriesPaymentSecret(request)) return result;
   const notice = readNotice(payload["notification"]);
   if (!notice) return result;
   try {
@@ -223,7 +268,12 @@ export async function respondToCallback(provider: PaymentProvider, request: Requ
   }
 }
 
-function callbackBody(provider: PaymentProvider, billNo: string, amount: number, phase: "precheck" | "confirm") {
+function callbackBody(
+  provider: PaymentProvider,
+  billNo: string,
+  amount: number,
+  phase: "precheck" | "confirm",
+) {
   const checksum = paymentChecksum(provider, billNo, amount);
   if (provider === "idram") {
     return {
@@ -381,7 +431,10 @@ export async function completeCheckout(input: {
       return {
         ok: false,
         status: "FAILED",
-        message: reason instanceof Error ? reason.message : "Միավորները չգրանցվեցին։ Ամրագրումը չի ստեղծվել։",
+        message:
+          reason instanceof Error
+            ? reason.message
+            : "Միավորները չգրանցվեցին։ Ամրագրումը չի ստեղծվել։",
       };
     }
     undo = () =>
@@ -474,7 +527,8 @@ export async function completeCheckout(input: {
     try {
       if (confirmed.notification) {
         publishBookingNotices(input.phone, details, confirmed.notification);
-        notified = confirmed.notification.sms !== "failed" || confirmed.notification.whatsapp !== "failed";
+        notified =
+          confirmed.notification.sms !== "failed" || confirmed.notification.whatsapp !== "failed";
       } else {
         const sms = await sendBookingSMS(input.phone, details);
         const whatsapp = await sendBookingWhatsApp(input.phone, details);
@@ -523,7 +577,13 @@ async function confirmDepartureBooking(input: {
   idempotencyKey?: string;
   guestProof?: string;
 }): Promise<CheckoutSuccess | CheckoutFailure> {
-  if (!supabase || !input.departureId || !input.idempotencyKey || !input.guestProof || !input.expectedDate) {
+  if (
+    !supabase ||
+    !input.departureId ||
+    !input.idempotencyKey ||
+    !input.guestProof ||
+    !input.expectedDate
+  ) {
     return { ok: false, status: "FAILED", message: "Մեկնումը ընտրված չէ։" };
   }
   const seats = partySize(input.adults, input.children);
@@ -546,9 +606,16 @@ async function confirmDepartureBooking(input: {
     if (!provider) return { ok: false, status: "FAILED", message: "Ընտրեք վճարման եղանակը։" };
     try {
       const pending = await postCallback(provider, input.idempotencyKey, quote.payable, "precheck");
-      if (pending.status === "FAILED") return { ok: false, status: "FAILED", message: pending.message };
-      const confirmed = await postCallback(provider, input.idempotencyKey, quote.payable, "confirm");
-      if (confirmed.status !== "SUCCESS") return { ok: false, status: confirmed.status, message: confirmed.message };
+      if (pending.status === "FAILED")
+        return { ok: false, status: "FAILED", message: pending.message };
+      const confirmed = await postCallback(
+        provider,
+        input.idempotencyKey,
+        quote.payable,
+        "confirm",
+      );
+      if (confirmed.status !== "SUCCESS")
+        return { ok: false, status: confirmed.status, message: confirmed.message };
     } catch (reason) {
       return {
         ok: false,
@@ -576,7 +643,12 @@ async function confirmDepartureBooking(input: {
   });
   if (error || !data) return { ok: false, status: "FAILED", message: "Ամրագրումը չպահպանվեց։" };
   if (!data.ok) {
-    if (data.code === "stale" && data.departure_date && data.price !== undefined && data.available_seats !== undefined) {
+    if (
+      data.code === "stale" &&
+      data.departure_date &&
+      data.price !== undefined &&
+      data.available_seats !== undefined
+    ) {
       return {
         ok: false,
         status: "FAILED",
@@ -624,7 +696,7 @@ async function confirmDepartureBooking(input: {
     payable,
     redeemed: data.redeemed ?? 0,
     creditApplied: 0,
-    earned: data.repeated ? 0 : data.earned ?? 0,
+    earned: data.repeated ? 0 : (data.earned ?? 0),
     points: data.points ?? 0,
     pointsSaved: (data.redeemed ?? 0) > 0 || (!data.repeated && (data.earned ?? 0) > 0),
     notified,

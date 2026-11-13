@@ -1,7 +1,12 @@
 import { format, parseISO } from "date-fns";
 import { hy } from "date-fns/locale";
 import { departureBookingClosed } from "./departure-deadline.ts";
-import { bookingOffer, wantsBooking, partyFromMessage, type ChatBookingOffer } from "./tour-chat-booking.ts";
+import {
+  bookingOffer,
+  wantsBooking,
+  partyFromMessage,
+  type ChatBookingOffer,
+} from "./tour-chat-booking.ts";
 import { directionKey, type InterestOffer } from "./tour-interest.ts";
 
 export type PublicDepartureFact = {
@@ -75,12 +80,14 @@ function normalize(text: string) {
 }
 
 function finitePrice(value: unknown) {
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > 1_000_000) return null;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > 1_000_000)
+    return null;
   return value;
 }
 
 function finiteSeats(value: unknown) {
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > 500) return null;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > 500)
+    return null;
   return value;
 }
 
@@ -122,10 +129,14 @@ export function publicFactsFromRows(tourRows: unknown, departureRows: unknown): 
     const id = typeof record["id"] === "string" ? record["id"] : "";
     const title = typeof record["title_hy"] === "string" ? record["title_hy"].trim() : "";
     if (!TOUR_ID.test(id) || !title) continue;
-    const place = typeof record["departure_place"] === "string" ? record["departure_place"].trim() : "";
-    const locationHy = typeof record["location_hy"] === "string" ? record["location_hy"].trim() : "";
+    const place =
+      typeof record["departure_place"] === "string" ? record["departure_place"].trim() : "";
+    const locationHy =
+      typeof record["location_hy"] === "string" ? record["location_hy"].trim() : "";
     const region = typeof record["region"] === "string" ? record["region"].trim() : "";
-    const location = [locationHy, region].filter((item, index, all) => item && all.indexOf(item) === index).join(" ");
+    const location = [locationHy, region]
+      .filter((item, index, all) => item && all.indexOf(item) === index)
+      .join(" ");
     tours.push({
       id,
       title,
@@ -144,9 +155,7 @@ export function publicFactsFromRows(tourRows: unknown, departureRows: unknown): 
   return { ok: true, tours: tours.filter((tour) => !tour.isVirtual) };
 }
 
-const TITLE_STOP = new Set([
-  "արմավիր", "արմավիրից", "տուր", "տուրը", "մեկօրյա", "աշնանային",
-]);
+const TITLE_STOP = new Set(["արմավիր", "արմավիրից", "տուր", "տուրը", "մեկօրյա", "աշնանային"]);
 
 function stem(word: string) {
   const bare = word.replace(/(ներից|ների|ներ|ից|ում|ով|ին|ը|ի|ն)$/u, "");
@@ -168,7 +177,17 @@ function aliases(tour: PublicTourFact) {
   return [...names];
 }
 
-const MARZ_NAMES = new Set(["սյունիք", "կոտայք", "գեղարքունիք", "տավուշ", "լոռի", "շիրակ", "արագածոտն", "արարատ", "վայոց ձոր"]);
+const MARZ_NAMES = new Set([
+  "սյունիք",
+  "կոտայք",
+  "գեղարքունիք",
+  "տավուշ",
+  "լոռի",
+  "շիրակ",
+  "արագածոտն",
+  "արարատ",
+  "վայոց ձոր",
+]);
 
 const PLACE_MARZ: Record<string, string> = {
   տաթև: "սյունիք",
@@ -231,7 +250,9 @@ function mentioned(text: string, tours: PublicTourFact[]) {
   });
   if (exact.length > 0) return exact;
   const phrases = tours.filter((tour) =>
-    aliases(tour).some((name) => name.includes(" ") && name.length >= 8 && normalized.includes(name)),
+    aliases(tour).some(
+      (name) => name.includes(" ") && name.length >= 8 && normalized.includes(name),
+    ),
   );
   if (phrases.length > 0) return phrases;
   const stems = normalized.split(" ").map(stem);
@@ -239,7 +260,10 @@ function mentioned(text: string, tours: PublicTourFact[]) {
     aliases(tour).some((name) => {
       if (name.includes(" ")) return false;
       const key = stem(name);
-      return key.length >= 4 && (normalized.includes(name) || stems.some((word) => word === key || word.startsWith(key)));
+      return (
+        key.length >= 4 &&
+        (normalized.includes(name) || stems.some((word) => word === key || word.startsWith(key)))
+      );
     }),
   );
 }
@@ -337,7 +361,8 @@ function readDeparture(tour: PublicTourFact, now: Date): DepartureRead {
     .sort((left, right) => left.date.localeCompare(right.date));
   if (rows.length === 0) return { kind: "none" };
   const open = rows.find((row) => row.seats !== null && row.seats > 0);
-  if (open && open.seats !== null) return { kind: "open", date: open.date, time: tour.departureTime, seats: open.seats };
+  if (open && open.seats !== null)
+    return { kind: "open", date: open.date, time: tour.departureTime, seats: open.seats };
   if (rows.some((row) => row.seats === null)) return { kind: "unread" };
   const sold = rows[0];
   return sold ? { kind: "soldout", date: sold.date, time: tour.departureTime } : { kind: "none" };
@@ -359,7 +384,8 @@ function seatSentence(tour: PublicTourFact, now: Date, party: number | null) {
   if (next.kind === "none") return closedLine(tour);
   if (next.kind === "unread") return "Մեկնման տվյալները չեն բեռնվել։";
   if (next.kind === "soldout") return soldOutLine(tour, next.date);
-  if (party !== null && next.seats >= party) return `Այո, ${party} տեղ կա։ Ազատ տեղերը՝ ${next.seats}։`;
+  if (party !== null && next.seats >= party)
+    return `Այո, ${party} տեղ կա։ Ազատ տեղերը՝ ${next.seats}։`;
   if (party !== null) return `Ոչ, ${party} տեղ չկա։ Ազատ տեղերը՝ ${next.seats}։`;
   return `Ազատ տեղերը՝ ${next.seats}։`;
 }
@@ -394,23 +420,40 @@ function routeSentence(tour: PublicTourFact) {
   return `Երթուղին՝ ${stops.join(", ")}։`;
 }
 
-const MONTHS = ["հունվարի", "փետրվարի", "մարտի", "ապրիլի", "մայիսի", "հունիսի", "հուլիսի", "օգոստոսի", "սեպտեմբերի", "հոկտեմբերի", "նոյեմբերի", "դեկտեմբերի"];
+const MONTHS = [
+  "հունվարի",
+  "փետրվարի",
+  "մարտի",
+  "ապրիլի",
+  "մայիսի",
+  "հունիսի",
+  "հուլիսի",
+  "օգոստոսի",
+  "սեպտեմբերի",
+  "հոկտեմբերի",
+  "նոյեմբերի",
+  "դեկտեմբերի",
+];
 
 const GENITIVE: Record<string, string> = {
-  "լոռի": "Լոռու",
-  "գյումրի": "Գյումրիի",
-  "ամբերդ": "Ամբերդի",
-  "գառնի": "Գառնիի",
-  "տաթև": "Տաթևի",
-  "տաթեւ": "Տաթևի",
-  "սևան": "Սևանի",
-  "սեւան": "Սևանի",
-  "դիլիջան": "Դիլիջանի",
+  լոռի: "Լոռու",
+  գյումրի: "Գյումրիի",
+  ամբերդ: "Ամբերդի",
+  գառնի: "Գառնիի",
+  տաթև: "Տաթևի",
+  տաթեւ: "Տաթևի",
+  սևան: "Սևանի",
+  սեւան: "Սևանի",
+  դիլիջան: "Դիլիջանի",
 };
 
 function shortName(tour: PublicTourFact) {
   const label = choiceLabel(tour);
-  const simple = !label.includes("՝") && !normalize(label).includes("արմավիր") && !label.includes(" և ") && label.split(/\s+/).length <= 2;
+  const simple =
+    !label.includes("՝") &&
+    !normalize(label).includes("արմավիր") &&
+    !label.includes(" և ") &&
+    label.split(/\s+/).length <= 2;
   if (simple) return label;
   const armenian = aliases(tour).filter((name) => /^[\u0531-\u0587]+$/u.test(name));
   const picked = armenian.find((name) => normalize(tour.title).includes(name)) ?? armenian[0];
@@ -455,8 +498,13 @@ function soldOutLine(tour: PublicTourFact, date: string) {
 
 function choiceLabel(tour: PublicTourFact) {
   const title = normalize(tour.title);
-  if (tour.id === "dilijan-autumn" || (title.includes("աշնանային") && title.includes("դիլիջան"))) return "Աշնանային Դիլիջան";
-  if ((title.includes("սևան") || title.includes("սեւան")) && title.includes("դիլիջան") && title.includes("հաղարծին")) {
+  if (tour.id === "dilijan-autumn" || (title.includes("աշնանային") && title.includes("դիլիջան")))
+    return "Աշնանային Դիլիջան";
+  if (
+    (title.includes("սևան") || title.includes("սեւան")) &&
+    title.includes("դիլիջան") &&
+    title.includes("հաղարծին")
+  ) {
     return "Սևան, Դիլիջան և Հաղարծին";
   }
   return tour.title;
@@ -483,15 +531,22 @@ function includedSentence(tour: PublicTourFact) {
   const includedItems = tour.included.filter((item) => !isContactItem(item));
   const excludedItems = tour.excluded.filter((item) => !isContactItem(item));
   if (includedItems.length === 0 && excludedItems.length === 0) return "Ներառվածը դեռ նշված չէ։";
-  const included = includedItems.length > 0
-    ? `ներառված է՝ ${includedItems.join(", ")}`
-    : "ներառված ծառայությունները դեռ նշված չեն";
+  const included =
+    includedItems.length > 0
+      ? `ներառված է՝ ${includedItems.join(", ")}`
+      : "ներառված ծառայությունները դեռ նշված չեն";
   const extra = excludedItems.length > 0 ? ` Առանձին է վճարվում՝ ${excludedItems.join(", ")}։` : "";
   return `«${tour.title}» տուրում ${included}։${extra}`;
 }
 
 function summary(tour: PublicTourFact, now: Date) {
-  return [vividSentence(tour), routeSentence(tour), priceSentence(tour), departureSentence(tour, now), pageLink(tour)]
+  return [
+    vividSentence(tour),
+    routeSentence(tour),
+    priceSentence(tour),
+    departureSentence(tour, now),
+    pageLink(tour),
+  ]
     .filter((line): line is string => Boolean(line))
     .join("\n");
 }
@@ -500,7 +555,14 @@ function fullProgram(tour: PublicTourFact, now: Date) {
   const food = tour.highlights.some((item) => isFoodStop(item))
     ? "Ֆուդ կորտը սնվելու և հանգստանալու կանգառ է։"
     : null;
-  return [routeSentence(tour), food, priceSentence(tour), includedSentence(tour), departureSentence(tour, now), pageLink(tour)]
+  return [
+    routeSentence(tour),
+    food,
+    priceSentence(tour),
+    includedSentence(tour),
+    departureSentence(tour, now),
+    pageLink(tour),
+  ]
     .filter((line): line is string => Boolean(line))
     .join("\n");
 }
@@ -512,7 +574,9 @@ function upcomingReply(tours: PublicTourFact[], now: Date) {
     const rows = tour.departures
       .filter((row) => stillAhead(tour, row.date, now))
       .slice()
-      .sort((left, right) => left.date.localeCompare(right.date) || left.id.localeCompare(right.id));
+      .sort(
+        (left, right) => left.date.localeCompare(right.date) || left.id.localeCompare(right.id),
+      );
     for (const row of rows) {
       const label = dateLabel(row.date);
       if (!label || row.seats === null) {
@@ -530,12 +594,17 @@ function upcomingReply(tours: PublicTourFact[], now: Date) {
       });
     }
   }
-  lines.sort((left, right) => Number(left.sold) - Number(right.sold) || left.date.localeCompare(right.date));
+  lines.sort(
+    (left, right) => Number(left.sold) - Number(right.sold) || left.date.localeCompare(right.date),
+  );
   if (lines.length === 0 && unread) return "Մեկնման տվյալները չեն բեռնվել։";
   if (lines.length === 0) return "Առաջիկա մեկնում դեռ չկա։";
   if (lines.every((line) => line.sold)) {
-    if (lines.length === 1) return lines[0]?.text ?? "Բոլոր հրապարակված մեկնումների տեղերը զբաղված են։";
-    const names = lines.map((line) => line.text.replace(/ տուրի բոլոր տեղերը զբաղված են։$/, "։")).join(" ");
+    if (lines.length === 1)
+      return lines[0]?.text ?? "Բոլոր հրապարակված մեկնումների տեղերը զբաղված են։";
+    const names = lines
+      .map((line) => line.text.replace(/ տուրի բոլոր տեղերը զբաղված են։$/, "։"))
+      .join(" ");
     return `Բոլոր հրապարակված մեկնումների տեղերը զբաղված են։ ${names}`;
   }
   return lines.map((line) => line.text).join(" ");
@@ -630,7 +699,9 @@ function asksNotice(text: string) {
 }
 
 function isOnlyGreeting(text: string) {
-  return /^(բարև|բարեւ|ողջույն|hello|hi|բարի լույս|բարի օր|բարի երեկո)( քեզ| ձեզ)?$/.test(normalize(text));
+  return /^(բարև|բարեւ|ողջույն|hello|hi|բարի լույս|բարի օր|բարի երեկո)( քեզ| ձեզ)?$/.test(
+    normalize(text),
+  );
 }
 
 function continuesOffer(text: string) {
@@ -653,11 +724,20 @@ function latestShownTours(history: ChatTurn[] | undefined, tours: PublicTourFact
     const turn = turns[index];
     if (!turn || turn.role !== "assistant") continue;
     const text = normalize(turn.text);
-    if (text.includes("որ տուրի գինն") || text.includes("հետաքրքրությունդ գրանցված") || text.includes("արդեն գրանցված") || text.includes("ընտրիր")) continue;
+    if (
+      text.includes("որ տուրի գինն") ||
+      text.includes("հետաքրքրությունդ գրանցված") ||
+      text.includes("արդեն գրանցված") ||
+      text.includes("ընտրիր")
+    )
+      continue;
     const found = uniqueTours(mentioned(turn.text, tours));
     if (found.length === 0) continue;
     const previous = turns[index - 1];
-    if (previous?.role === "user" && /^(առաջիկա տուրեր|մեր ուղղությունները)$/.test(normalize(previous.text))) {
+    if (
+      previous?.role === "user" &&
+      /^(առաջիկա տուրեր|մեր ուղղությունները)$/.test(normalize(previous.text))
+    ) {
       listFallback ??= found;
       continue;
     }
@@ -695,32 +775,119 @@ function isDirectionStop(word: string) {
 }
 
 const DIRECTION_STOP = new Set([
-  "գին", "գինը", "արժե", "արժի", "արժեն", "արժեք", "price", "սովորաբար", "սովորական", "դրամ",
-  "ժամ", "ժամը", "մեկնում", "հաջորդ", "ամսաթիվ",
-  "տեղ", "տեղը", "ազատ", "seat",
-  "ասա", "ասացիր", "պատմիր", "շարունակիր",
-  "տուր", "տուրը", "տուրեր", "տուրի",
-  "ուզում", "եմ", "կա", "կան", "ինձ", "մասին",
-  "որ", "որը", "ինչ", "ես", "ձեզ", "իսկ", "քանի", "քանիսն", "բարև",
-  "տեղեկացրու", "տեղեկացրեք", "կասես", "կասեք", "ասես", "ասեք", "հայտնիր", "հայտնեք",
-  "կհիշեմ", "կհիշես", "կհիշեք", "հիշիր", "հիշեք", "նախապես", "կարող", "տեղեկացնել", "տեղեկացնեմ",
-  "համար", "հոգու", "հոգի", "երկու", "երկուս", "մեկ", "ամրագրի",
-  "երբ", "լինի", "շաբաթ", "այս", "ունես", "ունեք", "ներառված", "ներառ",
-  "ինչքան", "ինչքա", "որքան", "որքա",
-  "ամբողջ", "ինֆորմացիան", "ինֆորմացիա", "մանրամասն", "ծրագիրը", "ծրագիր",
-  "ուղղությունները", "ուղղությունը", "առաջիկա",
-  "կապ", "հեռախոս", "հեռախոսահամար", "զանգ", "phone",
-  "ամրագրել", "ամրագրիր", "ամրագր", "book",
-  "բաց", "բացել", "էջը",
-  "բայց", "եթե", "կլինի",
+  "գին",
+  "գինը",
+  "արժե",
+  "արժի",
+  "արժեն",
+  "արժեք",
+  "price",
+  "սովորաբար",
+  "սովորական",
+  "դրամ",
+  "ժամ",
+  "ժամը",
+  "մեկնում",
+  "հաջորդ",
+  "ամսաթիվ",
+  "տեղ",
+  "տեղը",
+  "ազատ",
+  "seat",
+  "ասա",
+  "ասացիր",
+  "պատմիր",
+  "շարունակիր",
+  "տուր",
+  "տուրը",
+  "տուրեր",
+  "տուրի",
+  "ուզում",
+  "եմ",
+  "կա",
+  "կան",
+  "ինձ",
+  "մասին",
+  "որ",
+  "որը",
+  "ինչ",
+  "ես",
+  "ձեզ",
+  "իսկ",
+  "քանի",
+  "քանիսն",
+  "բարև",
+  "տեղեկացրու",
+  "տեղեկացրեք",
+  "կասես",
+  "կասեք",
+  "ասես",
+  "ասեք",
+  "հայտնիր",
+  "հայտնեք",
+  "կհիշեմ",
+  "կհիշես",
+  "կհիշեք",
+  "հիշիր",
+  "հիշեք",
+  "նախապես",
+  "կարող",
+  "տեղեկացնել",
+  "տեղեկացնեմ",
+  "համար",
+  "հոգու",
+  "հոգի",
+  "երկու",
+  "երկուս",
+  "մեկ",
+  "ամրագրի",
+  "երբ",
+  "լինի",
+  "շաբաթ",
+  "այս",
+  "ունես",
+  "ունեք",
+  "ներառված",
+  "ներառ",
+  "ինչքան",
+  "ինչքա",
+  "որքան",
+  "որքա",
+  "ամբողջ",
+  "ինֆորմացիան",
+  "ինֆորմացիա",
+  "մանրամասն",
+  "ծրագիրը",
+  "ծրագիր",
+  "ուղղությունները",
+  "ուղղությունը",
+  "առաջիկա",
+  "կապ",
+  "հեռախոս",
+  "հեռախոսահամար",
+  "զանգ",
+  "phone",
+  "ամրագրել",
+  "ամրագրիր",
+  "ամրագր",
+  "book",
+  "բաց",
+  "բացել",
+  "էջը",
+  "բայց",
+  "եթե",
+  "կլինի",
 ]);
 
 export function unknownDirection(message: string, tours: PublicTourFact[]) {
   if (mentioned(message, tours).length > 0 || toursInRegion(message, tours).length > 0) return null;
-  const tokens = message.replace(/[՞՛՝]/gu, "").split(/[^\p{L}\p{N}-]+/u).filter((token) => {
-    const word = normalize(token);
-    return word.length >= 3 && !isDirectionStop(word) && !/^\d+$/.test(word);
-  });
+  const tokens = message
+    .replace(/[՞՛՝]/gu, "")
+    .split(/[^\p{L}\p{N}-]+/u)
+    .filter((token) => {
+      const word = normalize(token);
+      return word.length >= 3 && !isDirectionStop(word) && !/^\d+$/.test(word);
+    });
   if (tokens.length !== 1) return null;
   const label = tokens[0] ?? "";
   return { key: normalize(label), label };
@@ -735,7 +902,8 @@ export function catalogInterest(tour: PublicTourFact, now = new Date()): Interes
 
 function unavailable(): ChatAnswer {
   return {
-    reply: "Տուրերի հրապարակային տվյալները հիմա չբեռնվեցին։ Գին, ժամ կամ ազատ տեղերի թիվ չեմ նշում։",
+    reply:
+      "Տուրերի հրապարակային տվյալները հիմա չբեռնվեցին։ Գին, ժամ կամ ազատ տեղերի թիվ չեմ նշում։",
     booking: null,
     interest: null,
     choices: null,
@@ -759,9 +927,10 @@ function latestMissingDirection(history: ChatTurn[] | undefined, tours: PublicTo
 }
 
 function interestInvite(name: string, kind: "missing" | "closed") {
-  const fact = kind === "missing"
-    ? `${genitiveName(name)} ուղղությամբ այս պահին տուր չունենք։`
-    : `${name} առաջիկա բաց մեկնում դեռ չկա։`;
+  const fact =
+    kind === "missing"
+      ? `${genitiveName(name)} ուղղությամբ այս պահին տուր չունենք։`
+      : `${name} առաջիկա բաց մեկնում դեռ չկա։`;
   return `${fact} Ցանկանո՞ւմ ես գրանցել հետաքրքրությունդ`;
 }
 
@@ -841,8 +1010,20 @@ export type ChatReading = {
 };
 
 const CHAT_INTENTS = new Set<ChatIntentName>([
-  "price", "departure", "seats", "place", "included", "contact", "summary", "full",
-  "notice", "booking", "greeting", "upcoming", "directions", "unknown",
+  "price",
+  "departure",
+  "seats",
+  "place",
+  "included",
+  "contact",
+  "summary",
+  "full",
+  "notice",
+  "booking",
+  "greeting",
+  "upcoming",
+  "directions",
+  "unknown",
 ]);
 
 export function chatIntentContext(history: ChatTurn[] | undefined, tours: PublicTourFact[]) {
@@ -884,7 +1065,7 @@ function singleResolved(message: string, tours: PublicTourFact[]) {
   if (named.length === 1) return named[0] ?? null;
   if (named.length > 1) return null;
   const regional = toursInRegion(message, tours);
-  return regional.length === 1 ? regional[0] ?? null : null;
+  return regional.length === 1 ? (regional[0] ?? null) : null;
 }
 
 function partyFromReading(party: unknown, message: string) {
@@ -895,16 +1076,25 @@ function partyFromReading(party: unknown, message: string) {
   return null;
 }
 
-function directionIsAllowed(label: string, message: string, context: { direction: string | null; tour: string | null }, tours: PublicTourFact[]) {
+function directionIsAllowed(
+  label: string,
+  message: string,
+  context: { direction: string | null; tour: string | null },
+  tours: PublicTourFact[],
+) {
   const key = normalize(label);
   if (key.length < 2 || key.length > 40) return false;
   const messageKey = normalize(message);
   if (messageKey.includes(key)) return true;
-  const contextKeys = [context.direction, context.tour].flatMap((item) => (item ? [normalize(item)] : []));
+  const contextKeys = [context.direction, context.tour].flatMap((item) =>
+    item ? [normalize(item)] : [],
+  );
   if (contextKeys.some((item) => item === key || item.includes(key))) return true;
   return tours.some((tour) => {
     const title = normalize(tour.title);
-    return title === key || title.includes(key) || aliases(tour).some((name) => normalize(name) === key);
+    return (
+      title === key || title.includes(key) || aliases(tour).some((name) => normalize(name) === key)
+    );
   });
 }
 
@@ -919,11 +1109,24 @@ export function validatedChatReading(
   const intent = record["intent"];
   if (typeof intent !== "string" || !CHAT_INTENTS.has(intent as ChatIntentName)) return null;
   if (intent === "booking" && !wantsBooking(message)) return null;
-  const rawDirection = typeof record["direction"] === "string" ? record["direction"].trim().slice(0, 40) : "";
-  const direction = rawDirection && /^[\p{L}\s-]{2,40}$/u.test(rawDirection) && directionIsAllowed(rawDirection, message, context, tours)
-    ? rawDirection
-    : null;
-  const followUp = intent === "notice" || intent === "price" || intent === "departure" || intent === "seats" || intent === "place" || intent === "included" || intent === "contact" || intent === "summary" || intent === "full";
+  const rawDirection =
+    typeof record["direction"] === "string" ? record["direction"].trim().slice(0, 40) : "";
+  const direction =
+    rawDirection &&
+    /^[\p{L}\s-]{2,40}$/u.test(rawDirection) &&
+    directionIsAllowed(rawDirection, message, context, tours)
+      ? rawDirection
+      : null;
+  const followUp =
+    intent === "notice" ||
+    intent === "price" ||
+    intent === "departure" ||
+    intent === "seats" ||
+    intent === "place" ||
+    intent === "included" ||
+    intent === "contact" ||
+    intent === "summary" ||
+    intent === "full";
   const kept = direction ?? (followUp ? context.direction : null);
   return {
     intent: intent as ChatIntentName,
@@ -937,10 +1140,14 @@ function tourFromDirection(direction: string | null, tours: PublicTourFact[]) {
   const found = mentioned(direction, tours);
   if (found.length === 1) return found[0] ?? null;
   const regional = toursInRegion(direction, tours);
-  return regional.length === 1 ? regional[0] ?? null : null;
+  return regional.length === 1 ? (regional[0] ?? null) : null;
 }
 
-function remembered(memory: { tourId: string | null; key: string }[], offer: { tourId: string | null; label: string }, short = "") {
+function remembered(
+  memory: { tourId: string | null; key: string }[],
+  offer: { tourId: string | null; label: string },
+  short = "",
+) {
   if (offer.tourId && memory.some((item) => item.tourId === offer.tourId)) return true;
   const keys = new Set(memory.map((item) => directionKey(item.key)));
   return keys.has(directionKey(offer.label)) || (short !== "" && keys.has(directionKey(short)));
@@ -957,7 +1164,8 @@ function visibleInterest(
 
 function routePriceName(tour: PublicTourFact) {
   const key = normalize(tour.title);
-  if (key.includes("գառնի") && key.includes("գեղարդ")) return { plain: "Գառնի–Գեղարդ", missing: "Գառնի–Գեղարդի" };
+  if (key.includes("գառնի") && key.includes("գեղարդ"))
+    return { plain: "Գառնի–Գեղարդ", missing: "Գառնի–Գեղարդի" };
   const plainName = shortName(tour);
   return { plain: plainName, missing: genitiveName(plainName) };
 }
@@ -1025,7 +1233,9 @@ export function answerTourChat(input: {
   const channel = input.channel ?? "mock";
   if (!input.facts.ok) return unavailable();
   if (isOnlyGreeting(message)) {
-    return plain("Բարև՜ 👋 Որևէ ուղղություն մտքո՞ւմ ունես, թե՞ նայենք՝ ինչ տուրեր ունենք առաջիկայում");
+    return plain(
+      "Բարև՜ 👋 Որևէ ուղղություն մտքո՞ւմ ունես, թե՞ նայենք՝ ինչ տուրեր ունենք առաջիկայում",
+    );
   }
   const tours = input.facts.tours;
   const memory = input.registered ?? [];
@@ -1033,11 +1243,17 @@ export function answerTourChat(input: {
     const regional = toursInRegion(message, tours);
     if (regional.length > 0) return regionMatchReply(regional, now, memory);
   }
-  const reading = input.reading && input.reading.intent !== "unknown" && readingFits(input.reading, message) ? input.reading : null;
+  const reading =
+    input.reading && input.reading.intent !== "unknown" && readingFits(input.reading, message)
+      ? input.reading
+      : null;
   if (reading?.intent === "greeting") {
-    return plain("Բարև՜ 👋 Որևէ ուղղություն մտքո՞ւմ ունես, թե՞ նայենք՝ ինչ տուրեր ունենք առաջիկայում");
+    return plain(
+      "Բարև՜ 👋 Որևէ ուղղություն մտքո՞ւմ ունես, թե՞ նայենք՝ ինչ տուրեր ունենք առաջիկայում",
+    );
   }
-  if (reading?.intent === "upcoming" || wants(message, /^առաջիկա տուրեր$/)) return plain(upcomingReply(tours, now));
+  if (reading?.intent === "upcoming" || wants(message, /^առաջիկա տուրեր$/))
+    return plain(upcomingReply(tours, now));
   if (reading?.intent === "directions" || wants(message, /^մեր ուղղությունները$/)) {
     if (tours.length === 0) return plain("Հրապարակված ուղղություն դեռ չկա։");
     return {
@@ -1050,20 +1266,23 @@ export function answerTourChat(input: {
   const shownIds = new Set(input.shownTourIds ?? []);
   const buttonTours = tours.filter((tour) => shownIds.has(tour.id));
   const menuButtons = buttonTours.length > 1 && buttonTours.length >= tours.length;
-  const contextTours = buttonTours.length > 0 && !menuButtons ? buttonTours : latestShownTours(input.history, tours);
+  const contextTours =
+    buttonTours.length > 0 && !menuButtons ? buttonTours : latestShownTours(input.history, tours);
   const namedNow = mentioned(message, tours);
   if (namedNow.length === 1 && namedNow[0] && awaitingPriceChoice(input.history)) {
     return quotedPrice(namedNow[0], now, memory, asksFuturePrice(message));
   }
-  const priceOnly = (asksPrice(message) || asksFuturePrice(message))
-    && !wants(message, /մեկնում|հաջորդ|ամսաթիվ|երբ|departure/)
-    && !wants(message, /տեղ|ազատ|seat/)
-    && !wants(message, /ժամ/)
-    && !wants(message, /որտեղ|վայր|շարժ/)
-    && !wants(message, /ներառ/);
+  const priceOnly =
+    (asksPrice(message) || asksFuturePrice(message)) &&
+    !wants(message, /մեկնում|հաջորդ|ամսաթիվ|երբ|departure/) &&
+    !wants(message, /տեղ|ազատ|seat/) &&
+    !wants(message, /ժամ/) &&
+    !wants(message, /որտեղ|վայր|շարժ/) &&
+    !wants(message, /ներառ/);
   if (priceOnly && namedNow.length === 0) {
     if (contextTours.length > 1) return plain("Ո՞ր տուրի գինն ես ուզում իմանալ");
-    if (contextTours.length === 1 && contextTours[0]) return quotedPrice(contextTours[0], now, memory, asksFuturePrice(message));
+    if (contextTours.length === 1 && contextTours[0])
+      return quotedPrice(contextTours[0], now, memory, asksFuturePrice(message));
   }
   if (reading) {
     const explicit = singleResolved(message, tours);
@@ -1076,14 +1295,21 @@ export function answerTourChat(input: {
         if (remembered(memory, { tourId: null, label })) return plain(alreadyRegisteredLine(label));
         return missingDirectionReply(label);
       }
-      if (selected && remembered(memory, { tourId: selected.id, label: selected.title }, shortName(selected))) {
+      if (
+        selected &&
+        remembered(memory, { tourId: selected.id, label: selected.title }, shortName(selected))
+      ) {
         return plain(alreadyRegisteredLine(shortName(selected)));
       }
       if (selected && catalogInterest(selected, now)) return closedDepartureReply(selected);
-      if (selected) return plain(`${departureSentence(selected, now)}\n${pageLink(selected)}`, null);
+      if (selected)
+        return plain(`${departureSentence(selected, now)}\n${pageLink(selected)}`, null);
     }
     if (reading.intent === "price") {
-      if (selected && (asksFuturePrice(message) || readDeparture(selected, now).kind === "soldout")) {
+      if (
+        selected &&
+        (asksFuturePrice(message) || readDeparture(selected, now).kind === "soldout")
+      ) {
         return quotedPrice(selected, now, memory, asksFuturePrice(message));
       }
       if (selected) return priceAnswer(selected, reading.party, now, memory);
@@ -1113,22 +1339,27 @@ export function answerTourChat(input: {
     }
     if (
       selected &&
-      (reading.intent === "departure" || reading.intent === "seats" || reading.intent === "place" ||
-        reading.intent === "included" || reading.intent === "contact" || reading.intent === "summary" ||
+      (reading.intent === "departure" ||
+        reading.intent === "seats" ||
+        reading.intent === "place" ||
+        reading.intent === "included" ||
+        reading.intent === "contact" ||
+        reading.intent === "summary" ||
         reading.intent === "full")
     ) {
       const interest = visibleInterest(catalogInterest(selected, now), memory, shortName(selected));
       if (reading.intent === "summary") return plain(summary(selected, now), interest);
       if (reading.intent === "full") return plain(fullProgram(selected, now), interest);
-      const line = reading.intent === "departure"
-        ? departureSentence(selected, now)
-        : reading.intent === "seats"
-          ? seatSentence(selected, now, reading.party)
-          : reading.intent === "place"
-            ? placeSentence(selected)
-            : reading.intent === "included"
-              ? includedSentence(selected)
-              : contactSentence(selected);
+      const line =
+        reading.intent === "departure"
+          ? departureSentence(selected, now)
+          : reading.intent === "seats"
+            ? seatSentence(selected, now, reading.party)
+            : reading.intent === "place"
+              ? placeSentence(selected)
+              : reading.intent === "included"
+                ? includedSentence(selected)
+                : contactSentence(selected);
       return plain(`${line}\n${pageLink(selected)}`, interest);
     }
   }
@@ -1148,7 +1379,8 @@ export function answerTourChat(input: {
     const offer = { tourId: null, label };
     const known = remembered(memory, offer);
     if (askedNotice && known) return plain(alreadyRegisteredLine(label));
-    if (asksPrice(message) && !wantsBooking(message)) return plain(unpublishedPrice(label), known ? null : offer);
+    if (asksPrice(message) && !wantsBooking(message))
+      return plain(unpublishedPrice(label), known ? null : offer);
     if (known) return plain(`${genitiveName(label)} ուղղությամբ այս պահին տուր չունենք։`);
     return missingDirectionReply(label);
   }
@@ -1157,19 +1389,29 @@ export function answerTourChat(input: {
     if (last.missing) {
       const label = displayLabel(last.missing);
       if (remembered(memory, { tourId: null, label })) return plain(alreadyRegisteredLine(label));
-      const reply = channel === "live"
-        ? interestInvite(label, "missing")
-        : `${interestInvite(label, "missing")} Ավտոմատ ծանուցում այս պահին չի ուղարկվում։`;
+      const reply =
+        channel === "live"
+          ? interestInvite(label, "missing")
+          : `${interestInvite(label, "missing")} Ավտոմատ ծանուցում այս պահին չի ուղարկվում։`;
       return { reply, booking: null, interest: { tourId: null, label }, choices: null };
     }
-    if (last.tour && remembered(memory, { tourId: last.tour.id, label: last.tour.title }, shortName(last.tour))) {
+    if (
+      last.tour &&
+      remembered(memory, { tourId: last.tour.id, label: last.tour.title }, shortName(last.tour))
+    ) {
       return plain(alreadyRegisteredLine(shortName(last.tour)));
     }
     if (last.tour && catalogInterest(last.tour, now)) {
-      const reply = channel === "live"
-        ? interestInvite(shortName(last.tour), "closed")
-        : `${interestInvite(shortName(last.tour), "closed")} Ավտոմատ ծանուցում այս պահին չի ուղարկվում։`;
-      return { reply, booking: null, interest: { tourId: last.tour.id, label: last.tour.title }, choices: null };
+      const reply =
+        channel === "live"
+          ? interestInvite(shortName(last.tour), "closed")
+          : `${interestInvite(shortName(last.tour), "closed")} Ավտոմատ ծանուցում այս պահին չի ուղարկվում։`;
+      return {
+        reply,
+        booking: null,
+        interest: { tourId: last.tour.id, label: last.tour.title },
+        choices: null,
+      };
     }
   }
   if (asksFull(message) && named.length === 0) {
@@ -1179,14 +1421,21 @@ export function answerTourChat(input: {
       const lori = selected.id === "lori" || normalize(selected.title).includes("լոռի");
       const gyumri = normalize(missing) === "գյումրի";
       return {
-        reply: lori && gyumri
-          ? "Գյումրիի՞ մասին ես հարցնում, թե՞ Լոռու տուրի ամբողջ ծրագիրն ես ուզում տեսնել"
-          : `${directionName(missing)}՞ մասին ես հարցնում, թե՞ ${choiceLabel(selected)} տուրի ամբողջ ծրագիրն ես ուզում տեսնել`,
+        reply:
+          lori && gyumri
+            ? "Գյումրիի՞ մասին ես հարցնում, թե՞ Լոռու տուրի ամբողջ ծրագիրն ես ուզում տեսնել"
+            : `${directionName(missing)}՞ մասին ես հարցնում, թե՞ ${choiceLabel(selected)} տուրի ամբողջ ծրագիրն ես ուզում տեսնել`,
         booking: null,
         interest: null,
         choices: [
           { id: `direction-${normalize(missing).replace(/\s+/g, "-")}`, title: missing },
-          { id: selected.id, title: lori && gyumri ? "Լոռու տուրի ամբողջ ծրագիրը" : `${choiceLabel(selected)}՝ ամբողջ ծրագիրը` },
+          {
+            id: selected.id,
+            title:
+              lori && gyumri
+                ? "Լոռու տուրի ամբողջ ծրագիրը"
+                : `${choiceLabel(selected)}՝ ամբողջ ծրագիրը`,
+          },
         ],
       };
     }
@@ -1238,17 +1487,31 @@ export function answerTourChat(input: {
   const party = partyFromMessage(message);
   const normalized = normalize(message);
   const onlyPrice = askPrice && !askDeparture && !askSeats;
-  const priceLine = onlyPrice && readDeparture(tour, now).kind === "none"
-    ? `${groupPriceSentence(tour, party)} ${closedLine(tour)}`
-    : groupPriceSentence(tour, party);
+  const priceLine =
+    onlyPrice && readDeparture(tour, now).kind === "none"
+      ? `${groupPriceSentence(tour, party)} ${closedLine(tour)}`
+      : groupPriceSentence(tour, party);
   const pieces = [
-    askPrice ? { at: normalized.search(/գին|արժե|արժի|արժեն|արժեք|կնստ|price|հոգ/), line: priceLine } : null,
+    askPrice
+      ? { at: normalized.search(/գին|արժե|արժի|արժեն|արժեք|կնստ|price|հոգ/), line: priceLine }
+      : null,
     askPlace ? { at: normalized.search(/որտեղ|վայր|շարժ/), line: placeSentence(tour) } : null,
-    askTime && !askDeparture && !askSeats ? { at: normalized.search(/ժամ/), line: timeSentence(tour, now) } : null,
+    askTime && !askDeparture && !askSeats
+      ? { at: normalized.search(/ժամ/), line: timeSentence(tour, now) }
+      : null,
     askIncluded ? { at: normalized.search(/ներառ/), line: includedSentence(tour) } : null,
-    askContact ? { at: normalized.search(/կապ|հեռախոս|զանգ|phone/), line: contactSentence(tour) } : null,
-    askSeats && !askDeparture ? { at: normalized.search(/տեղ|ազատ|seat/), line: seatSentence(tour, now, party) } : null,
-    askDeparture ? { at: normalized.search(/մեկնում|հաջորդ|ամսաթիվ|երբ|departure/), line: departureSentence(tour, now) } : null,
+    askContact
+      ? { at: normalized.search(/կապ|հեռախոս|զանգ|phone/), line: contactSentence(tour) }
+      : null,
+    askSeats && !askDeparture
+      ? { at: normalized.search(/տեղ|ազատ|seat/), line: seatSentence(tour, now, party) }
+      : null,
+    askDeparture
+      ? {
+          at: normalized.search(/մեկնում|հաջորդ|ամսաթիվ|երբ|departure/),
+          line: departureSentence(tour, now),
+        }
+      : null,
   ].filter((item): item is { at: number; line: string } => item !== null);
   pieces.sort((left, right) => left.at - right.at);
   if (pieces.length === 0) {
@@ -1282,10 +1545,10 @@ export type ChatSection = "upcoming" | "directions" | "tour" | "booking";
 
 export function openChatSection(input: {
   section: ChatSection;
-  tourId?: string | null;
+  tourId?: string | null | undefined;
   facts: ChatFacts;
-  now?: Date;
-  registered?: { tourId: string | null; key: string }[];
+  now?: Date | undefined;
+  registered?: { tourId: string | null; key: string }[] | undefined;
 }): ChatAnswer {
   const now = input.now ?? new Date();
   if (!input.facts.ok) return catalogFailureReply();
@@ -1301,7 +1564,7 @@ export function openChatSection(input: {
       choices: tours.map((tour) => ({ id: tour.id, title: choiceLabel(tour) })),
     };
   }
-  const tour = input.tourId ? tours.find((item) => item.id === input.tourId) ?? null : null;
+  const tour = input.tourId ? (tours.find((item) => item.id === input.tourId) ?? null) : null;
   if (!tour) return plain("Այդ տուրը կատալոգում չկա։");
   if (input.section === "booking") {
     const offer = bookingOffer({
@@ -1314,13 +1577,17 @@ export function openChatSection(input: {
     return {
       reply: offer.reply,
       booking: offer.booking,
-      interest: offer.booking.departures.length === 0
-        ? visibleInterest(catalogInterest(tour, now), memory, shortName(tour))
-        : null,
+      interest:
+        offer.booking.departures.length === 0
+          ? visibleInterest(catalogInterest(tour, now), memory, shortName(tour))
+          : null,
       choices: null,
     };
   }
-  return plain(summary(tour, now), visibleInterest(catalogInterest(tour, now), memory, shortName(tour)));
+  return plain(
+    summary(tour, now),
+    visibleInterest(catalogInterest(tour, now), memory, shortName(tour)),
+  );
 }
 
 export function catalogFailureReply(): ChatAnswer {
@@ -1348,7 +1615,9 @@ export function searchPublicTours(query: string, tours: PublicTourFact[]) {
   const normalized = normalize(text);
   if (normalized.length < 3) return [];
   return tours.filter((tour) =>
-    aliases(tour).some((name) => name.length >= 4 && (normalized.includes(name) || name.includes(normalized))),
+    aliases(tour).some(
+      (name) => name.length >= 4 && (normalized.includes(name) || name.includes(normalized)),
+    ),
   );
 }
 
@@ -1368,7 +1637,13 @@ export function catalogSnapshot(tours: PublicTourFact[], now = new Date()) {
 }
 
 export type ChatToolCall = {
-  name: "search_tours" | "get_program" | "get_price" | "get_departures" | "get_seats" | "suggest_action";
+  name:
+    | "search_tours"
+    | "get_program"
+    | "get_price"
+    | "get_departures"
+    | "get_seats"
+    | "suggest_action";
   tourId: string | null;
   party: number | null;
   query: string | null;
@@ -1376,21 +1651,39 @@ export type ChatToolCall = {
 };
 
 const TOOL_NAMES = new Set<ChatToolCall["name"]>([
-  "search_tours", "get_program", "get_price", "get_departures", "get_seats", "suggest_action",
+  "search_tours",
+  "get_program",
+  "get_price",
+  "get_departures",
+  "get_seats",
+  "suggest_action",
 ]);
 
 function toolFact(call: ChatToolCall, tours: PublicTourFact[], now: Date) {
   if (call.name === "search_tours") {
     const found = searchPublicTours(call.query ?? "", tours);
-    return { text: found.map((tour) => `${tour.title}\n${pageLink(tour)}`).join("\n"), tours: found };
+    return {
+      text: found.map((tour) => `${tour.title}\n${pageLink(tour)}`).join("\n"),
+      tours: found,
+    };
   }
   if (call.name === "suggest_action") return { text: "", tours: [] as PublicTourFact[] };
-  const tour = call.tourId ? tours.find((item) => item.id === call.tourId) ?? null : null;
+  const tour = call.tourId ? (tours.find((item) => item.id === call.tourId) ?? null) : null;
   if (!tour) return { text: "", tours: [] as PublicTourFact[] };
-  if (call.name === "get_price") return { text: groupPriceSentence(tour, call.party), tours: [tour] };
+  if (call.name === "get_price")
+    return { text: groupPriceSentence(tour, call.party), tours: [tour] };
   if (call.name === "get_departures") return { text: departureSentence(tour, now), tours: [tour] };
-  if (call.name === "get_seats") return { text: seatSentence(tour, now, call.party), tours: [tour] };
+  if (call.name === "get_seats")
+    return { text: seatSentence(tour, now, call.party), tours: [tour] };
   return { text: fullProgram(tour, now), tours: [tour] };
+}
+
+const PRICE_MISSING_SAID = /հրապարակված\s+չ(է|ի)/u;
+const NO_DEPARTURE_SAID = /մեկնում\s+(դեռ\s+|դեռևս\s+|հիմա\s+|առայժմ\s+)?չկա/u;
+
+/** "16,000", "16 000" and "16.000" are the same published number as "16000". */
+function plainNumbers(text: string) {
+  return text.replace(/(?<=\d)[ \u00a0\u202f,.](?=\d{3}(?!\d))/gu, "");
 }
 
 export function groundChatAnswer(input: {
@@ -1398,8 +1691,10 @@ export function groundChatAnswer(input: {
   calls: ChatToolCall[];
   suggest: "none" | "booking" | "interest" | "choices";
   facts: ChatFacts;
-  now?: Date;
-  registered?: { tourId: string | null; key: string }[];
+  now?: Date | undefined;
+  registered?: { tourId: string | null; key: string }[] | undefined;
+  /** The visitor's own message. Numbers they typed (party size) may be repeated back. */
+  message?: string | undefined;
 }): ChatAnswer & { selectedTourId: string | null; grounded: boolean } {
   if (!input.facts.ok) return { ...catalogFailureReply(), selectedTourId: null, grounded: false };
   const now = input.now ?? new Date();
@@ -1409,30 +1704,52 @@ export function groundChatAnswer(input: {
   const pieces = calls.map((call) => toolFact(call, tours, now));
   const factText = pieces.map((item) => item.text).join("\n");
   const usedTours = uniqueTours(pieces.flatMap((item) => item.tours));
-  const reply = input.reply.replace(/\+?\d[\d\s-]{6,}\d/gu, "").trim().slice(0, 1200);
-  const allowed = new Set(factText.match(/\d+/g) ?? []);
+  const reply = input.reply
+    .replace(/\+?\d[\d\s-]{6,}\d/gu, "")
+    .trim()
+    .slice(0, 1200);
+  const allowed = new Set([
+    ...(plainNumbers(factText).match(/\d+/g) ?? []),
+    ...(plainNumbers(input.message ?? "").match(/\d+/g) ?? []),
+  ]);
   const allowedLinks = new Set(factText.match(/\/tours\/[a-z0-9-]+/g) ?? []);
-  const numbersOk = (reply.match(/\d+/g) ?? []).every((value) => allowed.has(value));
-  const linksOk = (reply.match(/\/tours\/[a-z0-9-]+/g) ?? []).every((link) => allowedLinks.has(link));
+  const numbersOk = (plainNumbers(reply).match(/\d+/g) ?? []).every((value) => allowed.has(value));
+  const linksOk = (reply.match(/\/tours\/[a-z0-9-]+/g) ?? []).every((link) =>
+    allowedLinks.has(link),
+  );
   const priceCall = calls.find((call) => call.name === "get_price" && call.tourId);
-  const priceTour = priceCall?.tourId ? tours.find((item) => item.id === priceCall.tourId) ?? null : null;
+  const priceTour = priceCall?.tourId
+    ? (tours.find((item) => item.id === priceCall.tourId) ?? null)
+    : null;
   const priceMissing = Boolean(priceTour && (priceTour.price === null || priceTour.price === 0));
-  const departureCall = calls.find((call) => (call.name === "get_departures" || call.name === "get_seats") && call.tourId);
-  const departureTour = departureCall?.tourId ? tours.find((item) => item.id === departureCall.tourId) ?? null : null;
+  const departureCall = calls.find(
+    (call) => (call.name === "get_departures" || call.name === "get_seats") && call.tourId,
+  );
+  const departureTour = departureCall?.tourId
+    ? (tours.find((item) => item.id === departureCall.tourId) ?? null)
+    : null;
   const closed = departureTour ? readDeparture(departureTour, now).kind === "none" : false;
-  const natural = reply.length > 0
-    && numbersOk
-    && linksOk
-    && (!priceMissing || reply.includes("դեռ հրապարակված չէ"))
-    && (!closed || reply.includes("բաց մեկնում դեռ չկա"));
-  const onlySearch = calls.length > 0 && calls.every((call) => call.name === "search_tours" || call.name === "suggest_action");
+  const natural =
+    reply.length > 0 &&
+    numbersOk &&
+    linksOk &&
+    (!priceMissing || PRICE_MISSING_SAID.test(reply)) &&
+    (!closed || NO_DEPARTURE_SAID.test(reply));
+  const onlySearch =
+    calls.length > 0 &&
+    calls.every((call) => call.name === "search_tours" || call.name === "suggest_action");
   let text = "";
   if (natural) text = reply;
-  else if (onlySearch && usedTours.length > 1) text = "Այդ ուղղությամբ մի քանի տուր կա։ Ընտրիր մեկը։";
+  else if (onlySearch && usedTours.length > 1)
+    text = "Այդ ուղղությամբ մի քանի տուր կա։ Ընտրիր մեկը։";
   else if (onlySearch && usedTours.length === 1 && usedTours[0]) text = summary(usedTours[0], now);
-  else text = pieces.map((item) => item.text).filter(Boolean).join("\n");
+  else
+    text = pieces
+      .map((item) => item.text)
+      .filter(Boolean)
+      .join("\n");
   if (!text) return { ...modelFailureReply(tours), selectedTourId: null, grounded: false };
-  const focus = usedTours.length === 1 ? usedTours[0] ?? null : null;
+  const focus = usedTours.length === 1 ? (usedTours[0] ?? null) : null;
   if (focus && !text.includes(tourLink(focus))) text = `${text}\n${pageLink(focus)}`;
   if (focus && input.suggest === "booking") {
     const party = calls.find((call) => call.party)?.party ?? null;
@@ -1446,9 +1763,10 @@ export function groundChatAnswer(input: {
     return {
       reply: text,
       booking: offer.booking,
-      interest: offer.booking.departures.length === 0
-        ? visibleInterest(catalogInterest(focus, now), memory, shortName(focus))
-        : null,
+      interest:
+        offer.booking.departures.length === 0
+          ? visibleInterest(catalogInterest(focus, now), memory, shortName(focus))
+          : null,
       choices: null,
       selectedTourId: focus.id,
       grounded: true,

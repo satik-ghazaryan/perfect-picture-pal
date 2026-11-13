@@ -44,7 +44,12 @@ export function phoneKey(phone: string) {
   return phone.replace(/\D/g, "");
 }
 
-export function quoteCheckout(balance: number, total: number, usePoints: boolean, rate = getCashbackRate()) {
+export function quoteCheckout(
+  balance: number,
+  total: number,
+  usePoints: boolean,
+  rate = getCashbackRate(),
+) {
   const safeTotal = Math.max(0, Math.round(total));
   const safeBalance = Math.max(0, Math.round(balance));
   const safeRate = Math.min(1, Math.max(0, rate));
@@ -60,7 +65,12 @@ function creditsOf(value: unknown): PromoCredit[] {
   return value.flatMap((item) => {
     if (!item || typeof item !== "object") return [];
     const credit = item as Partial<PromoCredit>;
-    if (typeof credit.id !== "string" || typeof credit.code !== "string" || typeof credit.amount !== "number") return [];
+    if (
+      typeof credit.id !== "string" ||
+      typeof credit.code !== "string" ||
+      typeof credit.amount !== "number"
+    )
+      return [];
     const amount = Math.max(0, Math.round(credit.amount));
     if (amount < 1) return [];
     return [
@@ -74,7 +84,10 @@ function creditsOf(value: unknown): PromoCredit[] {
   });
 }
 
-function withCredits(account: LoyaltyAccount, credits = creditsOf(account.credits)): LoyaltyAccount {
+function withCredits(
+  account: LoyaltyAccount,
+  credits = creditsOf(account.credits),
+): LoyaltyAccount {
   return { ...account, credits };
 }
 
@@ -218,7 +231,11 @@ export async function revertLoyalty(input: {
   throw new Error("Հեռախոսահամարը հաշվին հաստատված չէ. միավորները չեն փոխվում։");
 }
 
-export async function adjustLoyaltyPoints(input: { phone: string; fullName: string; delta: number }) {
+export async function adjustLoyaltyPoints(input: {
+  phone: string;
+  fullName: string;
+  delta: number;
+}) {
   const key = phoneKey(input.phone);
   const delta = Math.trunc(input.delta);
   if (key.length < 8) throw new Error("Հեռախոսահամարը պակաս է։");

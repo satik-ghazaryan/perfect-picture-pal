@@ -2,7 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { Camera, Keyboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ScannerStartSession, readScannerSurface, waitForScannerSurface } from "@/lib/qr-scanner-session";
+import {
+  ScannerStartSession,
+  readScannerSurface,
+  waitForScannerSurface,
+} from "@/lib/qr-scanner-session";
 
 type Props = {
   onScan: (value: string) => Promise<void> | void;
@@ -140,7 +144,8 @@ export function QrScanner({ onScan, disabled = false }: Props) {
     } catch (error) {
       scannerRef.current = null;
       stopCapturedMedia(reader);
-      if (!session.isCurrent(id) || (error instanceof DOMException && error.name === "AbortError")) return;
+      if (!session.isCurrent(id) || (error instanceof DOMException && error.name === "AbortError"))
+        return;
       setCameraOn(false);
       setCameraError("Տեսախցիկը չբացվեց։ Կարող եք մուտքագրել տոմսի կոդը։");
     }
@@ -210,7 +215,12 @@ export function QrScanner({ onScan, disabled = false }: Props) {
           className="h-11 rounded-2xl font-mono"
           disabled={disabled || busy}
         />
-        <Button type="submit" variant="secondary" className="h-11 rounded-2xl" disabled={disabled || busy}>
+        <Button
+          type="submit"
+          variant="secondary"
+          className="h-11 rounded-2xl"
+          disabled={disabled || busy}
+        >
           <Keyboard className="h-4 w-4" />
           Գրանցել
         </Button>

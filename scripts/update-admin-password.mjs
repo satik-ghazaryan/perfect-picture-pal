@@ -6,7 +6,9 @@ const URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 
 if (!EMAIL || !PASSWORD || !URL || !SERVICE_ROLE_KEY) {
-  console.error("Missing ADMIN_EMAIL, ADMIN_PASSWORD, SUPABASE_URL, and/or SUPABASE_SERVICE_ROLE_KEY.");
+  console.error(
+    "Missing ADMIN_EMAIL, ADMIN_PASSWORD, SUPABASE_URL, and/or SUPABASE_SERVICE_ROLE_KEY.",
+  );
   console.error("Set them in the environment, then run:");
   console.error("  node --env-file=.env.local scripts/update-admin-password.mjs");
   process.exit(1);
@@ -59,5 +61,9 @@ if (profileError) {
   process.exit(1);
 }
 
-const { data: profile } = await admin.from("profiles").select("id, email, role").eq("id", user.id).maybeSingle();
+const { data: profile } = await admin
+  .from("profiles")
+  .select("id, email, role")
+  .eq("id", user.id)
+  .maybeSingle();
 console.log("Admin profile ready:", profile ?? { id: user.id, email: EMAIL, role: "admin" });

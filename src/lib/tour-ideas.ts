@@ -27,13 +27,15 @@ const VERIFY_NOTE_HY_EXACT: Record<string, string> = {
   "price needs route distance": "Անհրաժեշտ է երթուղու հեռավորությունը",
   "Route km is an estimate": "Երթուղու կմ-ը գնահատական է",
   "Route km is a rough estimate; confirm": "Երթուղու կմ-ը կոպիտ գնահատական է. հաստատեք",
-  "Route km is an estimate; confirm driving distance": "Երթուղու կմ-ը գնահատական է. հաստատեք վարման հեռավորությունը",
+  "Route km is an estimate; confirm driving distance":
+    "Երթուղու կմ-ը գնահատական է. հաստատեք վարման հեռավորությունը",
   "OneWayTour data unavailable": "OneWayTour տվյալները անհասանելի են",
   "No live web results; places and prices need human research":
     "Կենդանի որոնման արդյունքներ չկան. վայրերն ու գները հարկավոր է ստուգել ձեռքով",
   "No competitor data was found": "Մրցակցային տվյալներ չեն գտնվել",
   "No competitor data was found.": "Մրցակցային տվյալներ չեն գտնվել։",
-  "No competitor data found for similar tours.": "Նման տուրերի համար մրցակցային տվյալներ չեն գտնվել։",
+  "No competitor data found for similar tours.":
+    "Նման տուրերի համար մրցակցային տվյալներ չեն գտնվել։",
   "No usable competitor offers; price is cost+margin only":
     "Գինը՝ ծախս × 1.25. մրցակիցների գները միայն տեղեկատվական են",
   "price = cost x 1.25; competitor prices are shown for reference only":
@@ -45,14 +47,18 @@ const VERIFY_NOTE_HY_EXACT: Record<string, string> = {
   "Not enough concrete places found; needs human research":
     "Բավարար կոնկրետ վայրեր չեն գտնվել. հարկավոր է ձեռքով ստուգում",
   "Place data sources unavailable": "Վայրերի տվյալների աղբյուրները անհասանելի են",
-  "No destination stops after Armavir; route km is 0": "Արմավիրից հետո նշանակման կանգառներ չկան. երթուղու կմ-ը 0 է",
+  "No destination stops after Armavir; route km is 0":
+    "Արմավիրից հետո նշանակման կանգառներ չկան. երթուղու կմ-ը 0 է",
   "Armenian text needs review": "Հայերեն տեքստը հարկավոր է վերանայել",
 };
 const VERIFY_NOTE_HY_PREFIXES: Array<[string, string]> = [
   ["Place not in search results:", "Վայրը որոնման արդյունքներում չկա:"],
   ["Needs sourced fact URL:", "Հարկավոր է աղբյուրի URL:"],
   ["Could not geocode stop:", "Չհաջողվեց գեոկոդավորել կանգառը:"],
-  ["Web distance cross-check (not used for price):", "Հեռավորության համացանցային ստուգում (գնի համար չի օգտագործվում):"],
+  [
+    "Web distance cross-check (not used for price):",
+    "Հեռավորության համացանցային ստուգում (գնի համար չի օգտագործվում):",
+  ],
   ["Generic stop, no concrete place:", "Ընդհանուր կանգառ, կոնկրետ վայր չկա:"],
   ["Fewer than 2 useful search results after filtering", "Որոնումը քիչ արդյունք է տվել"],
 ];
@@ -93,7 +99,9 @@ export function formatStopTitleHy(stop: TourIdeaStop): string {
   const titleHy = String(stop.title_hy ?? "").trim();
   if (titleHy && ARMENIAN_RE.test(titleHy)) return titleHy;
   const activityHy = String(stop.activity_hy ?? "").trim();
-  const activityEn = String(stop.activity ?? "").trim().toLowerCase();
+  const activityEn = String(stop.activity ?? "")
+    .trim()
+    .toLowerCase();
   const mappedActivity = activityHy || ACTIVITY_HY[activityEn.split(/\s+/)[0] || ""] || activityEn;
   const place = String(stop.place_name ?? "").trim();
   if (activityEn === "lunch" || activityEn === "meal" || place.toLowerCase() === "lunch") {
@@ -113,7 +121,9 @@ const ADMIN_REQUIRED_ERROR = "Մուտք գործեք admin հաշվով";
 
 function asUuid(value: string | null | undefined) {
   if (!value) return null;
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value) ? value : null;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+    ? value
+    : null;
 }
 
 export function parseAmd(value: unknown): number {
@@ -145,7 +155,9 @@ function asStop(value: unknown): TourIdeaStop | null {
   }
   if (!title && activity) title = activity;
   if (!time || !title) return null;
-  const titleEn = String(record["title_en"] ?? "").trim() || (placeName && activity ? `${placeName} — ${activity}` : "");
+  const titleEn =
+    String(record["title_en"] ?? "").trim() ||
+    (placeName && activity ? `${placeName} — ${activity}` : "");
   const titleRu = String(record["title_ru"] ?? "").trim();
   const titleHy = String(record["title_hy"] ?? "").trim();
   const descriptionEn = String(record["description_en"] ?? "").trim();
@@ -173,7 +185,9 @@ function asBreakdown(value: unknown): TourIdeaBreakdown | undefined {
   return {
     transport_amd: parseAmd(record["transport_amd"] ?? record["transport"]),
     meals_amd: parseAmd(record["meals_amd"] ?? record["meals"]),
-    entrance_fees_amd: parseAmd(record["entrance_fees_amd"] ?? record["entrance_fees"] ?? record["tickets"]),
+    entrance_fees_amd: parseAmd(
+      record["entrance_fees_amd"] ?? record["entrance_fees"] ?? record["tickets"],
+    ),
     guide_amd: parseAmd(record["guide_amd"] ?? record["guide"]),
     other_amd: parseAmd(record["other_amd"] ?? record["other"]),
     yerevan_transfer_amd: parseAmd(record["yerevan_transfer_amd"] ?? record["yerevan_transfer"]),
@@ -187,7 +201,9 @@ function asProfitability(value: unknown): TourIdeaProfitability | undefined {
   const groupSize = parseAmd(record["group_size"]) || GROUP_SIZE_FALLBACK;
   const revenue = parseAmd(record["revenue_per_person_amd"] ?? record["revenue_per_person"]);
   const expense = parseAmd(record["expense_per_person_amd"] ?? record["expense_per_person"]);
-  const profit = parseAmd(record["profit_per_person_amd"] ?? record["profit_per_person"]) || Math.max(0, revenue - expense);
+  const profit =
+    parseAmd(record["profit_per_person_amd"] ?? record["profit_per_person"]) ||
+    Math.max(0, revenue - expense);
   return {
     group_size: groupSize,
     revenue_per_person_amd: revenue,
@@ -217,21 +233,26 @@ function asOffers(value: unknown): TourIdeaMarketOffer[] {
   return value.flatMap((item) => {
     if (!item || typeof item !== "object") return [];
     const record = item as Record<string, unknown>;
-    return [{
-      title: String(record["title"] ?? ""),
-      url: asHttpUrl(record["url"]),
-      observed_price_amd: parseAmd(record["observed_price_amd"]),
-      observed_amount: typeof record["observed_amount"] === "number" ? record["observed_amount"] : parseAmd(record["observed_amount"]),
-      observed_currency: String(record["observed_currency"] ?? ""),
-      conversion_rate: parseAmd(record["conversion_rate"]),
-      conversion_estimated: Boolean(record["conversion_estimated"]),
-      found_on: String(record["found_on"] ?? ""),
-      label: String(record["label"] ?? "market_reference"),
-      snippet: String(record["snippet"] ?? ""),
-      company: String(record["company"] ?? ""),
-      retrieved_at: String(record["retrieved_at"] ?? ""),
-      duration_days: typeof record["duration_days"] === "number" ? record["duration_days"] : null,
-    }];
+    return [
+      {
+        title: String(record["title"] ?? ""),
+        url: asHttpUrl(record["url"]),
+        observed_price_amd: parseAmd(record["observed_price_amd"]),
+        observed_amount:
+          typeof record["observed_amount"] === "number"
+            ? record["observed_amount"]
+            : parseAmd(record["observed_amount"]),
+        observed_currency: String(record["observed_currency"] ?? ""),
+        conversion_rate: parseAmd(record["conversion_rate"]),
+        conversion_estimated: Boolean(record["conversion_estimated"]),
+        found_on: String(record["found_on"] ?? ""),
+        label: String(record["label"] ?? "market_reference"),
+        snippet: String(record["snippet"] ?? ""),
+        company: String(record["company"] ?? ""),
+        retrieved_at: String(record["retrieved_at"] ?? ""),
+        duration_days: typeof record["duration_days"] === "number" ? record["duration_days"] : null,
+      },
+    ];
   });
 }
 
@@ -242,7 +263,8 @@ function asMarket(value: unknown): TourIdeaMarket | undefined {
     label: String(record["label"] ?? "market_reference"),
     offer_count: parseAmd(record["offer_count"]),
     price_min_amd: record["price_min_amd"] == null ? null : parseAmd(record["price_min_amd"]),
-    price_median_amd: record["price_median_amd"] == null ? null : parseAmd(record["price_median_amd"]),
+    price_median_amd:
+      record["price_median_amd"] == null ? null : parseAmd(record["price_median_amd"]),
     price_max_amd: record["price_max_amd"] == null ? null : parseAmd(record["price_max_amd"]),
     difference_amd: parseAmd(record["difference_amd"]),
     offers: asOffers(record["offers"]),
@@ -250,7 +272,13 @@ function asMarket(value: unknown): TourIdeaMarket | undefined {
 }
 
 function asPosition(value: unknown): TourIdeaMarketPosition | undefined {
-  if (value === "below_market" || value === "in_range" || value === "above_market" || value === "unknown") return value;
+  if (
+    value === "below_market" ||
+    value === "in_range" ||
+    value === "above_market" ||
+    value === "unknown"
+  )
+    return value;
   return undefined;
 }
 
@@ -278,16 +306,18 @@ export function normalizeResearch(value: unknown): TourIdeaResearch {
   const record = value as Record<string, unknown>;
   const results: TourIdeaResearchHit[] = Array.isArray(record["results"])
     ? record["results"].flatMap((item) => {
-      if (!item || typeof item !== "object") return [];
-      const row = item as Record<string, unknown>;
-      return [{
-        title: String(row["title"] ?? ""),
-        url: asHttpUrl(row["url"]),
-        snippet: String(row["snippet"] ?? ""),
-        query: String(row["query"] ?? ""),
-        kind: String(row["kind"] ?? ""),
-      }];
-    })
+        if (!item || typeof item !== "object") return [];
+        const row = item as Record<string, unknown>;
+        return [
+          {
+            title: String(row["title"] ?? ""),
+            url: asHttpUrl(row["url"]),
+            snippet: String(row["snippet"] ?? ""),
+            query: String(row["query"] ?? ""),
+            kind: String(row["kind"] ?? ""),
+          },
+        ];
+      })
     : [];
   return {
     live: Boolean(record["live"]),
@@ -301,62 +331,69 @@ export function normalizeResearch(value: unknown): TourIdeaResearch {
     search_status: String(record["search_status"] ?? record["error"] ?? ""),
     tavily_key_present: Boolean(record["tavily_key_present"]),
     useful_result_count: Number(record["useful_result_count"] ?? results.length) || 0,
-    provider_status: record["provider_status"] && typeof record["provider_status"] === "object"
-      ? {
-        tavily: String((record["provider_status"] as Record<string, unknown>)["tavily"] ?? ""),
-        ddg: String((record["provider_status"] as Record<string, unknown>)["ddg"] ?? ""),
-        tavily_key_present: Boolean((record["provider_status"] as Record<string, unknown>)["tavily_key_present"]),
-      }
-      : {},
+    provider_status:
+      record["provider_status"] && typeof record["provider_status"] === "object"
+        ? {
+            tavily: String((record["provider_status"] as Record<string, unknown>)["tavily"] ?? ""),
+            ddg: String((record["provider_status"] as Record<string, unknown>)["ddg"] ?? ""),
+            tavily_key_present: Boolean(
+              (record["provider_status"] as Record<string, unknown>)["tavily_key_present"],
+            ),
+          }
+        : {},
     place_en: typeof record["place_en"] === "string" ? record["place_en"] : null,
     region_en: typeof record["region_en"] === "string" ? record["region_en"] : null,
     pages_fetched: Number(record["pages_fetched"] ?? 0) || 0,
     place_candidates: Array.isArray(record["place_candidates"])
       ? record["place_candidates"].flatMap((item) => {
-        if (!item || typeof item !== "object") return [];
-        const row = item as Record<string, unknown>;
-        const name = String(row["name_en"] ?? "").trim();
-        if (!name) return [];
-        return [{
-          name_en: name,
-          name_hy: String(row["name_hy"] ?? ""),
-          type: String(row["type"] ?? ""),
-          source_url: asHttpUrl(row["source_url"]),
-          osm_url: asHttpUrl(row["osm_url"]),
-          wiki_url: asHttpUrl(row["wiki_url"]),
-          description: String(row["description"] ?? ""),
-          lat: typeof row["lat"] === "number" ? row["lat"] : Number(row["lat"]) || null,
-          lon: typeof row["lon"] === "number" ? row["lon"] : Number(row["lon"]) || null,
-          coord_source: String(row["coord_source"] ?? ""),
-          distance_from_armavir_km:
-            typeof row["distance_from_armavir_km"] === "number"
-              ? row["distance_from_armavir_km"]
-              : Number(row["distance_from_armavir_km"]) || null,
-        }];
-      })
+          if (!item || typeof item !== "object") return [];
+          const row = item as Record<string, unknown>;
+          const name = String(row["name_en"] ?? "").trim();
+          if (!name) return [];
+          return [
+            {
+              name_en: name,
+              name_hy: String(row["name_hy"] ?? ""),
+              type: String(row["type"] ?? ""),
+              source_url: asHttpUrl(row["source_url"]),
+              osm_url: asHttpUrl(row["osm_url"]),
+              wiki_url: asHttpUrl(row["wiki_url"]),
+              description: String(row["description"] ?? ""),
+              lat: typeof row["lat"] === "number" ? row["lat"] : Number(row["lat"]) || null,
+              lon: typeof row["lon"] === "number" ? row["lon"] : Number(row["lon"]) || null,
+              coord_source: String(row["coord_source"] ?? ""),
+              distance_from_armavir_km:
+                typeof row["distance_from_armavir_km"] === "number"
+                  ? row["distance_from_armavir_km"]
+                  : Number(row["distance_from_armavir_km"]) || null,
+            },
+          ];
+        })
       : [],
     onewaytour_unavailable: Boolean(record["onewaytour_unavailable"]),
     onewaytour_tours: Array.isArray(record["onewaytour_tours"])
       ? record["onewaytour_tours"].flatMap((item) => {
-        if (!item || typeof item !== "object") return [];
-        const row = item as Record<string, unknown>;
-        const name = String(row["name"] ?? row["title"] ?? "").trim();
-        const url = asHttpUrl(row["url"]);
-        if (!name && !url) return [];
-        const places = Array.isArray(row["places"])
-          ? row["places"].map((place) => String(place).trim()).filter(Boolean)
-          : [];
-        const priceRaw = row["price_amd"] ?? row["observed_price_amd"];
-        return [{
-          name,
-          url,
-          price_amd: priceRaw == null ? null : parseAmd(priceRaw),
-          duration: String(row["duration"] ?? ""),
-          departure_city: String(row["departure_city"] ?? ""),
-          places,
-          matched: Boolean(row["matched"]),
-        }];
-      })
+          if (!item || typeof item !== "object") return [];
+          const row = item as Record<string, unknown>;
+          const name = String(row["name"] ?? row["title"] ?? "").trim();
+          const url = asHttpUrl(row["url"]);
+          if (!name && !url) return [];
+          const places = Array.isArray(row["places"])
+            ? row["places"].map((place) => String(place).trim()).filter(Boolean)
+            : [];
+          const priceRaw = row["price_amd"] ?? row["observed_price_amd"];
+          return [
+            {
+              name,
+              url,
+              price_amd: priceRaw == null ? null : parseAmd(priceRaw),
+              duration: String(row["duration"] ?? ""),
+              departure_city: String(row["departure_city"] ?? ""),
+              places,
+              matched: Boolean(row["matched"]),
+            },
+          ];
+        })
       : [],
   };
 }
@@ -384,17 +421,26 @@ export function normalizeTourIdea(value: unknown): TourIdeaResult | null {
     location_hy: String(record["location_hy"] ?? ""),
     location_en: String(record["location_en"] ?? ""),
     location_ru: String(record["location_ru"] ?? ""),
-    price: record["price"] === null ? null : parseAmd(record["price"] ?? record["suggested_price"] ?? record["selling_price"]),
-    duration_hours: typeof record["duration_hours"] === "number" ? record["duration_hours"] : Number(record["duration_hours"]) || 10,
+    price:
+      record["price"] === null
+        ? null
+        : parseAmd(record["price"] ?? record["suggested_price"] ?? record["selling_price"]),
+    duration_hours:
+      typeof record["duration_hours"] === "number"
+        ? record["duration_hours"]
+        : Number(record["duration_hours"]) || 10,
     highlights,
     itinerary,
     notes: typeof record["notes"] === "string" ? record["notes"] : "",
-    verify: Array.isArray(record["verify"]) ? record["verify"].map((item) => String(item)).filter(Boolean) : [],
+    verify: Array.isArray(record["verify"])
+      ? record["verify"].map((item) => String(item)).filter(Boolean)
+      : [],
     needs_verification: Boolean(record["needs_verification"]),
     source_urls: Array.isArray(record["source_urls"])
       ? record["source_urls"].map(asHttpUrl).filter(Boolean)
       : [],
-    route_km: typeof record["route_km"] === "number" ? record["route_km"] : Number(record["route_km"]) || 0,
+    route_km:
+      typeof record["route_km"] === "number" ? record["route_km"] : Number(record["route_km"]) || 0,
     km_source: typeof record["km_source"] === "string" ? record["km_source"] : "",
     geocoded_stops: Array.isArray(record["geocoded_stops"])
       ? record["geocoded_stops"]
@@ -412,7 +458,10 @@ export function normalizeTourIdea(value: unknown): TourIdeaResult | null {
               coord_source: String(row["coord_source"] ?? "Nominatim"),
             };
           })
-          .filter((item): item is { name: string; lat: number; lon: number; coord_source: string } => item !== null)
+          .filter(
+            (item): item is { name: string; lat: number; lon: number; coord_source: string } =>
+              item !== null,
+          )
       : [],
     transport_rate_per_km_amd: parseAmd(record["transport_rate_per_km_amd"]) || 600,
     cost_per_person_amd: parseAmd(record["cost_per_person_amd"]),
@@ -423,10 +472,12 @@ export function normalizeTourIdea(value: unknown): TourIdeaResult | null {
   const profitability = asProfitability(record["profitability"]);
   if (profitability) result.profitability = profitability;
   if (typeof record["budget_score"] === "number") result.budget_score = record["budget_score"];
-  if (typeof record["logistics_score"] === "number") result.logistics_score = record["logistics_score"];
+  if (typeof record["logistics_score"] === "number")
+    result.logistics_score = record["logistics_score"];
   if (typeof record["appeal_score"] === "number") result.appeal_score = record["appeal_score"];
   if (typeof record["quality_score"] === "number") result.quality_score = record["quality_score"];
-  if (record["budget_fit"] === "over" || record["budget_fit"] === "within") result.budget_fit = record["budget_fit"];
+  if (record["budget_fit"] === "over" || record["budget_fit"] === "within")
+    result.budget_fit = record["budget_fit"];
   const position = asPosition(record["market_position"]);
   if (position) result.market_position = position;
   const market = asMarket(record["market"]);
@@ -464,7 +515,12 @@ function timedFetch(input: string, init: RequestInit) {
   return fetch(input, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
 }
 
-function cacheRun(runId: string, ideas: TourIdeaResult[], summary: string, research: TourIdeaResearch) {
+function cacheRun(
+  runId: string,
+  ideas: TourIdeaResult[],
+  summary: string,
+  research: TourIdeaResearch,
+) {
   if (typeof sessionStorage === "undefined") return;
   sessionStorage.setItem(LAST_RUN_KEY, JSON.stringify({ runId, ideas, summary, research }));
 }
@@ -479,7 +535,12 @@ export function readCachedIdeaRun(): {
   try {
     const raw = sessionStorage.getItem(LAST_RUN_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as { runId?: string; ideas?: unknown[]; summary?: string; research?: unknown };
+    const parsed = JSON.parse(raw) as {
+      runId?: string;
+      ideas?: unknown[];
+      summary?: string;
+      research?: unknown;
+    };
     const ideas = Array.isArray(parsed.ideas)
       ? parsed.ideas.map(normalizeTourIdea).filter((item): item is TourIdeaResult => item !== null)
       : [];
@@ -553,7 +614,7 @@ export async function generateTourIdeas(input: TourIdeaInput): Promise<{
     throw new Error(ideaRequestError(response.status));
   }
   const payload = (await response.json().catch(() => null)) as GeneratePayload | null;
-  let ideas = Array.isArray(payload?.ideas)
+  const ideas = Array.isArray(payload?.ideas)
     ? payload.ideas.map(normalizeTourIdea).filter((item): item is TourIdeaResult => item !== null)
     : [];
   const summary = typeof payload?.research_summary === "string" ? payload.research_summary : "";
@@ -575,7 +636,11 @@ export async function generateTourIdeas(input: TourIdeaInput): Promise<{
   return { runId, ideas, research_summary: summary, research };
 }
 
-export async function saveTourIdeaDraft(input: TourIdeaInput, ideas: TourIdeaResult[], _createdBy?: string | null) {
+export async function saveTourIdeaDraft(
+  input: TourIdeaInput,
+  ideas: TourIdeaResult[],
+  _createdBy?: string | null,
+) {
   if (!isSupabaseConfigured || !supabase) {
     throw new Error("Supabase-ը կարգավորված չէ։ Draft-ը չպահվեց։");
   }

@@ -214,6 +214,7 @@ def telegram_webhook(
     memory = _telegram_chats.get(chat_id)
     try:
         reply, source = answer_for(memory, text.strip()[:500], chat_id)
+        _telegram_chats.save(chat_id)
         send_message(chat_id, reply, memory.choices)
         print(json.dumps({"update": update_id, "status": 200, "source": source}, separators=(",", ":")), flush=True)
     except Exception:

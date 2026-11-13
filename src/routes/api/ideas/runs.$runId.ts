@@ -1,5 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { forwardToPython, isUuid, jsonError, methodNotAllowed, requireAdmin } from "@/lib/ideas-proxy.server";
+import {
+  forwardToPython,
+  isUuid,
+  jsonError,
+  methodNotAllowed,
+  requireAdmin,
+} from "@/lib/ideas-proxy.server";
 
 async function handleGet({ request, params }: { request: Request; params: { runId: string } }) {
   const admin = await requireAdmin(request);
@@ -9,6 +15,7 @@ async function handleGet({ request, params }: { request: Request; params: { runI
   return forwardToPython(`/api/idea-runs/${encodeURIComponent(runId)}`, {
     method: "GET",
     userId: admin.userId,
+    requestId: request.headers.get("x-vercel-id") ?? request.headers.get("x-request-id"),
   });
 }
 

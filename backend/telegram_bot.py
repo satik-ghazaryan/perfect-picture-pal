@@ -6,6 +6,7 @@ import os
 import re
 from collections import deque
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 
 import httpx
 
@@ -74,16 +75,136 @@ class ChatMemory:
         self.choices.clear()
 
 
+MEMORY_TURNS = 16
+MEMORY_DAYS = 7
+_TABLE = "telegram_chats"
+
+
+def _turns(value: object) -> list[dict[str, str]]:
+    turns: list[dict[str, str]] = []
+    for item in value if isinstance(value, list) else []:
+        if not isinstance(item, dict):
+            continue
+        role = item.get("role")
+        text = item.get("text")
+        if role in {"user", "assistant"} and isinstance(text, str) and text.strip():
+            turns.append({"role": role, "text": clean_text(text)})
+    return turns[-MEMORY_TURNS:]
+
+
+def _choices(value: object) -> list[dict[str, str]]:
+    choices: list[dict[str, str]] = []
+    for item in value if isinstance(value, list) else []:
+        if not isinstance(item, dict):
+            continue
+        tour_id = item.get("id")
+        title = item.get("title")
+        if isinstance(tour_id, str) and isinstance(title, str) and _TOUR_ID.fullmatch(tour_id) and title.strip():
+            choices.append({"id": tour_id, "title": title.strip()[:120]})
+    return choices[:8]
+
+
+def _database() -> tuple[str, str] | None:
+    """Supabase REST address and service key, when the server is allowed to keep chats."""
+    raw = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
+    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    if not raw or len(key) < 20:
+        return None
+    try:
+        parsed = httpx.URL(raw)
+    except Exception:
+        return None
+    if parsed.scheme != "https" or not parsed.host:
+        return None
+    return f"https://{parsed.host}/rest/v1/{_TABLE}", key
+
+
+def _headers(key: str) -> dict[str, str]:
+    return {"apikey": key, "authorization": f"Bearer {key}", "content-type": "application/json"}
+
+
+def load_memory(chat_id: int, now: datetime | None = None, http=httpx) -> ChatMemory | None:
+    """The saved conversation, or None when nothing usable is stored."""
+    target = _database()
+    if not target:
+        return None
+    url, key = target
+    try:
+        response = http.get(
+            url,
+            params={"chat_id": f"eq.{chat_id}", "select": "history,selected,choices,updated_at"},
+            headers=_headers(key),
+            timeout=4,
+        )
+        response.raise_for_status()
+        rows = response.json()
+    except Exception:
+        return None
+    row = rows[0] if isinstance(rows, list) and rows and isinstance(rows[0], dict) else None
+    if not row:
+        return None
+    try:
+        saved = datetime.fromisoformat(str(row.get("updated_at") or "").replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if saved.tzinfo is None:
+        saved = saved.replace(tzinfo=timezone.utc)
+    if (now or datetime.now(timezone.utc)) - saved > timedelta(days=MEMORY_DAYS):
+        return None
+    selected = row.get("selected")
+    return ChatMemory(
+        history=_turns(row.get("history")),
+        selected=selected if isinstance(selected, str) and _TOUR_ID.fullmatch(selected) else None,
+        choices=_choices(row.get("choices")),
+    )
+
+
+def save_memory(chat_id: int, memory: ChatMemory, now: datetime | None = None, http=httpx) -> bool:
+    target = _database()
+    if not target:
+        return False
+    url, key = target
+    try:
+        response = http.post(
+            url,
+            params={"on_conflict": "chat_id"},
+            headers={**_headers(key), "prefer": "resolution=merge-duplicates,return=minimal"},
+            json={
+                "chat_id": chat_id,
+                "history": _turns(memory.history),
+                "selected": memory.selected,
+                "choices": _choices(memory.choices),
+                "updated_at": (now or datetime.now(timezone.utc)).isoformat(),
+            },
+            timeout=4,
+        )
+        response.raise_for_status()
+    except Exception:
+        return False
+    return True
+
+
 class ChatStore:
-    def __init__(self) -> None:
+    """Conversations by Telegram chat. Kept in memory and, when configured, in Supabase,
+    so a restart or a sleeping server does not make the bot forget what was being discussed."""
+
+    def __init__(self, load=load_memory, save=save_memory) -> None:
         self._chats: dict[int, ChatMemory] = {}
+        self._load = load
+        self._save = save
 
     def get(self, chat_id: int) -> ChatMemory:
         memory = self._chats.get(chat_id)
         if memory is None:
-            memory = ChatMemory()
+            memory = self._load(chat_id) or ChatMemory()
             self._chats[chat_id] = memory
+            while len(self._chats) > 2000:
+                self._chats.pop(next(iter(self._chats)))
         return memory
+
+    def save(self, chat_id: int) -> bool:
+        memory = self._chats.get(chat_id)
+        return self._save(chat_id, memory) if memory is not None else False
 
 
 def main_keyboard(choices: list[dict[str, str]] | None = None) -> dict:
@@ -160,7 +281,7 @@ def plan_message(memory: ChatMemory, text: str) -> dict:
 def site_body(memory: ChatMemory, plan: dict) -> dict:
     body: dict = {
         "message": plan["message"],
-        "history": memory.history[-8:],
+        "history": memory.history[-MEMORY_TURNS:],
         "selectedTourId": memory.selected,
     }
     if plan["kind"] == "section":
@@ -176,7 +297,7 @@ def remember(memory: ChatMemory, user_text: str, payload: dict) -> None:
     reply = payload.get("reply") if isinstance(payload.get("reply"), str) else ""
     if reply:
         memory.history.append({"role": "assistant", "text": clean_text(reply)})
-    memory.history = memory.history[-8:]
+    memory.history = memory.history[-MEMORY_TURNS:]
     selected = payload.get("selectedTourId")
     if isinstance(selected, str) and _TOUR_ID.fullmatch(selected):
         memory.selected = selected

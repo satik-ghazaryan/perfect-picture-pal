@@ -445,7 +445,8 @@ def ground_idea(idea: dict[str, Any], research: dict[str, Any]) -> dict[str, Any
         if not title:
             continue
         tokens = [token for token in re.split(r"[\s,;:/|—.()\-]+", title) if len(token) > 3]
-        if tokens and not any(token.lower() in corpus for token in tokens):
+        known = match_place_candidate(stop, research) is not None
+        if tokens and not known and not any(token.lower() in corpus for token in tokens):
             flag = f"Place not in search results: {title}"
             if flag not in verify:
                 verify.append(flag)
@@ -601,7 +602,8 @@ def flag_thin_itinerary(idea: dict[str, Any], research: dict[str, Any] | None = 
         source = _text(stop.get("source_url"))
         title = stop_place_name(stop) or _text(stop.get("title_en") or stop.get("title"))
         tokens = [token for token in re.split(r"[\s,;:/|—.()\-]+", title) if len(token) > 3]
-        if tokens and corpus and not any(token.lower() in corpus for token in tokens):
+        known = match_place_candidate(stop, research) is not None
+        if tokens and corpus and not known and not any(token.lower() in corpus for token in tokens):
             flag = f"Place not in search results: {title}"
             if flag not in verify:
                 verify.append(flag)
@@ -712,18 +714,13 @@ def sanitize_competitors(idea: dict[str, Any], research: dict[str, Any] | None =
 
     next_idea = _walk_text_fields(idea, scrub)
     if not has_offers:
-        highlights = []
-        replaced = False
-        for item in next_idea.get("highlights") or []:
-            low = str(item).lower()
-            if any(marker in low for marker in DIFF_MARKERS):
-                highlights.append(NO_COMPETITOR_LINE)
-                replaced = True
-            else:
-                highlights.append(item)
-        if not replaced:
-            highlights.append(NO_COMPETITOR_LINE)
-        next_idea["highlights"] = highlights
+        # Highlights are shown to customers once the idea becomes a tour, so a line about
+        # competitors is removed rather than replaced. The admin still sees it under verify.
+        next_idea["highlights"] = [
+            item
+            for item in next_idea.get("highlights") or []
+            if not any(marker in str(item).lower() for marker in DIFF_MARKERS)
+        ]
     verify = [str(item) for item in (next_idea.get("verify") or []) if str(item).strip()]
     if not has_offers and "No competitor data was found" not in " ".join(verify):
         verify.append("No competitor data was found")

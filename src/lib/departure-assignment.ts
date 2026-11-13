@@ -41,7 +41,9 @@ export function isExplicitDepartureDate(value: string) {
   const day = Number(dayText);
   if (!year || !month || !day) return false;
   const date = new Date(Date.UTC(year, month - 1, day));
-  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+  return (
+    date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+  );
 }
 
 export function assigneeRoleError(expected: "guide" | "driver", role: string | null) {
@@ -63,9 +65,13 @@ export function planLegacyDepartureLinks(
   const conflicts: DepartureAssignmentConflict[] = [];
   for (const tour of tours) {
     if (!tour.guideId && !tour.driverId) continue;
-    const date = tour.departureDate && isExplicitDepartureDate(tour.departureDate) ? tour.departureDate : null;
+    const date =
+      tour.departureDate && isExplicitDepartureDate(tour.departureDate) ? tour.departureDate : null;
     if (!date) {
-      conflicts.push({ tourId: tour.id, reason: "Տուրի աշխատակիցը կա, բայց միանշանակ մեկնման ամսաթիվ չկա։" });
+      conflicts.push({
+        tourId: tour.id,
+        reason: "Տուրի աշխատակիցը կա, բայց միանշանակ մեկնման ամսաթիվ չկա։",
+      });
       continue;
     }
     const guideRole = roleOf(accounts, tour.guideId);
@@ -78,18 +84,26 @@ export function planLegacyDepartureLinks(
       conflicts.push({ tourId: tour.id, reason: "Տուրի driver_id հաշիվը վարորդ չէ։" });
       continue;
     }
-    const sameDay = departures.filter((item) => item.tourId === tour.id && item.departureDate === date);
+    const sameDay = departures.filter(
+      (item) => item.tourId === tour.id && item.departureDate === date,
+    );
     if (sameDay.length > 1) {
       conflicts.push({ tourId: tour.id, reason: "Նույն օրվա մեկից ավելի մեկնում կա։" });
       continue;
     }
     const current = sameDay[0] ?? null;
     if (current?.guideId && tour.guideId && current.guideId !== tour.guideId) {
-      conflicts.push({ tourId: tour.id, reason: "Մեկնման զբոսավարը տարբերվում է տուրի guide_id-ից։" });
+      conflicts.push({
+        tourId: tour.id,
+        reason: "Մեկնման զբոսավարը տարբերվում է տուրի guide_id-ից։",
+      });
       continue;
     }
     if (current?.driverId && tour.driverId && current.driverId !== tour.driverId) {
-      conflicts.push({ tourId: tour.id, reason: "Մեկնման վարորդը տարբերվում է տուրի driver_id-ից։" });
+      conflicts.push({
+        tourId: tour.id,
+        reason: "Մեկնման վարորդը տարբերվում է տուրի driver_id-ից։",
+      });
       continue;
     }
     apply.push({

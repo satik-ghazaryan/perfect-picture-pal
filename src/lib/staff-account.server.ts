@@ -27,7 +27,11 @@ async function saveStaffProfile(
   account: StaffAccountRecord,
 ) {
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    const { data, error } = await client.from("profiles").select("id").eq("id", account.id).maybeSingle();
+    const { data, error } = await client
+      .from("profiles")
+      .select("id")
+      .eq("id", account.id)
+      .maybeSingle();
     if (error) throw new Error("profile lookup failed");
     if (data) {
       const { error: updateError } = await client
@@ -81,7 +85,11 @@ export async function handleCreateStaffAccount(request: Request) {
           user_metadata: { full_name: value.fullName, phone: value.phone },
         });
         if (error || !data.user) {
-          throw new Error(isDuplicateStaffAuthError(error?.message ?? "") ? error?.message ?? "registered" : "create failed");
+          throw new Error(
+            isDuplicateStaffAuthError(error?.message ?? "")
+              ? (error?.message ?? "registered")
+              : "create failed",
+          );
         }
         return { id: data.user.id };
       },

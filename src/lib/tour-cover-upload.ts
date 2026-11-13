@@ -1,7 +1,10 @@
 export const COVER_UPLOAD_ERROR = "Նկարը չվերբեռնվեց։ Նախկին նկարը պահպանված է։";
 
 function safeSegment(value: string, fallback: string) {
-  const cleaned = value.replace(/[^\w.-]+/g, "_").replace(/^_+|_+$/g, "").replace(/^\.+/, "");
+  const cleaned = value
+    .replace(/[^\w.-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/^\.+/, "");
   return cleaned || fallback;
 }
 

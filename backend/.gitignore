@@ -12,3 +12,6 @@ __pycache__/
 .nominatim_cache.json
 .onewaytour_cache.json
 .hy_label_cache.json
+
+# Test fixtures must be committed (the data/ rule above was hiding them).
+!tests/data/

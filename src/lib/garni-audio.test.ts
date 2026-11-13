@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { createMemoryCatalogRemote, loadRemoteCatalog } from "./catalog-persistence";
-import { garniGuideAudioUrl, garniGuideDurationSeconds, withPublishedGarniAudio } from "./garni-audio";
+import {
+  garniGuideAudioUrl,
+  garniGuideDurationSeconds,
+  withPublishedGarniAudio,
+} from "./garni-audio";
 
 const settings = {
   bannerTitle: "Բացահայտիր",

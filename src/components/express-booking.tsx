@@ -28,7 +28,11 @@ import {
   subscribeLoyalty,
 } from "@/lib/loyalty";
 import { completeCheckout, type CheckoutSuccess } from "@/lib/payments";
-import { listBookableDepartures, localDateISO, type BookableDeparture } from "@/lib/departure-booking";
+import {
+  listBookableDepartures,
+  localDateISO,
+  type BookableDeparture,
+} from "@/lib/departure-booking";
 import { DEPARTURE_CLOSED_MESSAGE, departureBookingClosed } from "@/lib/departure-deadline";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { DepartureCrew } from "@/components/departure-crew";
@@ -176,7 +180,9 @@ export function BookingPanel({ tour }: { tour: Tour }) {
           localDateISO(),
         );
         setOptions(rows);
-        setSelectedId((current) => (current && rows.some((row) => row.id === current) ? current : rows[0]?.id ?? ""));
+        setSelectedId((current) =>
+          current && rows.some((row) => row.id === current) ? current : (rows[0]?.id ?? ""),
+        );
       });
     return () => {
       cancelled = true;
@@ -185,7 +191,7 @@ export function BookingPanel({ tour }: { tour: Tour }) {
 
   const selected = options.find((item) => item.id === selectedId) ?? null;
   const remote = isSupabaseConfigured;
-  const seatLimit = remote ? selected?.availableSeats ?? 0 : tour.seatsLeft;
+  const seatLimit = remote ? (selected?.availableSeats ?? 0) : tour.seatsLeft;
   const shownDate = remote
     ? selected
       ? format(parseISO(selected.departureDate), "d MMMM yyyy, EEEE", { locale: hy })
@@ -389,7 +395,9 @@ export function BookingPanel({ tour }: { tour: Tour }) {
         <div className="rounded-3xl border border-border bg-card p-4 shadow-float lg:sticky lg:top-24">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-2xl font-black text-primary">{formatAmd(remote ? unitPrice : tour.price)}</p>
+              <p className="text-2xl font-black text-primary">
+                {formatAmd(remote ? unitPrice : tour.price)}
+              </p>
               <p className="text-[11px] text-muted-foreground">մեկ անձի համար</p>
             </div>
             <span
@@ -459,7 +467,11 @@ export function BookingPanel({ tour }: { tour: Tour }) {
           <Button
             className="mt-4 h-11 w-full rounded-full font-bold"
             disabled={
-              soldOut || bookingClosed || guests < 1 || guests > seatLimit || (remote ? !selected : !dayReady)
+              soldOut ||
+              bookingClosed ||
+              guests < 1 ||
+              guests > seatLimit ||
+              (remote ? !selected : !dayReady)
             }
             onClick={() => {
               if (remote ? !selected : !bookingDayAssigned(tour.day)) {
@@ -757,7 +769,9 @@ export function BookingPanel({ tour }: { tour: Tour }) {
                       <p className="text-[11px] text-muted-foreground">Ամրագրման կոդ</p>
                       <p className="font-mono text-sm font-bold tracking-wide">{code}</p>
                       {(seatLabel || seat !== null) && (
-                        <p className="mt-1 text-[11px] text-muted-foreground">Նստատեղ {seatLabel || seat}</p>
+                        <p className="mt-1 text-[11px] text-muted-foreground">
+                          Նստատեղ {seatLabel || seat}
+                        </p>
                       )}
                       {receipt?.notified && (
                         <p className="mt-1 text-[11px] text-muted-foreground">
@@ -776,7 +790,9 @@ export function BookingPanel({ tour }: { tour: Tour }) {
                         </p>
                       )}
                       {receipt && !receipt.pointsSaved && !remote && (
-                        <p className="mt-1 text-[11px] text-muted-foreground">Միավորները չգրանցվեցին</p>
+                        <p className="mt-1 text-[11px] text-muted-foreground">
+                          Միավորները չգրանցվեցին
+                        </p>
                       )}
                     </div>
                     <TicketQr value={code} />
@@ -784,7 +800,9 @@ export function BookingPanel({ tour }: { tour: Tour }) {
                 </div>
               </div>
               <DepartureCrew
-                departureDate={remote && selected ? selected.departureDate : bookingCrewDepartureDate(tour.day)}
+                departureDate={
+                  remote && selected ? selected.departureDate : bookingCrewDepartureDate(tour.day)
+                }
                 departureTime={tour.departureTime}
                 guideId={assigned?.guideId ?? null}
                 driverId={assigned?.driverId ?? null}
