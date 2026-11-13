@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import hmac
+import json
 import os
 import re
 from collections import deque
@@ -394,3 +395,28 @@ def register_webhook() -> None:
         username = None
     if isinstance(username, str) and re.fullmatch(r"[A-Za-z0-9_]{4,32}", username):
         print(f"telegram bot: {username}", flush=True)
+    print(f"telegram webhook status: {webhook_status(token, backend)}", flush=True)
+
+
+def webhook_status(token: str, backend: str, http=httpx) -> str:
+    """What Telegram itself says about delivering updates to this server, without any secret.
+
+    The server log only shows updates that arrive. When none arrive, this line says why:
+    Telegram keeps the last delivery error and the number of updates still waiting.
+    """
+    try:
+        response = http.get(f"https://api.telegram.org/bot{token}/getWebhookInfo", timeout=10)
+        info = response.json().get("result")
+    except Exception:
+        return "unavailable"
+    if not isinstance(info, dict):
+        return "unavailable"
+    url = str(info.get("url") or "")
+    status = {
+        "points_here": url == f"{backend}/api/telegram/webhook",
+        "host": httpx.URL(url).host if url.startswith("https://") else "",
+        "pending": info.get("pending_update_count") if isinstance(info.get("pending_update_count"), int) else None,
+        "last_error_at": info.get("last_error_date") if isinstance(info.get("last_error_date"), int) else None,
+        "last_error": clean_text(str(info.get("last_error_message") or ""))[:160],
+    }
+    return json.dumps(status, ensure_ascii=False, separators=(",", ":"))
