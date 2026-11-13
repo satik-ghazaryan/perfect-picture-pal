@@ -226,6 +226,12 @@ def telegram_webhook(
     return {"ok": True}
 
 
+def _safe_reason(error: Exception) -> str:
+    """A short reason for the log, with anything that looks like a key removed."""
+    text = re.sub(r"(sk-|key-|Bearer\s+)[A-Za-z0-9_\-]{6,}", "[removed]", str(error))
+    return re.sub(r"\s+", " ", text)[:200]
+
+
 @app.post("/api/generate-ideas", response_model=GenerateIdeasResponse, dependencies=[Depends(require_api_secret)])
 def generate_ideas(
     body: GenerateIdeasRequest,
@@ -255,11 +261,15 @@ def generate_ideas(
         )
     except HTTPException:
         raise
-    except ValidationError:
+    except ValidationError as error:
+        fields = sorted({".".join(str(part) for part in item["loc"][:3]) for item in error.errors()})
+        print(f"ideas_failed ValidationError fields={fields[:12]}", flush=True)
         raise HTTPException(status_code=502, detail="Idea generation failed.") from None
-    except RuntimeError:
+    except RuntimeError as error:
+        print(f"ideas_failed RuntimeError {_safe_reason(error)}", flush=True)
         raise HTTPException(status_code=502, detail="Idea generation failed.") from None
-    except Exception:
+    except Exception as error:
+        print(f"ideas_failed {type(error).__name__} {_safe_reason(error)}", flush=True)
         raise HTTPException(status_code=500, detail="Tour idea generation failed.") from None
 
 

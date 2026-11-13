@@ -625,23 +625,42 @@ Do not change place_name, activity, title_en, source_url, lat, lon, times, stop 
 Do not put Latin names in parentheses. Do not add places, prices, scores or new facts.
 
 IDEAS JSON:
-{json.dumps(ideas, ensure_ascii=False)}
+{json.dumps([{key: value for key, value in idea.items() if key != "_structured_stops"} for idea in ideas], ensure_ascii=False)}
 
-Return JSON: {{ "ideas": [ ... same objects with the Armenian fields filled ] }}
+Return only the Armenian fields, with each idea's id and each stop's time copied unchanged:
+{{ "ideas": [ {{ "id": "...", "title_hy": "...", "description_hy": "...", "location_hy": "...", "highlights": ["..."], "itinerary": [ {{ "time": "HH:MM", "title_hy": "...", "activity_hy": "...", "reason_hy": "..." }} ] }} ] }}
+One itinerary entry per stop, in the same order.
 """
 
 
 def _merge_hy_ideas(originals: dict[str, dict[str, Any]], adapted: list[Any]) -> list[dict[str, Any]]:
+    """Lay the Armenian text over the original ideas.
+
+    Only Armenian fields are taken from the copywriter's answer. Everything else stays as
+    it was, so an answer that returns partial objects, or skips an idea, cannot lose
+    English text, the route, or a whole idea.
+    """
+    rows = [item for item in adapted if isinstance(item, dict)]
+    by_id = {str(item.get("id") or ""): item for item in rows if str(item.get("id") or "")}
     merged_ideas: list[dict[str, Any]] = []
-    for item in adapted:
-        if not isinstance(item, dict):
-            continue
-        original = originals.get(str(item.get("id") or "")) or {}
+    for index, (key, original) in enumerate(originals.items()):
+        item = dict(original)
+        written = by_id.get(key)
+        if written is None and len(rows) == len(originals):
+            written = rows[index]
         structured = [row for row in (original.get("itinerary") or []) if isinstance(row, dict)]
-        item["itinerary"] = _preserve_stop_english(
-            structured,
-            [row for row in (item.get("itinerary") or []) if isinstance(row, dict)],
-        )
+        if written:
+            for field in ("title_hy", "description_hy", "location_hy"):
+                text = _plain(written.get(field))
+                if text and _HY_RE.search(text):
+                    item[field] = text
+            points = _lines(written.get("highlights"))
+            if points and all(_HY_RE.search(point) for point in points):
+                item["highlights"] = points
+            item["itinerary"] = _preserve_stop_english(
+                structured,
+                [row for row in (written.get("itinerary") or []) if isinstance(row, dict)],
+            )
         item["_structured_stops"] = structured
         merged_ideas.append(item)
     return merged_ideas
@@ -732,6 +751,67 @@ def _research_payload(state: State) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
+def _plain(value: Any) -> str:
+    """Text from whatever the model put in a text field (it sometimes sends an object or a list)."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict):
+        parts = [f"{key}՝ {_plain(item)}" for key, item in value.items() if _plain(item)]
+        return " ".join(parts)
+    if isinstance(value, (list, tuple)):
+        return " ".join(part for part in (_plain(item) for item in value) if part)
+    return str(value).strip()
+
+
+def _lines(value: Any) -> list[str]:
+    if isinstance(value, str):
+        items: list[Any] = [line.strip(" -•\t") for line in value.splitlines()]
+    elif isinstance(value, (list, tuple)):
+        items = list(value)
+    else:
+        items = []
+    return [text for text in (_plain(item) for item in items) if text]
+
+
+def tidy_idea(idea: dict[str, Any], research: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Make the model's idea fit the response shape, so one odd field does not lose the whole idea."""
+    data = dict(idea)
+    for field in ("title", "description", "location"):
+        for lang in ("hy", "en", "ru"):
+            data[f"{field}_{lang}"] = _plain(data.get(f"{field}_{lang}"))
+    if not data["location_en"]:
+        place = (research or {}).get("region_en") or (research or {}).get("place_en")
+        data["location_en"] = _plain(place) or "Armenia"
+    for field in ("title", "description", "location"):
+        english = data[f"{field}_en"] or data[f"{field}_hy"] or data[f"{field}_ru"]
+        for lang in ("hy", "en", "ru"):
+            if not data[f"{field}_{lang}"]:
+                data[f"{field}_{lang}"] = english
+    slug = re.sub(r"[^a-z0-9]+", "-", _plain(data.get("id")).lower()).strip("-")[:80]
+    if len(slug) < 2:
+        slug = re.sub(r"[^a-z0-9]+", "-", data["title_en"].lower()).strip("-")[:80] or "tour-idea"
+    data["id"] = slug if len(slug) >= 2 else "tour-idea"
+    data["notes"] = _plain(data.get("notes"))[:8000]
+    for field in ("highlights", "verify", "source_urls"):
+        data[field] = _lines(data.get(field))
+    try:
+        hours = float(data.get("duration_hours"))
+    except (TypeError, ValueError):
+        hours = 0.0
+    data["duration_hours"] = hours if 0 < hours <= 24 else 10.0
+    for field in ("budget_score", "logistics_score", "appeal_score", "quality_score"):
+        try:
+            score = float(data.get(field) or 0)
+        except (TypeError, ValueError):
+            score = 0.0
+        data[field] = min(max(score, 0.0), 10.0)
+    if not isinstance(data.get("itinerary"), list):
+        data["itinerary"] = []
+    return data
+
+
 def refinement_node(state: State) -> dict[str, Any]:
     payload = state["inputs"]
     wanted = int(payload.get("count") or 3)
@@ -744,7 +824,7 @@ def refinement_node(state: State) -> dict[str, Any]:
     labels = hy_labels_for_candidates([row for row in (research.get("place_candidates") or []) if isinstance(row, dict)])
     owt_tours = [item for item in (research.get("onewaytour_tours") or []) if isinstance(item, dict)]
     for raw in leftover_source:
-        candidate = ensure_armavir_bookends(dict(raw), departure)
+        candidate = ensure_armavir_bookends(tidy_idea(dict(raw), research), departure)
         structured = [row for row in (candidate.pop("_structured_stops", None) or candidate.get("itinerary") or []) if isinstance(row, dict)]
         geo_idea = dict(candidate)
         geo_idea["itinerary"] = structured
@@ -849,20 +929,12 @@ def refinement_node(state: State) -> dict[str, Any]:
             candidate = mark_hy_review(candidate)
         if not str(candidate.get("location_hy") or "").strip():
             candidate["location_hy"] = str(candidate.get("location_en") or "Armavir")
-        # One forgotten secondary field should not throw away an otherwise good idea.
-        if not str(candidate.get("location_en") or "").strip():
-            candidate["location_en"] = str(research.get("region_en") or research.get("place_en") or "Armenia")
-        for lang in ("ru",):
-            if not str(candidate.get(f"location_{lang}") or "").strip():
-                candidate[f"location_{lang}"] = str(candidate.get("location_en") or "")
-        for lang in ("en", "ru"):
-            if not str(candidate.get(f"title_{lang}") or "").strip():
-                candidate[f"title_{lang}"] = str(candidate.get("title_en") or candidate.get("title_hy") or candidate["id"])
-            if not str(candidate.get(f"description_{lang}") or "").strip():
-                candidate[f"description_{lang}"] = str(candidate.get("description_en") or candidate.get("description_hy") or "")
+        candidate = tidy_idea(candidate, research)
         try:
             idea = TourIdea.model_validate(candidate)
-        except ValidationError:
+        except ValidationError as error:
+            fields = sorted({".".join(str(part) for part in item["loc"][:2]) for item in error.errors()})
+            print(f"idea_invalid id={str(candidate.get('id'))[:60]} fields={fields[:12]}", flush=True)
             continue
         cleaned.append(idea.model_dump())
         if len(cleaned) >= wanted:
