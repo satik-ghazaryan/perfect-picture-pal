@@ -84,17 +84,47 @@ SYSTEM = (
     "quality_score is an internal field only. "
     "State: Meals and entrance fees are not included. "
     "Travel times must be realistic (Armavir to Lori at least 2.5–3 hours). "
-    "In this generation step write English and Russian copy; Armenian fields may be brief HY placeholders. "
     "Each idea must have a distinct concept. Return JSON only when asked for JSON."
 )
 
+HY_SYSTEM = (
+    "You are an Armenian travel copywriter for «Արի Գնանք», a company running one-day group tours "
+    "from Armavir. You write the Armenian version of tour copy for Armenian readers. "
+    "Write the way a good Armenian travel page reads: natural modern Eastern Armenian, concrete and warm, "
+    "short sentences, no bureaucratic or word-for-word translated phrasing. "
+    "Do not translate sentence by sentence: read the English, then say the same thing as an Armenian writer would. "
+    "Name the actual places and what a traveller sees and does there. "
+    "Avoid empty phrases such as «անմոռանալի փորձ», «մշակութային արժեքներ», «հայտնի վայրեր». "
+    "Use correct Armenian punctuation (։ ՝ , «»). Never leave English words or Latin letters in Armenian fields. "
+    "Keep every fact, name, time and number exactly as given; add no new facts, prices or promises. "
+    "Return JSON only."
+)
 
-def _llm(temperature: float = 0.45) -> ChatOpenAI:
+_SEASON_HY = {"spring": "գարուն", "summer": "ամառ", "autumn": "աշուն", "fall": "աշուն", "winter": "ձմեռ"}
+_AUDIENCE_HY = {
+    "families": "ընտանիքներ",
+    "couples": "զույգեր",
+    "friends": "ընկերական խմբեր",
+    "seniors": "ավագ սերունդ",
+    "mixed": "խառը խումբ",
+}
+
+
+def _copy_model() -> str:
+    """Model for the Armenian copy. OPENAI_COPY_MODEL lets it be stronger than the planning model."""
+    return (
+        os.getenv("OPENAI_COPY_MODEL", "").strip()
+        or os.getenv("OPENAI_MODEL", "").strip()
+        or "gpt-4o-mini"
+    )
+
+
+def _llm(temperature: float = 0.45, model: str | None = None) -> ChatOpenAI:
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY is missing.")
-    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini"
-    return ChatOpenAI(model=model, temperature=temperature, api_key=api_key, timeout=120)
+    chosen = model or os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini"
+    return ChatOpenAI(model=chosen, temperature=temperature, api_key=api_key, timeout=120)
 
 
 def _extract_json(text: str) -> Any:
@@ -111,10 +141,15 @@ def _extract_json(text: str) -> Any:
         return json.loads(match.group(1))
 
 
-def _invoke_json(prompt: str, temperature: float = 0.45) -> Any:
-    response = _llm(temperature).invoke(
+def _invoke_json(
+    prompt: str,
+    temperature: float = 0.45,
+    system: str = SYSTEM,
+    model: str | None = None,
+) -> Any:
+    response = _llm(temperature, model).invoke(
         [
-            SystemMessage(content=SYSTEM),
+            SystemMessage(content=system),
             HumanMessage(content=prompt),
         ]
     )
@@ -129,12 +164,12 @@ IDEA_JSON_SHAPE = """
   "ideas": [
     {
       "id": "kebab-case-id",
-      "title_hy": "specific memorable Armenian title, not a formula prefix",
-      "title_en": "natural English title",
-      "title_ru": "natural Russian title",
-      "description_hy": "Հայերեն պարբերություն՝ հայեցակարգ, լսարան, արժեք, տարբերակում, սեզոն, ռիսկեր։ Առանց գների և առանց Python հիշատակման։",
-      "description_en": "Fluent English covering concept, audience, value, differentiation, season, risks. No prices, no Python, no quality n/10, no previous participants.",
-      "description_ru": "Связный русский текст по тем же разделам. Без цен, без Python, без оценок n/10.",
+      "title_hy": "short Armenian placeholder; the Armenian copy is written in a later step",
+      "title_en": "specific title built from the actual places on the route, e.g. the two main stops; never a generic label such as Cultural Day Trip",
+      "title_ru": "the same title in natural Russian",
+      "description_hy": "",
+      "description_en": "3-5 sentences for the customer: where the day goes, what they will see and do at each named stop, the pace of the day and who it suits. Concrete details from the candidate notes. No prices, no business analysis, no claims about reviews or previous guests.",
+      "description_ru": "The same text in natural Russian.",
       "location_hy": "",
       "location_en": "",
       "location_ru": "",
@@ -160,25 +195,21 @@ IDEA_JSON_SHAPE = """
         "confidence": "estimated"
       },
       "highlights": [
-        "Հայեցակարգ՝ …",
-        "Թիրախային լսարան՝ …",
-        "Հաճախորդի արժեք՝ …",
-        "Մրցակցային տարբերակում՝ …",
-        "Սեզոնայնություն՝ …",
-        "Արժեքի բաշխում՝ սնունդը և մուտքի տոմսերը ներառված չեն։",
-        "Ռիսկեր՝ …"
+        "4-6 short customer-facing points in English: one per main stop saying what is special there, plus practical points (walking level, what to bring).",
+        "No business analysis, competitors, risks or pricing here: these lines are shown to customers."
       ],
       "itinerary": [
         {"time": "07:30", "place_name": "Armavir", "activity": "departure", "title": "Armavir — departure", "title_en": "Armavir — departure", "title_ru": "Армавир — отправление", "description": "Why this stop, sourced from SEARCH RESULTS.", "description_en": "Why this stop.", "description_ru": "Зачем эта остановка.", "source_url": ""},
-        {"time": "11:00", "place_name": "Haghpat Monastery", "activity": "visit", "title": "Haghpat Monastery — visit", "title_en": "Haghpat Monastery — visit", "title_ru": "Монастырь Ахпат — посещение", "description": "Sourced stop.", "description_en": "Sourced stop.", "description_ru": "Остановка.", "source_url": ""},
-        {"time": "13:00", "place_name": null, "activity": "lunch", "title": "Lunch", "title_en": "Lunch", "title_ru": "Обед", "description": "Meal stop; not a place.", "description_en": "Meal stop; not a place.", "description_ru": "Обед.", "source_url": ""}
+        {"time": "HH:MM", "place_name": "<exact name_en of a PLACE CANDIDATE>", "activity": "visit", "title": "<place_name> — visit", "title_en": "<place_name> — visit", "title_ru": "<русское название> — посещение", "description": "What the group does here and why this stop is on the route.", "description_en": "Same.", "description_ru": "То же по-русски.", "source_url": "<source_url of that candidate>"},
+        {"time": "HH:MM", "place_name": null, "activity": "lunch", "title": "Lunch", "title_en": "Lunch", "title_ru": "Обед", "description": "Meal stop; not a place.", "description_en": "Meal stop; not a place.", "description_ru": "Обед.", "source_url": ""},
+        {"time": "HH:MM", "place_name": "Armavir", "activity": "return", "title": "Armavir — return", "title_en": "Armavir — return", "title_ru": "Армавир — возвращение", "description": "Return to the departure point.", "description_en": "Return to the departure point.", "description_ru": "Возвращение.", "source_url": ""}
       ],
       "budget_score": 0,
       "logistics_score": 0,
       "appeal_score": 0,
       "verify": [],
       "source_urls": [],
-      "notes": "Remaining uncertainties. All figures Estimated unless sourced. No quality n/10 in customer copy."
+      "notes": "Internal analysis for the admin, in Armenian, as labelled sentences: Հայեցակարգ՝ … Լսարան՝ … Արժեք՝ … Տարբերակում՝ … Սեզոն՝ … Ռիսկեր՝ … Then remaining uncertainties."
     }
   ]
 }
@@ -316,8 +347,12 @@ def _candidate_brief(market_json: str) -> str:
             continue
         kind = str(row.get("type") or "sight").strip() or "sight"
         dist = row.get("distance_from_armavir_km")
-        extra = f", {dist} km from Armavir" if isinstance(dist, (int, float)) else ""
-        lines.append(f"- {name} ({kind}{extra})")
+        extra = f", {dist} km straight line from Armavir" if isinstance(dist, (int, float)) else ""
+        region = str(row.get("region_en") or "").strip()
+        where = f", {region}" if region else ""
+        about = str(row.get("description") or "").strip()[:160]
+        note = f": {about}" if about else ""
+        lines.append(f"- {name} ({kind}{where}{extra}){note}")
     return "\n".join(lines) or "(none)"
 
 
@@ -358,10 +393,15 @@ Rules:
 - Armavir→Lori legs: at least 2.5–3 hours (07:30 depart → 10:30 arrive).
 - Competitive differentiation may name a company ONLY if it is in SEARCH RESULTS with a URL. Never name Ari Gnank as a competitor. If there are no competitor offers, write that no competitor data was found.
 - Use market observations from research when discussing the market, still label Estimated / Needs verification.
-- Each idea must differ in core concept, target audience slice, and customer experience.
+- Each idea must differ in core concept, target audience slice, and customer experience. Different ideas should go to different areas or pair different places; do not reuse the same pair of stops.
+- Build each route from places in the same region or along the same road, using the region and distance shown for each candidate. Do not combine places on opposite sides of Armavir.
+- Fit the route to the brief: season (a high mountain lake or road is a summer stop, not a winter one), audience (little walking and unhurried pacing for seniors, variety for families), and tour type.
+- Allow realistic driving time: about 1 hour per 50 km of straight-line distance, and at least 45 minutes at each sight.
+- title_en names the real places on the route. description_en tells the customer what they will actually see and do, using the candidate notes; no filler such as "unforgettable experience", "cultural values" or "notable sites".
+- highlights are customer-facing. Put concept, audience, value, differentiation, seasonality and risks in notes, not in highlights or descriptions.
 - Do not start every Armenian title with "Արմավիր –".
 - Do not invent AMD figures, selling prices, or write 15000 AMD in descriptions. Never suggest a price. Python sets price = cost × 1.25. Competitor prices are reference only.
-- Write full EN and RU; HY may be a short placeholder for a later translation step. Keep itinerary title_en in English.
+- Write full EN and RU customer copy. Armenian customer fields (title_hy, description_hy) may be short placeholders; a later step writes them. notes is internal and is written in Armenian now. Keep itinerary title_en in English.
 
 Return JSON exactly in this shape:
 {IDEA_JSON_SHAPE}
@@ -518,7 +558,43 @@ def _preserve_stop_english(original: list[dict[str, Any]], adapted: list[dict[st
     return merged
 
 
-def _hy_adapt_prompt(ideas: list[dict[str, Any]], market: str, retry: bool) -> str:
+def _hy_names(market: str) -> str:
+    try:
+        payload = json.loads(market or "{}")
+    except json.JSONDecodeError:
+        payload = {}
+    rows = payload.get("place_candidates") if isinstance(payload, dict) else None
+    lines = []
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, dict):
+            continue
+        name_en = str(row.get("name_en") or "").strip()
+        name_hy = str(row.get("name_hy") or "").strip()
+        if name_en and name_hy and _HY_RE.search(name_hy):
+            lines.append(f"- {name_en} = {name_hy}")
+    return "\n".join(lines) or "(none; use the established Armenian name of each place)"
+
+
+def _hy_brief(inputs: dict[str, Any] | None) -> str:
+    data = inputs or {}
+    season = str(data.get("season") or "").strip()
+    audience = str(data.get("target_audience") or "").strip()
+    season_hy = _SEASON_HY.get(season.lower(), season)
+    audience_hy = _AUDIENCE_HY.get(audience.lower(), audience)
+    parts = []
+    if season_hy:
+        parts.append(f"The tour is for this season: {season_hy}. Never name a different season.")
+    if audience_hy:
+        parts.append(f"It is meant for: {audience_hy}.")
+    return " ".join(parts)
+
+
+def _hy_adapt_prompt(
+    ideas: list[dict[str, Any]],
+    market: str,
+    retry: bool,
+    inputs: dict[str, Any] | None = None,
+) -> str:
     extra = (
         "RETRY: previous HY fields still contained English sentences or Latin place names in parentheses. "
         if retry
@@ -526,26 +602,28 @@ def _hy_adapt_prompt(ideas: list[dict[str, Any]], market: str, retry: bool) -> s
     )
     return f"""
 {extra}
-Translate customer copy into natural Armenian.
-Fill idea-level title_hy, description_hy, location_hy.
+Write the Armenian version of these tour ideas. {_hy_brief(inputs)}
+
+For each idea fill:
+- title_hy: a short, specific title that names the real places on the route (not «Մշակութային օր» or another generic label).
+- description_hy: 3-5 sentences for the customer saying where the day goes and what they will see and do at each stop. Same facts as description_en, written freshly in Armenian.
+- location_hy: the main place or region in Armenian.
+- highlights: replace the list with the same points in Armenian (short, customer-facing).
 For each itinerary stop fill ONLY title_hy, activity_hy, and reason_hy.
-Do not change place names, stop order, or times.
-Do not change place_name, activity, title_en, source_url, lat, or lon.
-title_hy MUST be "{{Armenian name of the place}} — {{Armenian activity}}" for every stop.
+title_hy of a stop MUST be "{{Armenian name of the place}} — {{Armenian activity}}".
 Armavir departure is «Արմավիր — մեկնում»; return is «Արմավիր — վերադարձ».
 Lunch / meal stops must use title_hy «Ճաշի ընդմիջում».
-Do not put Latin names in parentheses.
-Keep itinerary title, title_en, description_en in English. Fill title_ru and description_ru in Russian.
-Do not add places, prices, Python notes, quality scores, or new facts.
-Do not change numeric values. Do not add or reorder itinerary stops.
 
-SEARCH RESULTS:
-{market}
+ARMENIAN PLACE NAMES (use exactly these):
+{_hy_names(market)}
+
+Do not change place_name, activity, title_en, source_url, lat, lon, times, stop order, numbers, notes or any English and Russian field.
+Do not put Latin names in parentheses. Do not add places, prices, scores or new facts.
 
 IDEAS JSON:
 {json.dumps(ideas, ensure_ascii=False)}
 
-Return JSON: {{ "ideas": [ ... same objects with HY fields filled ] }}
+Return JSON: {{ "ideas": [ ... same objects with the Armenian fields filled ] }}
 """
 
 
@@ -593,9 +671,15 @@ def hy_adapt_node(state: State) -> dict[str, Any]:
         item["_structured_stops"] = [row for row in (item.get("itinerary") or []) if isinstance(row, dict)]
     originals = {str(item.get("id") or index): item for index, item in enumerate(ideas)}
     market = state.get("market_research") or "{}"
+    inputs = state.get("inputs") or {}
     merged = ideas
     try:
-        data = _invoke_json(_hy_adapt_prompt(ideas, market, False), temperature=0.2)
+        data = _invoke_json(
+            _hy_adapt_prompt(ideas, market, False, inputs),
+            temperature=0.4,
+            system=HY_SYSTEM,
+            model=_copy_model(),
+        )
         adapted = data.get("ideas") if isinstance(data, dict) else data
         if isinstance(adapted, list) and adapted:
             merged = _merge_hy_ideas(originals, adapted)
@@ -603,7 +687,12 @@ def hy_adapt_node(state: State) -> dict[str, Any]:
         merged = ideas
     if merged and not all(hy_copy_ok(item) for item in merged):
         try:
-            data = _invoke_json(_hy_adapt_prompt(merged, market, True), temperature=0.15)
+            data = _invoke_json(
+                _hy_adapt_prompt(merged, market, True, inputs),
+                temperature=0.2,
+                system=HY_SYSTEM,
+                model=_copy_model(),
+            )
             adapted = data.get("ideas") if isinstance(data, dict) else data
             if isinstance(adapted, list) and adapted:
                 merged = _merge_hy_ideas(originals, adapted)
@@ -756,6 +845,17 @@ def refinement_node(state: State) -> dict[str, Any]:
             candidate = mark_hy_review(candidate)
         if not str(candidate.get("location_hy") or "").strip():
             candidate["location_hy"] = str(candidate.get("location_en") or "Armavir")
+        # One forgotten secondary field should not throw away an otherwise good idea.
+        if not str(candidate.get("location_en") or "").strip():
+            candidate["location_en"] = str(research.get("region_en") or research.get("place_en") or "Armenia")
+        for lang in ("ru",):
+            if not str(candidate.get(f"location_{lang}") or "").strip():
+                candidate[f"location_{lang}"] = str(candidate.get("location_en") or "")
+        for lang in ("en", "ru"):
+            if not str(candidate.get(f"title_{lang}") or "").strip():
+                candidate[f"title_{lang}"] = str(candidate.get("title_en") or candidate.get("title_hy") or candidate["id"])
+            if not str(candidate.get(f"description_{lang}") or "").strip():
+                candidate[f"description_{lang}"] = str(candidate.get("description_en") or candidate.get("description_hy") or "")
         try:
             idea = TourIdea.model_validate(candidate)
         except ValidationError:

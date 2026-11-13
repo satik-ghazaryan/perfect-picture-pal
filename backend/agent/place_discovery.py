@@ -17,6 +17,7 @@ from agent.osm_places import (
     collect_structured_bundle,
     merge_candidates,
 )
+from agent.gazetteer import places_for
 from agent.search import discovery_queries, run_place_attraction_search
 
 LOGGER = logging.getLogger("ari.gnank.place_discovery")
@@ -375,8 +376,9 @@ def discover_place(preferences: str) -> dict[str, Any]:
         "skipped": "no_preferences",
     }
     if not prefs:
-        log_discovery("", 0, 0)
-        return empty
+        known = places_for(None)
+        log_discovery("", 0, len(known))
+        return {**empty, "place_candidates": known, "candidate_source": "gazetteer"}
     try:
         extracted = invoke_place_llm(prefs)
     except Exception:  # noqa: BLE001
@@ -384,10 +386,13 @@ def discover_place(preferences: str) -> dict[str, Any]:
     place_en = extracted.get("place_en")
     region_en = extracted.get("region_en")
     if not place_en:
-        log_discovery("", 0, 0)
+        known = places_for(None, region_en)
+        log_discovery("", 0, len(known))
         return {
             **empty,
             "region_en": region_en,
+            "place_candidates": known,
+            "candidate_source": "gazetteer",
             "skipped": "no_place",
         }
     search_payload = run_place_attraction_search(place_en)
@@ -423,7 +428,10 @@ def discover_place(preferences: str) -> dict[str, Any]:
     except Exception:  # noqa: BLE001
         owt["verify"] = "OneWayTour data unavailable"
     owt_places = [item for item in (owt.get("place_candidates") or []) if isinstance(item, dict)]
-    candidates = merge_candidates(structured, page_candidates, owt_places, cap=cap)
+    known = places_for(str(place_en), str(region_en or ""))
+    # Sights we already know for this area come first: they have coordinates and Armenian names,
+    # and they are still there when the live sources cannot be reached.
+    candidates = merge_candidates(known, structured, page_candidates, owt_places, cap=cap + len(known))
     log_discovery(str(place_en), len(pages), len(candidates))
     return {
         "place_en": place_en,

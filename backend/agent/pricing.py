@@ -112,8 +112,9 @@ def apply_unit_economics(
     verify = [str(item) for item in (next_idea.get("verify") or []) if str(item).strip()]
     if km_notes:
         verify.extend(item for item in km_notes if item not in verify)
-    zero_stops = (not has_away_stop) and transport_group <= 0
-    blocked = zero_stops
+    # Without a route distance there is no transport cost, and a price built from the guide fee
+    # alone (about 1100 AMD) is meaningless. Show no price instead of a wrong one.
+    blocked = transport_group <= 0
     if blocked:
         cost_pp = 0
         min_price = 0
@@ -122,10 +123,16 @@ def apply_unit_economics(
         _, _, market = choose_suggested_price(0, [])
         profit_pp = 0
         total_fixed = GUIDE_FEE_GROUP_AMD
+        if has_away_stop and not any(PRICE_NEEDS_DISTANCE in item for item in verify):
+            verify.append(PRICE_NEEDS_DISTANCE)
         unit_note = (
             f"Estimated. Meals and entrance fees are not included. "
             f"GROUP_SIZE={GROUP_SIZE}. Guide {GUIDE_FEE_GROUP_AMD} AMD for the group. "
-            "No selling price because the itinerary has no destination stops."
+            + (
+                "No selling price because the route distance is unknown."
+                if has_away_stop
+                else "No selling price because the itinerary has no destination stops."
+            )
         )
     else:
         cost_pp = cost_per_person_amd(transport_group)

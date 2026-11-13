@@ -235,7 +235,7 @@ class PricingTests(unittest.TestCase):
         self.assertEqual(idea["market_position"], "unknown")
         self.assertIn("no return leg", idea["breakdown"]["notes"])
 
-    def test_away_stop_with_zero_km_still_has_price(self) -> None:
+    def test_away_stop_with_zero_km_has_no_price(self) -> None:
         idea = apply_unit_economics(
             {
                 "id": "bad-km",
@@ -248,8 +248,9 @@ class PricingTests(unittest.TestCase):
             km_notes=["Could not geocode stop: Dsegh"],
             has_away_stop=True,
         )
-        self.assertIsNotNone(idea["price"])
-        self.assertGreater(idea["price"], 0)
+        # A price built from the guide fee alone (15000 / 17 x 1.25 = 1102 AMD) is not a real price.
+        self.assertIsNone(idea["price"])
+        self.assertTrue(any("price needs route distance" in item for item in idea["verify"]))
         self.assertGreater(idea["breakdown"]["guide_amd"], 0)
         self.assertEqual(idea["breakdown"]["transport_amd"], 0)
 
