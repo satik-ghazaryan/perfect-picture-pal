@@ -119,11 +119,13 @@ def _copy_model() -> str:
     )
 
 
-def _llm(temperature: float = 0.45, model: str | None = None) -> ChatOpenAI:
+def _llm(temperature: float | None = 0.45, model: str | None = None) -> ChatOpenAI:
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY is missing.")
     chosen = model or os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini"
+    if temperature is None:
+        return ChatOpenAI(model=chosen, api_key=api_key, timeout=120)
     return ChatOpenAI(model=chosen, temperature=temperature, api_key=api_key, timeout=120)
 
 
@@ -147,12 +149,14 @@ def _invoke_json(
     system: str = SYSTEM,
     model: str | None = None,
 ) -> Any:
-    response = _llm(temperature, model).invoke(
-        [
-            SystemMessage(content=system),
-            HumanMessage(content=prompt),
-        ]
-    )
+    messages = [SystemMessage(content=system), HumanMessage(content=prompt)]
+    try:
+        response = _llm(temperature, model).invoke(messages)
+    except Exception as error:  # noqa: BLE001
+        # Some newer models only accept their default temperature.
+        if "temperature" not in str(error).lower():
+            raise
+        response = _llm(None, model).invoke(messages)
     content = response.content
     if not isinstance(content, str) or not content.strip():
         raise RuntimeError("The language model returned an empty response.")

@@ -303,6 +303,17 @@ def build_chat_messages(body: ChatAnswerRequest) -> tuple[list[dict], list[dict]
     return messages, catalog
 
 
+def _complete(client: OpenAI, **kwargs):
+    """Some newer models only accept their default temperature. Ask again without it."""
+    try:
+        return client.chat.completions.create(**kwargs)
+    except Exception as error:  # noqa: BLE001
+        if "temperature" not in str(error).lower() or "temperature" not in kwargs:
+            raise
+        kwargs.pop("temperature")
+        return client.chat.completions.create(**kwargs)
+
+
 def answer_public_chat(body: ChatAnswerRequest) -> dict:
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     if not api_key:
@@ -314,7 +325,8 @@ def answer_public_chat(body: ChatAnswerRequest) -> dict:
     calls: list[dict] = []
     reply = ""
     for _ in range(4):
-        response = client.chat.completions.create(
+        response = _complete(
+            client,
             model=model,
             temperature=temperature,
             messages=messages,
@@ -342,7 +354,8 @@ def answer_public_chat(body: ChatAnswerRequest) -> dict:
             })
     if not reply and calls:
         # The model kept looking things up. Ask once more for the answer itself.
-        response = client.chat.completions.create(
+        response = _complete(
+            client,
             model=model,
             temperature=temperature,
             messages=messages,

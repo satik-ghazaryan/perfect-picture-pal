@@ -102,6 +102,16 @@ class ChatAnswerTests(unittest.TestCase):
         self.assertEqual(create.call_args.kwargs["tool_choice"], "none")
         self.assertEqual([call["name"] for call in result["calls"]][0], "get_price")
 
+    def test_model_that_refuses_a_custom_temperature_still_answers(self) -> None:
+        create = mock.Mock(side_effect=[RuntimeError("Unsupported value: 'temperature'"), _reply("Բարև։")])
+        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        with mock.patch.dict("os.environ", {"OPENAI_API_KEY": "test"}), mock.patch.object(
+            chat_answer, "OpenAI", return_value=client
+        ):
+            result = answer_public_chat(ChatAnswerRequest(message="բարև", tours=TOURS))
+        self.assertEqual(result["reply"], "Բարև։")
+        self.assertNotIn("temperature", create.call_args.kwargs)
+
     def test_chat_model_and_temperature_can_be_set_separately(self) -> None:
         with mock.patch.dict("os.environ", {"CHAT_MODEL": "chat-x", "OPENAI_MODEL": "ideas-y", "CHAT_TEMPERATURE": "9"}):
             self.assertEqual(chat_answer._chat_model(), "chat-x")
