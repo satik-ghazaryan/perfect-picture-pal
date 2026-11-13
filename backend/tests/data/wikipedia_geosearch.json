@@ -1,0 +1,11 @@
+{
+  "query": {
+    "geosearch": [
+      {"pageid": 111, "title": "Black Fortress", "lat": 40.7891, "lon": 43.8412, "dist": 120},
+      {"pageid": 222, "title": "List of people from Gyumri", "lat": 40.785, "lon": 43.84, "dist": 80},
+      {"pageid": 333, "title": "Gyumri (disambiguation)", "lat": 40.785, "lon": 43.841, "dist": 10},
+      {"pageid": 444, "title": "Cathedral of the Holy Mother of God, Gyumri", "lat": 40.7865, "lon": 43.845, "dist": 400},
+      {"pageid": 555, "title": "Akhuryan River", "lat": 40.78, "lon": 43.83, "dist": 900}
+    ]
+  }
+}

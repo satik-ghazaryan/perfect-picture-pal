@@ -94,12 +94,30 @@ export async function requireAdmin(request: Request): Promise<{ userId: string; 
   return { userId: userData.user.id, token };
 }
 
+function safeLogToken(value: string | null | undefined, fallback: string) {
+  const trimmed = (value ?? "").trim();
+  return /^[A-Za-z0-9_.:-]{1,120}$/.test(trimmed) ? trimmed : fallback;
+}
+
+function logIdeasUpstream(requestId: string | null | undefined, fields: { upstreamStatus?: number; errorType?: string }) {
+  const id = safeLogToken(requestId, "none");
+  if (typeof fields.upstreamStatus === "number" && Number.isInteger(fields.upstreamStatus)) {
+    const errorType = fields.errorType ? ` error_type=${safeLogToken(fields.errorType, "Error")}` : "";
+    console.error(`ideas_upstream request_id=${id} upstream_status=${fields.upstreamStatus}${errorType}`);
+    return;
+  }
+  console.error(`ideas_upstream request_id=${id} error_type=${safeLogToken(fields.errorType, "Error")}`);
+}
+
 export async function forwardToPython(
   path: string,
-  init: { method: string; userId: string; body?: string },
+  init: { method: string; userId: string; body?: string; requestId?: string | null },
 ): Promise<Response> {
   const python = pythonConfig();
-  if (!python) return jsonError(503, "Service unavailable");
+  if (!python) {
+    logIdeasUpstream(init.requestId, { errorType: "unconfigured" });
+    return jsonError(503, "Service unavailable");
+  }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PYTHON_TIMEOUT_MS);
   const headers: Record<string, string> = {
@@ -116,21 +134,29 @@ export async function forwardToPython(
   if (init.body !== undefined) requestInit.body = init.body;
   try {
     const response = await fetch(`${python.baseUrl}${path}`, requestInit);
-    if (response.status === 404) return jsonError(404, "Not found");
-    if (response.status === 429) return jsonError(429, "Too many requests");
-    if (response.status === 401 || response.status === 503 || response.status >= 500) {
+    if (response.status === 404) {
+      logIdeasUpstream(init.requestId, { upstreamStatus: response.status });
+      return jsonError(404, "Not found");
+    }
+    if (response.status === 429) {
+      logIdeasUpstream(init.requestId, { upstreamStatus: response.status });
+      return jsonError(429, "Too many requests");
+    }
+    if (response.status === 401 || response.status === 503 || response.status >= 500 || !response.ok) {
+      logIdeasUpstream(init.requestId, { upstreamStatus: response.status });
       return jsonError(502, "Upstream service error");
     }
-    if (!response.ok) return jsonError(502, "Upstream service error");
     let payload: unknown;
     try {
       payload = await response.json();
     } catch {
+      logIdeasUpstream(init.requestId, { upstreamStatus: response.status, errorType: "invalid_json" });
       return jsonError(502, "Upstream service error");
     }
     return Response.json(payload, { status: 200, headers: { "cache-control": "no-store" } });
   } catch (error) {
     const aborted = error instanceof Error && error.name === "AbortError";
+    logIdeasUpstream(init.requestId, { errorType: aborted ? "timeout" : error instanceof Error ? error.name : "Error" });
     return aborted ? jsonError(504, "Upstream timeout") : jsonError(502, "Upstream service error");
   } finally {
     clearTimeout(timer);

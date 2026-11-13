@@ -1,0 +1,54 @@
+{
+  "elements": [
+    {
+      "type": "way",
+      "id": 109234567,
+      "center": {"lat": 41.1502, "lon": 44.7581},
+      "tags": {
+        "historic": "monastery",
+        "name": "Ախթալայի վանք",
+        "name:en": "Akhtala Monastery"
+      }
+    },
+    {
+      "type": "node",
+      "id": 33445566,
+      "lat": 41.1510,
+      "lon": 44.7590,
+      "tags": {
+        "historic": "castle",
+        "name": "Akhtala Fortress",
+        "name:en": "Akhtala Fortress"
+      }
+    },
+    {
+      "type": "node",
+      "id": 33445567,
+      "lat": 41.1510,
+      "lon": 44.7590,
+      "tags": {
+        "historic": "fort",
+        "name:en": "Akhtala Fortress"
+      }
+    },
+    {
+      "type": "node",
+      "id": 998877,
+      "lat": 41.16,
+      "lon": 44.77,
+      "tags": {
+        "tourism": "attraction"
+      }
+    },
+    {
+      "type": "node",
+      "id": 111,
+      "lat": 41.148,
+      "lon": 44.761,
+      "tags": {
+        "amenity": "place_of_worship",
+        "name:en": "Holy Mother of God Church"
+      }
+    }
+  ]
+}

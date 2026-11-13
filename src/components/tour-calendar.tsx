@@ -1,5 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { TourCover } from "@/components/tour-cover";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatAssignedDepartureDate } from "@/lib/calendar-date";
@@ -113,14 +114,7 @@ export function TourCalendar() {
                 const soldOut = row.availableSeats <= 0;
                 return (
                   <article key={row.id} className="flex flex-col overflow-hidden rounded-3xl border border-border bg-card shadow-card">
-                    <img
-                      src={tour.image_url}
-                      alt={title}
-                      loading="lazy"
-                      width={1024}
-                      height={768}
-                      className="h-48 w-full object-cover sm:h-52"
-                    />
+                    <TourCover src={tour.image_url} alt={title} position={tour.coverPosition} variant="card" />
                     <div className="flex flex-1 flex-col gap-3 p-4">
                       <h3 className="text-base font-bold leading-snug">{title}</h3>
                       <p className="text-sm text-muted-foreground">
@@ -155,14 +149,7 @@ export function TourCalendar() {
                 const title = tourTitle(tour, lang);
                 return (
                   <article key={tour.id} className="flex flex-col overflow-hidden rounded-3xl border border-border bg-card shadow-card">
-                    <img
-                      src={tour.image_url}
-                      alt={title}
-                      loading="lazy"
-                      width={1024}
-                      height={768}
-                      className="h-48 w-full object-cover sm:h-52"
-                    />
+                    <TourCover src={tour.image_url} alt={title} position={tour.coverPosition} variant="card" />
                     <div className="flex flex-1 flex-col gap-3 p-4">
                       <h3 className="text-base font-bold leading-snug">{title}</h3>
                       {upcoming !== null && !upcomingTourIds.has(tour.id) && (

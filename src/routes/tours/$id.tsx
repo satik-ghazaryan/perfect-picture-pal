@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { TourCover } from "@/components/tour-cover";
 import { createFileRoute, Link, Navigate } from "@tanstack/react-router";
 import { Check, Clock, MapPin, Star } from "lucide-react";
 import { SiteHeader } from "@/components/site-header";
@@ -76,6 +78,7 @@ function TourDetailPage() {
     : undefined;
   const showPanorama = linkedId.length > 0 && Boolean(linkedTour);
   const [tab, setTab] = useState("overview");
+  const [photoOpen, setPhotoOpen] = useState(false);
   const opened = useRef(false);
   const lang = useSiteLocale();
   const title = tour ? tourTitle(tour, lang) : "";
@@ -154,14 +157,26 @@ function TourDetailPage() {
       <div className="mx-auto grid max-w-7xl gap-8 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_340px] lg:py-10">
         <div className="min-w-0 space-y-8">
           <section className="overflow-hidden rounded-3xl border border-border bg-card shadow-card">
-            <img
-              src={tour.image_url}
-              alt={title}
-              width={1280}
-              height={720}
-              className="h-56 w-full object-cover sm:h-80"
-            />
             <div className="space-y-4 p-5 sm:p-6">
+              <h1 className="text-2xl font-black tracking-tight sm:text-4xl">{title}</h1>
+              <button
+                type="button"
+                className="block w-full overflow-hidden rounded-2xl"
+                onClick={() => setPhotoOpen(true)}
+                aria-label="Բացել ամբողջ լուսանկարը"
+              >
+                <TourCover src={tour.image_url} alt={title} position={tour.coverPosition} variant="page" />
+              </button>
+              <Dialog open={photoOpen} onOpenChange={setPhotoOpen}>
+                <DialogContent className="flex max-h-[95vh] w-auto max-w-[95vw] items-center justify-center border-0 bg-transparent p-2 shadow-none">
+                  <DialogTitle className="sr-only">{title}</DialogTitle>
+                  <img
+                    src={tour.image_url}
+                    alt={title}
+                    className="max-h-[90vh] max-w-[90vw] object-contain"
+                  />
+                </DialogContent>
+              </Dialog>
               <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
                 <span className="rounded-full bg-primary-soft px-2.5 py-1 text-primary">{regionLabel}</span>
                 <span className="rounded-full bg-muted px-2.5 py-1">{typeLabel}</span>
@@ -171,7 +186,6 @@ function TourDetailPage() {
                   <span className="font-medium text-muted-foreground">({tour.reviews})</span>
                 </span>
               </div>
-              <h1 className="text-2xl font-black tracking-tight sm:text-4xl">{title}</h1>
               {tour.id !== CHAT_TEST_TOUR_ID && shownTicket && (
                 <p className="w-fit rounded-full bg-primary-soft px-3 py-1 font-mono text-xs font-bold text-primary">
                   Թվային տոմս {shownTicket}

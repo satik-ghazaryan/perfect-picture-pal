@@ -4,7 +4,9 @@ import { useSyncExternalStore } from "react";
 import { format, parseISO } from "date-fns";
 import { hy } from "date-fns/locale";
 import { toast } from "sonner";
+import { CENTER_COVER, type CoverPosition } from "@/lib/cover-frame";
 import { CalendarDays, ChevronDown, ChevronUp, FileSpreadsheet, Loader2, LogOut, Plus, Rotate3d, Settings, Sparkles, Ticket, Trash2, UserRound, Users } from "lucide-react";
+import { TourCover } from "@/components/tour-cover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,13 +42,13 @@ import {
   deleteTour,
   getAdminServerSnapshot,
   getAdminSnapshot,
+  departureShownOnTourForm,
   loadAdminBookings,
   confirmBookingDeparture,
   loadBookingLinkConflicts,
   createStaffAccount,
   updateDirectoryUser,
   loadAssignmentConflicts,
-  departureShownOnTourForm,
   loadDepartures,
   loadDirectory,
   retryLiveCatalog,
@@ -132,6 +134,7 @@ type Draft = {
   type: Tour["type"];
   summary: LocalizedText;
   image: string;
+  coverPosition: CoverPosition;
   panoramaUrl: string;
   virtualTourUrl: string;
   virtualTourId: string;
@@ -163,6 +166,7 @@ function emptyDraft(virtualOnly = false): Draft {
     type: "Մշակութային",
     summary: emptyLocalized(),
     image: "",
+    coverPosition: { ...CENTER_COVER },
     panoramaUrl: "",
     virtualTourUrl: "",
     virtualTourId: "",
@@ -189,6 +193,7 @@ function draftFromTour(tour: ManagedTour, departure?: CatalogDeparture | null): 
     type: tour.type,
     summary: columnsToLocalized(tour.description_hy, tour.description_en, tour.description_ru),
     image: tour.image_url,
+    coverPosition: tour.coverPosition ?? { ...CENTER_COVER },
     panoramaUrl: tour.panoramaUrl,
     virtualTourUrl: tour.virtual_tour_url || tour.panoramaUrl || "",
     virtualTourId: tour.virtual_tour_id ?? "",
@@ -689,6 +694,7 @@ function ToursSection({
       location_en: location.en,
       location_ru: location.ru,
       image_url: image,
+      coverPosition: draft.coverPosition,
       category: location.hy,
       type: draft.type,
       departurePlace: virtualOnly ? "" : draft.departurePlace.trim(),
@@ -985,6 +991,50 @@ function ToursSection({
           <Field label="Նկարի հղում" id="tour-image">
             <Input id="tour-image" value={draft.image} onChange={(event) => update({ image: event.target.value })} placeholder="https://..." className="rounded-2xl" />
           </Field>
+          {(coverPreview || draft.image.trim()) && (
+            <div className="space-y-3">
+              <div>
+                <p className="text-sm font-bold">Կարգավորել նկարի դիրքը</p>
+                <p className="text-xs text-muted-foreground">Քաշեք նկարը մկնիկով կամ մատով, կամ ընտրեք շրջանակը և սեղմեք սլաքները։</p>
+              </div>
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div className="space-y-2">
+                  <p className="text-sm font-bold">Կատալոգի քարտ</p>
+                  <div className="w-full max-w-[24.7rem] overflow-hidden rounded-3xl">
+                    <TourCover
+                      src={coverPreview || draft.image.trim()}
+                      alt="Կատալոգի քարտ"
+                      variant="card"
+                      position={draft.coverPosition}
+                      interactive
+                      onPosition={(coverPosition) => update({ coverPosition })}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-bold">Տուրի էջ</p>
+                  <div className="overflow-hidden rounded-2xl">
+                    <TourCover
+                      src={coverPreview || draft.image.trim()}
+                      alt="Տուրի էջ"
+                      variant="page"
+                      position={draft.coverPosition}
+                      interactive
+                      onPosition={(coverPosition) => update({ coverPosition })}
+                    />
+                  </div>
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-full font-bold"
+                onClick={() => update({ coverPosition: { ...CENTER_COVER } })}
+              >
+                Կենտրոնացնել
+              </Button>
+            </div>
+          )}
           {mode === "departures" && (
             <Field label="360° Վիրտուալ Տուր" id="tour-virtual-link">
               <Select

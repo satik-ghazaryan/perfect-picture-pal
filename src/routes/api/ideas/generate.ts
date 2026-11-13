@@ -75,6 +75,7 @@ async function handlePost({ request }: { request: Request }) {
     method: "POST",
     userId: admin.userId,
     body: JSON.stringify(body),
+    requestId: request.headers.get("x-vercel-id") ?? request.headers.get("x-request-id"),
   });
 }
 

@@ -50,6 +50,7 @@ export type Tour = LocalizedTour & {
   excluded: string[];
   audioChapters: AudioChapter[];
   hotspots: Hotspot[];
+  coverPosition?: { x: number; y: number };
   panoramaUrl?: string;
   virtual_tour_url?: string;
   is_virtual_only?: boolean;
