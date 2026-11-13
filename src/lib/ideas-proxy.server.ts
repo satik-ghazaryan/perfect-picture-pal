@@ -16,10 +16,7 @@ function envValue(name: string) {
 }
 
 function jsonError(status: number, error: string) {
-  return Response.json(
-    { error },
-    { status, headers: { "cache-control": "no-store" } },
-  );
+  return Response.json({ error }, { status, headers: { "cache-control": "no-store" } });
 }
 
 export function methodNotAllowed() {
@@ -64,7 +61,9 @@ export function isUuid(value: string) {
 
 export function rateLimitGenerate(userId: string) {
   const now = Date.now();
-  const recent = (generateHits.get(userId) ?? []).filter((stamp) => now - stamp < GENERATE_RATE_WINDOW_MS);
+  const recent = (generateHits.get(userId) ?? []).filter(
+    (stamp) => now - stamp < GENERATE_RATE_WINDOW_MS,
+  );
   if (recent.length >= GENERATE_RATE_LIMIT) {
     generateHits.set(userId, recent);
     return false;
@@ -74,7 +73,9 @@ export function rateLimitGenerate(userId: string) {
   return true;
 }
 
-export async function requireAdmin(request: Request): Promise<{ userId: string; token: string } | Response> {
+export async function requireAdmin(
+  request: Request,
+): Promise<{ userId: string; token: string } | Response> {
   const token = bearerToken(request);
   if (!token) return jsonError(401, "Unauthorized");
   const supabaseEnv = supabaseConfig();
@@ -99,14 +100,23 @@ function safeLogToken(value: string | null | undefined, fallback: string) {
   return /^[A-Za-z0-9_.:-]{1,120}$/.test(trimmed) ? trimmed : fallback;
 }
 
-function logIdeasUpstream(requestId: string | null | undefined, fields: { upstreamStatus?: number; errorType?: string }) {
+function logIdeasUpstream(
+  requestId: string | null | undefined,
+  fields: { upstreamStatus?: number; errorType?: string },
+) {
   const id = safeLogToken(requestId, "none");
   if (typeof fields.upstreamStatus === "number" && Number.isInteger(fields.upstreamStatus)) {
-    const errorType = fields.errorType ? ` error_type=${safeLogToken(fields.errorType, "Error")}` : "";
-    console.error(`ideas_upstream request_id=${id} upstream_status=${fields.upstreamStatus}${errorType}`);
+    const errorType = fields.errorType
+      ? ` error_type=${safeLogToken(fields.errorType, "Error")}`
+      : "";
+    console.error(
+      `ideas_upstream request_id=${id} upstream_status=${fields.upstreamStatus}${errorType}`,
+    );
     return;
   }
-  console.error(`ideas_upstream request_id=${id} error_type=${safeLogToken(fields.errorType, "Error")}`);
+  console.error(
+    `ideas_upstream request_id=${id} error_type=${safeLogToken(fields.errorType, "Error")}`,
+  );
 }
 
 export async function forwardToPython(
@@ -142,7 +152,12 @@ export async function forwardToPython(
       logIdeasUpstream(init.requestId, { upstreamStatus: response.status });
       return jsonError(429, "Too many requests");
     }
-    if (response.status === 401 || response.status === 503 || response.status >= 500 || !response.ok) {
+    if (
+      response.status === 401 ||
+      response.status === 503 ||
+      response.status >= 500 ||
+      !response.ok
+    ) {
       logIdeasUpstream(init.requestId, { upstreamStatus: response.status });
       return jsonError(502, "Upstream service error");
     }
@@ -150,13 +165,18 @@ export async function forwardToPython(
     try {
       payload = await response.json();
     } catch {
-      logIdeasUpstream(init.requestId, { upstreamStatus: response.status, errorType: "invalid_json" });
+      logIdeasUpstream(init.requestId, {
+        upstreamStatus: response.status,
+        errorType: "invalid_json",
+      });
       return jsonError(502, "Upstream service error");
     }
     return Response.json(payload, { status: 200, headers: { "cache-control": "no-store" } });
   } catch (error) {
     const aborted = error instanceof Error && error.name === "AbortError";
-    logIdeasUpstream(init.requestId, { errorType: aborted ? "timeout" : error instanceof Error ? error.name : "Error" });
+    logIdeasUpstream(init.requestId, {
+      errorType: aborted ? "timeout" : error instanceof Error ? error.name : "Error",
+    });
     return aborted ? jsonError(504, "Upstream timeout") : jsonError(502, "Upstream service error");
   } finally {
     clearTimeout(timer);

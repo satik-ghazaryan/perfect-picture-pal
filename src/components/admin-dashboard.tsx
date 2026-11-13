@@ -5,7 +5,22 @@ import { format, parseISO } from "date-fns";
 import { hy } from "date-fns/locale";
 import { toast } from "sonner";
 import { CENTER_COVER, type CoverPosition } from "@/lib/cover-frame";
-import { CalendarDays, ChevronDown, ChevronUp, FileSpreadsheet, Loader2, LogOut, Plus, Rotate3d, Settings, Sparkles, Ticket, Trash2, UserRound, Users } from "lucide-react";
+import {
+  CalendarDays,
+  ChevronDown,
+  ChevronUp,
+  FileSpreadsheet,
+  Loader2,
+  LogOut,
+  Plus,
+  Rotate3d,
+  Settings,
+  Sparkles,
+  Ticket,
+  Trash2,
+  UserRound,
+  Users,
+} from "lucide-react";
 import { TourCover } from "@/components/tour-cover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,8 +48,23 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatAmd, regions, tourTypes, type AudioChapter, type AudioLanguage, type Tour } from "@/data/tours";
-import { columnsToLocalized, emptyLocalized, tourLocation, tourTitle, trimLocalized, type LocaleCode, type LocalizedText } from "@/lib/locale";
+import {
+  formatAmd,
+  regions,
+  tourTypes,
+  type AudioChapter,
+  type AudioLanguage,
+  type Tour,
+} from "@/data/tours";
+import {
+  columnsToLocalized,
+  emptyLocalized,
+  tourLocation,
+  tourTitle,
+  trimLocalized,
+  type LocaleCode,
+  type LocalizedText,
+} from "@/lib/locale";
 import { cn } from "@/lib/utils";
 import {
   assignDepartureCrew,
@@ -65,9 +95,23 @@ import {
   type SiteSettings,
 } from "@/lib/admin";
 import { CatalogTransferPanel } from "@/components/catalog-transfer-panel";
-import { assignedWeekendDay, formatAssignedDepartureDate, weekdayNameFromIsoDate, weekendDayFromIsoDate, weekendScheduleLabel } from "@/lib/calendar-date";
+import {
+  assignedWeekendDay,
+  formatAssignedDepartureDate,
+  weekdayNameFromIsoDate,
+  weekendDayFromIsoDate,
+  weekendScheduleLabel,
+} from "@/lib/calendar-date";
 import { isExplicitDepartureDate } from "@/lib/departure-assignment";
-import { getPortalServerSnapshot, getPortalSnapshot, subscribePortal, upcomingDepartureDate, uploadTourCover, type AssignedTour, type BookingRecord } from "@/lib/guide-api";
+import {
+  getPortalServerSnapshot,
+  getPortalSnapshot,
+  subscribePortal,
+  upcomingDepartureDate,
+  uploadTourCover,
+  type AssignedTour,
+  type BookingRecord,
+} from "@/lib/guide-api";
 import {
   adjustLoyaltyPoints,
   getLoyaltyServerSnapshot,
@@ -80,7 +124,15 @@ import {
 import { downloadPassengerWorkbook } from "@/lib/passenger-export";
 import { coverImageToStore } from "@/lib/tour-cover-upload";
 import { isSupabaseConfigured } from "@/lib/supabase";
-import { formatStopTitleHy, formatVerifyNoteHy, generateTourIdeas, normalizeResearch, readCachedIdeaRun, saveTourIdeaDraft, searchStatusNote } from "@/lib/tour-ideas";
+import {
+  formatStopTitleHy,
+  formatVerifyNoteHy,
+  generateTourIdeas,
+  normalizeResearch,
+  readCachedIdeaRun,
+  saveTourIdeaDraft,
+  searchStatusNote,
+} from "@/lib/tour-ideas";
 import type { TourIdeaInput, TourIdeaResearch, TourIdeaResult } from "@/types";
 
 const sections = [
@@ -198,7 +250,9 @@ function draftFromTour(tour: ManagedTour, departure?: CatalogDeparture | null): 
     virtualTourUrl: tour.virtual_tour_url || tour.panoramaUrl || "",
     virtualTourId: tour.virtual_tour_id ?? "",
     isVirtualOnly: tour.is_virtual_only === true,
-    itinerary: tour.itinerary.map((stop) => `${stop.time} | ${stop.title} | ${stop.description}`).join("\n"),
+    itinerary: tour.itinerary
+      .map((stop) => `${stop.time} | ${stop.title} | ${stop.description}`)
+      .join("\n"),
     highlights: [...tour.highlights],
     departurePlace: tour.departurePlace,
     departureDate: departure?.departureDate ?? "",
@@ -299,7 +353,15 @@ export function AdminDashboard({ session }: { session: AdminSession }) {
   const [staffError, setStaffError] = useState("");
   const [remoteBookings, setRemoteBookings] = useState(portal.bookings);
   const [bookingError, setBookingError] = useState("");
-  const [linkConflicts, setLinkConflicts] = useState<{ id: number; booking_id: string; tour_id: string; ticket_code: string | null; reason: string }[]>([]);
+  const [linkConflicts, setLinkConflicts] = useState<
+    {
+      id: number;
+      booking_id: string;
+      tour_id: string;
+      ticket_code: string | null;
+      reason: string;
+    }[]
+  >([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -309,14 +371,16 @@ export function AdminDashboard({ session }: { session: AdminSession }) {
         if (!cancelled) setRemoteUsers(rows);
       })
       .catch((error: unknown) => {
-        if (!cancelled) setStaffError(error instanceof Error ? error.message : "Անձնակազմը չբեռնվեց։");
+        if (!cancelled)
+          setStaffError(error instanceof Error ? error.message : "Անձնակազմը չբեռնվեց։");
       });
     loadAdminBookings()
       .then((rows) => {
         if (!cancelled) setRemoteBookings(rows);
       })
       .catch((error: unknown) => {
-        if (!cancelled) setBookingError(error instanceof Error ? error.message : "Ամրագրումները չբեռնվեցին։");
+        if (!cancelled)
+          setBookingError(error instanceof Error ? error.message : "Ամրագրումները չբեռնվեցին։");
       });
     loadBookingLinkConflicts()
       .then((rows) => {
@@ -350,7 +414,9 @@ export function AdminDashboard({ session }: { session: AdminSession }) {
                 type="button"
                 onClick={() => setSection(item.id)}
                 className={`flex shrink-0 items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-semibold ${
-                  active ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-primary-soft"
+                  active
+                    ? "bg-primary text-primary-foreground"
+                    : "text-foreground hover:bg-primary-soft"
                 }`}
               >
                 <Icon className="h-4 w-4 shrink-0" />
@@ -359,7 +425,12 @@ export function AdminDashboard({ session }: { session: AdminSession }) {
             );
           })}
         </nav>
-        <Button type="button" variant="outline" className="mt-3 w-full rounded-full" onClick={() => void signOutAdmin()}>
+        <Button
+          type="button"
+          variant="outline"
+          className="mt-3 w-full rounded-full"
+          onClick={() => void signOutAdmin()}
+        >
           <LogOut className="h-4 w-4" />
           Ելք
         </Button>
@@ -427,7 +498,10 @@ export function AdminDashboard({ session }: { session: AdminSession }) {
             conflicts={linkConflicts}
             onConfirmLink={async (bookingId) => {
               await confirmBookingDeparture(bookingId);
-              const [rows, conflicts] = await Promise.all([loadAdminBookings(), loadBookingLinkConflicts()]);
+              const [rows, conflicts] = await Promise.all([
+                loadAdminBookings(),
+                loadBookingLinkConflicts(),
+              ]);
               setRemoteBookings(rows);
               setLinkConflicts(conflicts);
             }}
@@ -440,7 +514,9 @@ export function AdminDashboard({ session }: { session: AdminSession }) {
             catalogError={catalog.catalogError}
           />
         )}
-        {section === "settings" && <SettingsSection settings={catalog.settings} loadError={catalog.settingsError} />}
+        {section === "settings" && (
+          <SettingsSection settings={catalog.settings} loadError={catalog.settingsError} />
+        )}
       </div>
     </div>
   );
@@ -473,28 +549,63 @@ function AudioChapterManager({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="text-base font-black">Աուդիոգիդի Գլուխներ</h3>
-          <p className="mt-1 text-xs text-muted-foreground">Ավելացրեք, խմբագրեք, վերադասավորեք կամ հանեք գլուխները։</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Ավելացրեք, խմբագրեք, վերադասավորեք կամ հանեք գլուխները։
+          </p>
         </div>
-        <Button type="button" variant="outline" className="rounded-full" onClick={() => onChange([...chapters, blankChapter()])}>
+        <Button
+          type="button"
+          variant="outline"
+          className="rounded-full"
+          onClick={() => onChange([...chapters, blankChapter()])}
+        >
           <Plus className="h-4 w-4" />
           Ավելացնել գլուխ
         </Button>
       </div>
       {chapters.length === 0 && (
-        <p className="rounded-2xl bg-card px-3 py-4 text-sm text-muted-foreground">Գլուխներ դեռ չկան։</p>
+        <p className="rounded-2xl bg-card px-3 py-4 text-sm text-muted-foreground">
+          Գլուխներ դեռ չկան։
+        </p>
       )}
       {chapters.map((chapter, index) => (
-        <article key={chapter.id} className="space-y-3 rounded-2xl border border-border bg-card p-3">
+        <article
+          key={chapter.id}
+          className="space-y-3 rounded-2xl border border-border bg-card p-3"
+        >
           <div className="flex items-center justify-between gap-2">
             <p className="text-xs font-bold text-muted-foreground">Գլուխ {index + 1}</p>
             <div className="flex gap-1">
-              <Button type="button" variant="outline" size="icon" className="rounded-full" disabled={index === 0} onClick={() => move(index, -1)} aria-label="Տեղափոխել վերև">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="rounded-full"
+                disabled={index === 0}
+                onClick={() => move(index, -1)}
+                aria-label="Տեղափոխել վերև"
+              >
                 <ChevronUp className="h-4 w-4" />
               </Button>
-              <Button type="button" variant="outline" size="icon" className="rounded-full" disabled={index === chapters.length - 1} onClick={() => move(index, 1)} aria-label="Տեղափոխել ներքև">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="rounded-full"
+                disabled={index === chapters.length - 1}
+                onClick={() => move(index, 1)}
+                aria-label="Տեղափոխել ներքև"
+              >
                 <ChevronDown className="h-4 w-4" />
               </Button>
-              <Button type="button" variant="outline" size="icon" className="rounded-full" onClick={() => onChange(chapters.filter((item) => item.id !== chapter.id))} aria-label="Հեռացնել գլուխը">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="rounded-full"
+                onClick={() => onChange(chapters.filter((item) => item.id !== chapter.id))}
+                aria-label="Հեռացնել գլուխը"
+              >
                 <Trash2 className="h-4 w-4" />
               </Button>
             </div>
@@ -529,13 +640,20 @@ function AudioChapterManager({
               />
             </Field>
             <Field label="Լեզու" id={`chapter-lang-${chapter.id}`}>
-              <Select value={chapter.language} onValueChange={(language) => patch(chapter.id, { language: language as AudioLanguage })}>
+              <Select
+                value={chapter.language}
+                onValueChange={(language) =>
+                  patch(chapter.id, { language: language as AudioLanguage })
+                }
+              >
                 <SelectTrigger id={`chapter-lang-${chapter.id}`} className="rounded-2xl">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {chapterLanguages.map((language) => (
-                    <SelectItem key={language.value} value={language.value}>{language.label}</SelectItem>
+                    <SelectItem key={language.value} value={language.value}>
+                      {language.label}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -566,7 +684,9 @@ function ToursSection({
   loadError?: string | null;
   catalogStatus?: "idle" | "loading" | "loaded" | "error";
 }) {
-  const listed = tours.filter((tour) => (mode === "virtual" ? tour.is_virtual_only === true : tour.is_virtual_only !== true));
+  const listed = tours.filter((tour) =>
+    mode === "virtual" ? tour.is_virtual_only === true : tour.is_virtual_only !== true,
+  );
   const [draft, setDraft] = useState<Draft | null>(null);
   const [formLang, setFormLang] = useState<LocaleCode>("hy");
   const [confirmId, setConfirmId] = useState<string | null>(null);
@@ -637,7 +757,10 @@ function ToursSection({
       toast.error("Հայերեն վերնագիրը պարտադիր է։");
       return;
     }
-    if (!virtualOnly && (!Number.isFinite(price) || price <= 0 || !Number.isFinite(seats) || seats <= 0)) {
+    if (
+      !virtualOnly &&
+      (!Number.isFinite(price) || price <= 0 || !Number.isFinite(seats) || seats <= 0)
+    ) {
       toast.error("Գինը և տեղերը պետք է դրական թիվ լինեն։");
       return;
     }
@@ -654,20 +777,27 @@ function ToursSection({
     }
     const virtualLink = draft.virtualTourUrl.trim();
     const panoramaUrl = virtualOnly
-      ? (/\.(jpe?g|png|webp|gif|avif)(\?.*)?$/i.test(virtualLink) ? virtualLink : "")
-      : existing?.panoramaUrl ?? "";
-    const virtualTourUrl = virtualOnly ? virtualLink : existing?.virtual_tour_url?.trim() ?? "";
+      ? /\.(jpe?g|png|webp|gif|avif)(\?.*)?$/i.test(virtualLink)
+        ? virtualLink
+        : ""
+      : (existing?.panoramaUrl ?? "");
+    const virtualTourUrl = virtualOnly ? virtualLink : (existing?.virtual_tour_url?.trim() ?? "");
     const linkedVirtual = !virtualOnly
-      ? tours.find((item) => item.id === draft.virtualTourId && item.is_virtual_only === true && item.id !== id)
+      ? tours.find(
+          (item) =>
+            item.id === draft.virtualTourId && item.is_virtual_only === true && item.id !== id,
+        )
       : undefined;
-    const previousImage = draft.image.trim() || (virtualOnly ? "" : existing?.image_url || tours[0]?.image_url || "");
+    const previousImage =
+      draft.image.trim() || (virtualOnly ? "" : existing?.image_url || tours[0]?.image_url || "");
     setSaving(true);
     let image = previousImage;
     if (coverFile) {
       try {
         image = coverImageToStore(previousImage, await uploadTourCover(id, coverFile));
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Նկարը չվերբեռնվեց։ Նախկին նկարը պահպանված է։";
+        const message =
+          error instanceof Error ? error.message : "Նկարը չվերբեռնվեց։ Նախկին նկարը պահպանված է։";
         toast.error(message);
         clearCoverSelection();
         setCoverError(message);
@@ -704,13 +834,19 @@ function ToursSection({
       seatsLeft: seats,
       rating: existing?.rating ?? 5,
       reviews: existing?.reviews ?? 0,
-      has360: panoramaUrl.length > 0 || virtualTourUrl.length > 0 || virtualOnly || existing?.has360 === true,
+      has360:
+        panoramaUrl.length > 0 ||
+        virtualTourUrl.length > 0 ||
+        virtualOnly ||
+        existing?.has360 === true,
       hasAudioGuide: audio.length > 0,
       day: virtualOnly ? "saturday" : (weekendDayFromIsoDate(draft.departureDate) ?? ""),
       highlights: virtualOnly ? [] : draft.highlights.map((item) => item.trim()).filter(Boolean),
       itinerary: virtualOnly ? [] : parseItinerary(draft.itinerary),
-      included: virtualOnly ? [] : existing?.included ?? ["Հարմարավետ ավտոբուս Արմավիրից և վերադարձ", "Հայախոս ուղեկցորդ"],
-      excluded: virtualOnly ? [] : existing?.excluded ?? ["Ճաշ և անձնական ծախսեր"],
+      included: virtualOnly
+        ? []
+        : (existing?.included ?? ["Հարմարավետ ավտոբուս Արմավիրից և վերադարձ", "Հայախոս ուղեկցորդ"]),
+      excluded: virtualOnly ? [] : (existing?.excluded ?? ["Ճաշ և անձնական ծախսեր"]),
       audioChapters: audio,
       hotspots: existing?.hotspots ?? [],
       panoramaUrl,
@@ -730,7 +866,10 @@ function ToursSection({
           departureDate: draft.departureDate,
           seats,
         });
-        setDepartures((current) => [...current.filter((item) => item.id !== savedDeparture.id), savedDeparture]);
+        setDepartures((current) => [
+          ...current.filter((item) => item.id !== savedDeparture.id),
+          savedDeparture,
+        ]);
       }
       toast.success(draft.id ? "Տուրը թարմացվեց" : "Տուրը ավելացվեց");
       clearCoverSelection();
@@ -762,14 +901,20 @@ function ToursSection({
     <section className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-black tracking-tight">{mode === "virtual" ? "360° Վիրտուալ Տուրեր" : "Տուրեր"}</h1>
+          <h1 className="text-2xl font-black tracking-tight">
+            {mode === "virtual" ? "360° Վիրտուալ Տուրեր" : "Տուրեր"}
+          </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {mode === "virtual"
               ? "Առանձին վիրտուալ տուրեր՝ առանց մեկնման և ամրագրման"
               : "Արմավիրից մեկնող մեկօրյա տուրեր"}
           </p>
         </div>
-        <Button type="button" className="rounded-full font-bold" onClick={() => openDraft(emptyDraft(mode === "virtual"))}>
+        <Button
+          type="button"
+          className="rounded-full font-bold"
+          onClick={() => openDraft(emptyDraft(mode === "virtual"))}
+        >
           <Plus className="h-4 w-4" />
           {mode === "virtual" ? "Նոր վիրտուալ տուր" : "Նոր տուր"}
         </Button>
@@ -778,14 +923,21 @@ function ToursSection({
       {loadError && (
         <div className="space-y-2 rounded-2xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
           <p>{loadError}</p>
-          <Button type="button" variant="outline" className="rounded-full font-bold" onClick={() => void retryLiveCatalog()}>
+          <Button
+            type="button"
+            variant="outline"
+            className="rounded-full font-bold"
+            onClick={() => void retryLiveCatalog()}
+          >
             Կրկին փորձել
           </Button>
         </div>
       )}
 
       {(catalogStatus === "idle" || catalogStatus === "loading") && (
-        <p className="rounded-2xl bg-muted px-4 py-3 text-sm text-muted-foreground">Բեռնվում է...</p>
+        <p className="rounded-2xl bg-muted px-4 py-3 text-sm text-muted-foreground">
+          Բեռնվում է...
+        </p>
       )}
 
       {listed.length === 0 && !loadError && catalogStatus === "loaded" && (
@@ -798,37 +950,69 @@ function ToursSection({
         {listed.map((tour) => {
           const linkedTitle = tour.is_virtual_only
             ? ""
-            : tours.find((item) => item.id === tour.virtual_tour_id && item.is_virtual_only)?.title_hy ?? "";
+            : (tours.find((item) => item.id === tour.virtual_tour_id && item.is_virtual_only)
+                ?.title_hy ?? "");
           return (
-          <article key={tour.id} className="rounded-3xl border border-border bg-card p-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0">
-                <h2 className="text-base font-bold leading-snug">{tourTitle(tour)}</h2>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {tour.is_virtual_only ? tourLocation(tour) : `${formatAmd(tour.price)} · ${tour.seatsLeft} տեղ · ${tour.departureTime}`}
-                  {tour.virtual_tour_url ? " · 360° հղում" : ""}
-                  {linkedTitle ? ` · 360°՝ ${linkedTitle}` : ""}
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button type="button" variant="outline" size="sm" className="rounded-full" asChild>
-                  <Link to="/tours/$id" params={{ id: tour.id }}>Դիտել</Link>
-                </Button>
-                <Button type="button" variant="outline" size="sm" className="rounded-full" onClick={() => openDraft(draftFromTour(tour, departureShownOnTourForm(departures, tour.id)))}>
-                  Խմբագրել
-                </Button>
-                {confirmId === tour.id ? (
-                  <Button type="button" variant="destructive" size="sm" className="rounded-full" disabled={deletingId === tour.id} onClick={() => void remove(tour.id)}>
-                    {deletingId === tour.id ? "Ջնջվում է" : "Հաստատել ջնջումը"}
+            <article key={tour.id} className="rounded-3xl border border-border bg-card p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h2 className="text-base font-bold leading-snug">{tourTitle(tour)}</h2>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {tour.is_virtual_only
+                      ? tourLocation(tour)
+                      : `${formatAmd(tour.price)} · ${tour.seatsLeft} տեղ · ${tour.departureTime}`}
+                    {tour.virtual_tour_url ? " · 360° հղում" : ""}
+                    {linkedTitle ? ` · 360°՝ ${linkedTitle}` : ""}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="rounded-full"
+                    asChild
+                  >
+                    <Link to="/tours/$id" params={{ id: tour.id }}>
+                      Դիտել
+                    </Link>
                   </Button>
-                ) : (
-                  <Button type="button" variant="outline" size="sm" className="rounded-full" onClick={() => setConfirmId(tour.id)}>
-                    Ջնջել
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="rounded-full"
+                    onClick={() =>
+                      openDraft(draftFromTour(tour, departureShownOnTourForm(departures, tour.id)))
+                    }
+                  >
+                    Խմբագրել
                   </Button>
-                )}
+                  {confirmId === tour.id ? (
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      className="rounded-full"
+                      disabled={deletingId === tour.id}
+                      onClick={() => void remove(tour.id)}
+                    >
+                      {deletingId === tour.id ? "Ջնջվում է" : "Հաստատել ջնջումը"}
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="rounded-full"
+                      onClick={() => setConfirmId(tour.id)}
+                    >
+                      Ջնջել
+                    </Button>
+                  )}
+                </div>
               </div>
-            </div>
-          </article>
+            </article>
           );
         })}
       </div>
@@ -843,8 +1027,12 @@ function ToursSection({
         >
           <h2 className="text-lg font-black">
             {mode === "virtual"
-              ? draft.id ? "Խմբագրել վիրտուալ տուրը" : "Նոր վիրտուալ տուր"
-              : draft.id ? "Խմբագրել տուրը" : "Նոր տուր"}
+              ? draft.id
+                ? "Խմբագրել վիրտուալ տուրը"
+                : "Նոր վիրտուալ տուր"
+              : draft.id
+                ? "Խմբագրել տուրը"
+                : "Նոր տուր"}
           </h2>
           <div className="space-y-3">
             <input
@@ -878,11 +1066,17 @@ function ToursSection({
               {draft.image.trim() ? "Փոխել նկարը" : "Ավելացնել նկար"}
             </Button>
             {coverPreview || draft.image.trim() ? (
-              <img src={coverPreview || draft.image.trim()} alt="Տուրի նկար" className="h-40 w-full max-w-md rounded-2xl object-cover" />
+              <img
+                src={coverPreview || draft.image.trim()}
+                alt="Տուրի նկար"
+                className="h-40 w-full max-w-md rounded-2xl object-cover"
+              />
             ) : null}
             {coverError && <p className="text-sm text-destructive">{coverError}</p>}
             <p className="text-xs text-muted-foreground">
-              {coverFile ? "Նախադիտումը երևում է վերևում։ Նկարը կվերբեռնվի Պահպանել սեղմելիս։" : "Նոր նկար չընտրելու դեպքում կմնա եղածը։"}
+              {coverFile
+                ? "Նախադիտումը երևում է վերևում։ Նկարը կվերբեռնվի Պահպանել սեղմելիս։"
+                : "Նոր նկար չընտրելու դեպքում կմնա եղածը։"}
             </p>
           </div>
           <div className="space-y-4 rounded-2xl border border-border bg-muted/40 p-3 sm:p-4">
@@ -904,7 +1098,9 @@ function ToursSection({
                     )}
                   >
                     {label}
-                    {missing && <span className="h-1.5 w-1.5 rounded-full bg-amber-400" aria-hidden />}
+                    {missing && (
+                      <span className="h-1.5 w-1.5 rounded-full bg-amber-400" aria-hidden />
+                    )}
                   </button>
                 );
               })}
@@ -914,7 +1110,9 @@ function ToursSection({
                 <Input
                   id={`tour-title-${formLang}`}
                   value={draft.title[formLang]}
-                  onChange={(event) => update({ title: { ...draft.title, [formLang]: event.target.value } })}
+                  onChange={(event) =>
+                    update({ title: { ...draft.title, [formLang]: event.target.value } })
+                  }
                   className="rounded-2xl"
                 />
               </Field>
@@ -922,7 +1120,9 @@ function ToursSection({
                 <Input
                   id={`tour-region-${formLang}`}
                   value={draft.region[formLang]}
-                  onChange={(event) => update({ region: { ...draft.region, [formLang]: event.target.value } })}
+                  onChange={(event) =>
+                    update({ region: { ...draft.region, [formLang]: event.target.value } })
+                  }
                   className="rounded-2xl"
                 />
               </Field>
@@ -931,7 +1131,9 @@ function ToursSection({
               <Textarea
                 id={`tour-summary-${formLang}`}
                 value={draft.summary[formLang]}
-                onChange={(event) => update({ summary: { ...draft.summary, [formLang]: event.target.value } })}
+                onChange={(event) =>
+                  update({ summary: { ...draft.summary, [formLang]: event.target.value } })
+                }
                 className="min-h-20 rounded-2xl"
               />
             </Field>
@@ -940,16 +1142,40 @@ function ToursSection({
             {mode === "departures" && (
               <>
                 <Field label="Գին (֏)" id="tour-price">
-                  <Input id="tour-price" inputMode="numeric" value={draft.price} onChange={(event) => update({ price: event.target.value })} className="rounded-2xl" />
+                  <Input
+                    id="tour-price"
+                    inputMode="numeric"
+                    value={draft.price}
+                    onChange={(event) => update({ price: event.target.value })}
+                    className="rounded-2xl"
+                  />
                 </Field>
                 <Field label="Տեղեր" id="tour-seats">
-                  <Input id="tour-seats" inputMode="numeric" value={draft.seats} onChange={(event) => update({ seats: event.target.value })} className="rounded-2xl" />
+                  <Input
+                    id="tour-seats"
+                    inputMode="numeric"
+                    value={draft.seats}
+                    onChange={(event) => update({ seats: event.target.value })}
+                    className="rounded-2xl"
+                  />
                 </Field>
                 <Field label="Մեկնում" id="tour-time">
-                  <Input id="tour-time" type="time" value={draft.departureTime} onChange={(event) => update({ departureTime: event.target.value })} className="rounded-2xl" />
+                  <Input
+                    id="tour-time"
+                    type="time"
+                    value={draft.departureTime}
+                    onChange={(event) => update({ departureTime: event.target.value })}
+                    className="rounded-2xl"
+                  />
                 </Field>
                 <Field label="Վերադարձ" id="tour-return">
-                  <Input id="tour-return" type="time" value={draft.returnTime} onChange={(event) => update({ returnTime: event.target.value })} className="rounded-2xl" />
+                  <Input
+                    id="tour-return"
+                    type="time"
+                    value={draft.returnTime}
+                    onChange={(event) => update({ returnTime: event.target.value })}
+                    className="rounded-2xl"
+                  />
                 </Field>
                 <Field label="Մեկնման ամսաթիվ" id="tour-departure-date">
                   <Input
@@ -976,26 +1202,39 @@ function ToursSection({
               </>
             )}
             <Field label="Տեսակ" id="tour-type">
-              <Select value={draft.type} onValueChange={(type) => update({ type: type as Tour["type"] })}>
+              <Select
+                value={draft.type}
+                onValueChange={(type) => update({ type: type as Tour["type"] })}
+              >
                 <SelectTrigger id="tour-type" className="rounded-2xl">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {tourTypes.map((type) => (
-                    <SelectItem key={type} value={type}>{type}</SelectItem>
+                    <SelectItem key={type} value={type}>
+                      {type}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </Field>
           </div>
           <Field label="Նկարի հղում" id="tour-image">
-            <Input id="tour-image" value={draft.image} onChange={(event) => update({ image: event.target.value })} placeholder="https://..." className="rounded-2xl" />
+            <Input
+              id="tour-image"
+              value={draft.image}
+              onChange={(event) => update({ image: event.target.value })}
+              placeholder="https://..."
+              className="rounded-2xl"
+            />
           </Field>
           {(coverPreview || draft.image.trim()) && (
             <div className="space-y-3">
               <div>
                 <p className="text-sm font-bold">Կարգավորել նկարի դիրքը</p>
-                <p className="text-xs text-muted-foreground">Քաշեք նկարը մկնիկով կամ մատով, կամ ընտրեք շրջանակը և սեղմեք սլաքները։</p>
+                <p className="text-xs text-muted-foreground">
+                  Քաշեք նկարը մկնիկով կամ մատով, կամ ընտրեք շրջանակը և սեղմեք սլաքները։
+                </p>
               </div>
               <div className="grid gap-4 lg:grid-cols-2">
                 <div className="space-y-2">
@@ -1038,7 +1277,11 @@ function ToursSection({
           {mode === "departures" && (
             <Field label="360° Վիրտուալ Տուր" id="tour-virtual-link">
               <Select
-                value={tours.some((item) => item.id === draft.virtualTourId && item.is_virtual_only) ? draft.virtualTourId : "none"}
+                value={
+                  tours.some((item) => item.id === draft.virtualTourId && item.is_virtual_only)
+                    ? draft.virtualTourId
+                    : "none"
+                }
                 onValueChange={(value) => update({ virtualTourId: value === "none" ? "" : value })}
               >
                 <SelectTrigger id="tour-virtual-link" className="rounded-2xl">
@@ -1049,7 +1292,9 @@ function ToursSection({
                   {tours
                     .filter((item) => item.is_virtual_only === true)
                     .map((item) => (
-                      <SelectItem key={item.id} value={item.id}>{tourTitle(item)}</SelectItem>
+                      <SelectItem key={item.id} value={item.id}>
+                        {tourTitle(item)}
+                      </SelectItem>
                     ))}
                 </SelectContent>
               </Select>
@@ -1072,15 +1317,19 @@ function ToursSection({
                 <Textarea
                   id="tour-highlights"
                   value={draft.highlights.join("\n")}
-                  onChange={(event) =>
-                    update({ highlights: event.target.value.split("\n") })
-                  }
+                  onChange={(event) => update({ highlights: event.target.value.split("\n") })}
                   className="min-h-24 rounded-2xl"
                   placeholder={"Գառնիի տաճար\nՔարերի սիմֆոնիա"}
                 />
               </Field>
               <Field label="Ծրագիր (ժամ | վերնագիր | նկարագրություն)" id="tour-itinerary">
-                <Textarea id="tour-itinerary" value={draft.itinerary} onChange={(event) => update({ itinerary: event.target.value })} className="min-h-32 rounded-2xl" placeholder={"08:30 | Մեկնում Արմավիրից | Հավաք Կենտրոնական հրապարակում"} />
+                <Textarea
+                  id="tour-itinerary"
+                  value={draft.itinerary}
+                  onChange={(event) => update({ itinerary: event.target.value })}
+                  className="min-h-32 rounded-2xl"
+                  placeholder={"08:30 | Մեկնում Արմավիրից | Հավաք Կենտրոնական հրապարակում"}
+                />
               </Field>
               <AudioChapterManager
                 chapters={draft.chapters}
@@ -1092,7 +1341,16 @@ function ToursSection({
             <Button type="submit" className="rounded-full font-bold" disabled={saving}>
               {saving ? "Պահվում է" : "Պահպանել"}
             </Button>
-            <Button type="button" variant="outline" className="rounded-full" onClick={() => { clearCoverSelection(); setCoverError(null); setDraft(null); }}>
+            <Button
+              type="button"
+              variant="outline"
+              className="rounded-full"
+              onClick={() => {
+                clearCoverSelection();
+                setCoverError(null);
+                setDraft(null);
+              }}
+            >
               Փակել
             </Button>
           </div>
@@ -1164,13 +1422,29 @@ function StaffEditor({
       </Field>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Անուն Ազգանուն" id="staff-name">
-          <Input id="staff-name" value={draft.fullName} onChange={(event) => onChange({ ...draft, fullName: event.target.value })} className="rounded-2xl" />
+          <Input
+            id="staff-name"
+            value={draft.fullName}
+            onChange={(event) => onChange({ ...draft, fullName: event.target.value })}
+            className="rounded-2xl"
+          />
         </Field>
         <Field label="Հեռախոս" id="staff-phone">
-          <Input id="staff-phone" value={draft.phone} onChange={(event) => onChange({ ...draft, phone: event.target.value })} className="rounded-2xl" />
+          <Input
+            id="staff-phone"
+            value={draft.phone}
+            onChange={(event) => onChange({ ...draft, phone: event.target.value })}
+            className="rounded-2xl"
+          />
         </Field>
         <Field label="Էլ. փոստ" id="staff-email">
-          <Input id="staff-email" type="email" value={draft.email} onChange={(event) => onChange({ ...draft, email: event.target.value })} className="rounded-2xl" />
+          <Input
+            id="staff-email"
+            type="email"
+            value={draft.email}
+            onChange={(event) => onChange({ ...draft, email: event.target.value })}
+            className="rounded-2xl"
+          />
         </Field>
         <Field label="Գաղտնաբառ" id="staff-password">
           <Input
@@ -1184,10 +1458,21 @@ function StaffEditor({
         </Field>
       </div>
       <Field label="Նկարի հղում" id="staff-avatar">
-        <Input id="staff-avatar" value={draft.avatarUrl} onChange={(event) => onChange({ ...draft, avatarUrl: event.target.value })} placeholder="https://…" className="rounded-2xl" />
+        <Input
+          id="staff-avatar"
+          value={draft.avatarUrl}
+          onChange={(event) => onChange({ ...draft, avatarUrl: event.target.value })}
+          placeholder="https://…"
+          className="rounded-2xl"
+        />
       </Field>
       <Field label="Համառոտ նկարագրություն" id="staff-bio">
-        <Textarea id="staff-bio" value={draft.bio} onChange={(event) => onChange({ ...draft, bio: event.target.value })} className="min-h-20 rounded-2xl" />
+        <Textarea
+          id="staff-bio"
+          value={draft.bio}
+          onChange={(event) => onChange({ ...draft, bio: event.target.value })}
+          className="min-h-20 rounded-2xl"
+        />
       </Field>
       <div className="flex flex-wrap gap-2">
         <Button type="submit" className="rounded-full font-bold" disabled={saving}>
@@ -1232,7 +1517,8 @@ function StaffSection({
         setConflicts(nextConflicts);
       })
       .catch((caught: unknown) => {
-        if (!cancelled) setDepartureError(caught instanceof Error ? caught.message : "Մեկնումները չբեռնվեցին։");
+        if (!cancelled)
+          setDepartureError(caught instanceof Error ? caught.message : "Մեկնումները չբեռնվեցին։");
       });
     return () => {
       cancelled = true;
@@ -1310,7 +1596,9 @@ function StaffSection({
     const departureDate = departureDates[tour.id] ?? "";
     try {
       const created = await createDeparture(tour.id, departureDate, tour.seatsLeft);
-      setDepartures((current) => [...current, created].sort((a, b) => a.departureDate.localeCompare(b.departureDate)));
+      setDepartures((current) =>
+        [...current, created].sort((a, b) => a.departureDate.localeCompare(b.departureDate)),
+      );
       setDepartureDates((current) => ({ ...current, [tour.id]: "" }));
       toast.success("Մեկնումը ավելացվեց");
     } catch (caught) {
@@ -1330,10 +1618,13 @@ function StaffSection({
 
       <section className="space-y-4 rounded-3xl border border-border bg-card p-4 sm:p-6">
         <div className="border-b border-border pb-4">
-          <p className="text-xs font-bold uppercase tracking-wide text-primary">Անձնակազմի հաշիվներ</p>
+          <p className="text-xs font-bold uppercase tracking-wide text-primary">
+            Անձնակազմի հաշիվներ
+          </p>
           <h2 className="mt-1 text-xl font-black tracking-tight">1. Նոր զբոսավար կամ վարորդ</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Հաշիվը ստեղծվում է ընտրված դերով։ Նկարը, հեռախոսը և նկարագրությունը երևում են զբոսաշրջիկին մեկնումից մեկ օր առաջ։
+            Հաշիվը ստեղծվում է ընտրված դերով։ Նկարը, հեռախոսը և նկարագրությունը երևում են
+            զբոսաշրջիկին մեկնումից մեկ օր առաջ։
           </p>
         </div>
         <StaffEditor
@@ -1346,11 +1637,16 @@ function StaffSection({
         <div className="space-y-2">
           <h3 className="text-sm font-bold">Գրանցված անձնակազմ</h3>
           {guides.length + drivers.length === 0 ? (
-            <p className="rounded-2xl bg-muted px-4 py-3 text-sm text-muted-foreground">Զբոսավար կամ վարորդ դեռ չկա։</p>
+            <p className="rounded-2xl bg-muted px-4 py-3 text-sm text-muted-foreground">
+              Զբոսավար կամ վարորդ դեռ չկա։
+            </p>
           ) : (
             <ul className="divide-y divide-border rounded-2xl border border-border">
               {[...guides, ...drivers].map((member) => (
-                <li key={member.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm">
+                <li
+                  key={member.id}
+                  className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm"
+                >
                   <span className="min-w-0">
                     <span className="font-semibold">{member.fullName}</span>
                     <span className="mt-0.5 block text-xs text-muted-foreground">
@@ -1358,7 +1654,12 @@ function StaffSection({
                       {member.phone ? ` · ${member.phone}` : ""}
                     </span>
                   </span>
-                  <Button type="button" variant="outline" className="rounded-full" onClick={() => handleEditStaff(member)}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="rounded-full"
+                    onClick={() => handleEditStaff(member)}
+                  >
                     Խմբագրել
                   </Button>
                 </li>
@@ -1370,10 +1671,15 @@ function StaffSection({
 
       <section className="space-y-4 rounded-3xl border border-border bg-muted/40 p-4 sm:p-6">
         <div className="border-b border-border pb-4">
-          <p className="text-xs font-bold uppercase tracking-wide text-primary">Տուրերի նշանակումներ</p>
-          <h2 className="mt-1 text-xl font-black tracking-tight">2. Տուրերի զբոսավարներ և վարորդներ</h2>
+          <p className="text-xs font-bold uppercase tracking-wide text-primary">
+            Տուրերի նշանակումներ
+          </p>
+          <h2 className="mt-1 text-xl font-black tracking-tight">
+            2. Տուրերի զբոսավարներ և վարորդներ
+          </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Նշանակումը կապվում է կոնկրետ մեկնման հետ։ Ամսաթիվը ընտրեք ինքներդ. հաջորդ շաբաթվա օրը ինքնաբերաբար չի դրվում։
+            Նշանակումը կապվում է կոնկրետ մեկնման հետ։ Ամսաթիվը ընտրեք ինքներդ. հաջորդ շաբաթվա օրը
+            ինքնաբերաբար չի դրվում։
           </p>
         </div>
         {departureError && <p className="text-sm font-medium text-destructive">{departureError}</p>}
@@ -1388,25 +1694,43 @@ function StaffSection({
           </ul>
         )}
         {tours.length === 0 ? (
-          <p className="rounded-2xl bg-card px-4 py-3 text-sm text-muted-foreground">Ֆիզիկական տուրեր դեռ չկան։</p>
+          <p className="rounded-2xl bg-card px-4 py-3 text-sm text-muted-foreground">
+            Ֆիզիկական տուրեր դեռ չկան։
+          </p>
         ) : (
           <div className="space-y-3">
             {tours.map((tour) => {
               const rows = departures.filter((item) => item.tourId === tour.id);
               return (
-                <article key={tour.id} className="space-y-3 rounded-3xl border border-border bg-card p-4">
+                <article
+                  key={tour.id}
+                  className="space-y-3 rounded-3xl border border-border bg-card p-4"
+                >
                   <h3 className="text-sm font-bold leading-snug">{tourTitle(tour)}</h3>
                   {rows.length === 0 && (
-                    <p className="text-sm text-muted-foreground">Այս տուրը դեռ կոնկրետ մեկնում չունի։ Նշեք ամսաթիվը։</p>
+                    <p className="text-sm text-muted-foreground">
+                      Այս տուրը դեռ կոնկրետ մեկնում չունի։ Նշեք ամսաթիվը։
+                    </p>
                   )}
                   {rows.map((departure) => (
                     <div key={departure.id} className="grid gap-3 sm:grid-cols-2">
-                      <p className="sm:col-span-2 text-sm font-semibold">{departure.departureDate}</p>
+                      <p className="sm:col-span-2 text-sm font-semibold">
+                        {departure.departureDate}
+                      </p>
                       <Field label="Զբոսավար" id={`guide-${departure.id}`}>
                         <Select
-                          value={departure.guideId && guides.some((member) => member.id === departure.guideId) ? departure.guideId : "unassigned"}
+                          value={
+                            departure.guideId &&
+                            guides.some((member) => member.id === departure.guideId)
+                              ? departure.guideId
+                              : "unassigned"
+                          }
                           onValueChange={(value) =>
-                            void changeDeparture(departure, value === "unassigned" ? null : value, departure.driverId)
+                            void changeDeparture(
+                              departure,
+                              value === "unassigned" ? null : value,
+                              departure.driverId,
+                            )
                           }
                         >
                           <SelectTrigger id={`guide-${departure.id}`} className="rounded-2xl">
@@ -1415,16 +1739,27 @@ function StaffSection({
                           <SelectContent>
                             <SelectItem value="unassigned">Չնշանակված</SelectItem>
                             {guides.map((member) => (
-                              <SelectItem key={member.id} value={member.id}>{member.fullName}</SelectItem>
+                              <SelectItem key={member.id} value={member.id}>
+                                {member.fullName}
+                              </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
                       </Field>
                       <Field label="Վարորդ" id={`driver-${departure.id}`}>
                         <Select
-                          value={departure.driverId && drivers.some((member) => member.id === departure.driverId) ? departure.driverId : "unassigned"}
+                          value={
+                            departure.driverId &&
+                            drivers.some((member) => member.id === departure.driverId)
+                              ? departure.driverId
+                              : "unassigned"
+                          }
                           onValueChange={(value) =>
-                            void changeDeparture(departure, departure.guideId, value === "unassigned" ? null : value)
+                            void changeDeparture(
+                              departure,
+                              departure.guideId,
+                              value === "unassigned" ? null : value,
+                            )
                           }
                         >
                           <SelectTrigger id={`driver-${departure.id}`} className="rounded-2xl">
@@ -1433,7 +1768,9 @@ function StaffSection({
                           <SelectContent>
                             <SelectItem value="unassigned">Չնշանակված</SelectItem>
                             {drivers.map((member) => (
-                              <SelectItem key={member.id} value={member.id}>{member.fullName}</SelectItem>
+                              <SelectItem key={member.id} value={member.id}>
+                                {member.fullName}
+                              </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
@@ -1447,12 +1784,20 @@ function StaffSection({
                         type="date"
                         value={departureDates[tour.id] ?? ""}
                         onChange={(event) =>
-                          setDepartureDates((current) => ({ ...current, [tour.id]: event.target.value }))
+                          setDepartureDates((current) => ({
+                            ...current,
+                            [tour.id]: event.target.value,
+                          }))
                         }
                         className="rounded-2xl"
                       />
                     </Field>
-                    <Button type="button" variant="outline" className="rounded-full" onClick={() => void addDeparture(tour)}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="rounded-full"
+                      onClick={() => void addDeparture(tour)}
+                    >
                       Ավելացնել մեկնում
                     </Button>
                   </div>
@@ -1492,7 +1837,11 @@ function TouristsSection({
   portalTours: AssignedTour[];
   bookings: BookingRecord[];
 }) {
-  const wallet = useSyncExternalStore(subscribeLoyalty, getLoyaltySnapshot, getLoyaltyServerSnapshot);
+  const wallet = useSyncExternalStore(
+    subscribeLoyalty,
+    getLoyaltySnapshot,
+    getLoyaltyServerSnapshot,
+  );
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [delta, setDelta] = useState("");
@@ -1537,7 +1886,11 @@ function TouristsSection({
     }
     setSavingPoints(sign > 0 ? "add" : "sub");
     try {
-      await adjustLoyaltyPoints({ phone: selected.phone, fullName: selected.fullName, delta: sign * amount });
+      await adjustLoyaltyPoints({
+        phone: selected.phone,
+        fullName: selected.fullName,
+        delta: sign * amount,
+      });
       setDelta("");
       toast.success(sign > 0 ? "Միավորները ավելացան" : "Միավորները նվազեցին");
     } catch (error) {
@@ -1551,7 +1904,9 @@ function TouristsSection({
     <section className="space-y-4">
       <div>
         <h1 className="text-2xl font-black tracking-tight">Զբոսաշրջիկներ</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Գրանցված զբոսաշրջիկներ, միավորներ և ամրագրումներ</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Գրանցված զբոսաշրջիկներ, միավորներ և ամրագրումներ
+        </p>
       </div>
       <Input
         value={search}
@@ -1576,12 +1931,18 @@ function TouristsSection({
             {visible.length === 0 && (
               <TableRow>
                 <TableCell colSpan={6} className="text-muted-foreground">
-                  {tourists.length === 0 ? "Գրանցված զբոսաշրջիկ չկա։" : "Այս որոնմամբ զբոսաշրջիկ չկա։"}
+                  {tourists.length === 0
+                    ? "Գրանցված զբոսաշրջիկ չկա։"
+                    : "Այս որոնմամբ զբոսաշրջիկ չկա։"}
                 </TableCell>
               </TableRow>
             )}
             {visible.map((tourist) => (
-              <TableRow key={tourist.id} className="cursor-pointer" onClick={() => setSelectedId(tourist.id)}>
+              <TableRow
+                key={tourist.id}
+                className="cursor-pointer"
+                onClick={() => setSelectedId(tourist.id)}
+              >
                 <TableCell className="font-medium">{tourist.fullName}</TableCell>
                 <TableCell>{tourist.phone || "—"}</TableCell>
                 <TableCell>{tourist.email || "—"}</TableCell>
@@ -1608,7 +1969,9 @@ function TouristsSection({
             <>
               <DialogHeader>
                 <DialogTitle>{selected.fullName}</DialogTitle>
-                <DialogDescription>Զբոսաշրջիկի տվյալներ, միավորներ և ամրագրված տուրեր</DialogDescription>
+                <DialogDescription>
+                  Զբոսաշրջիկի տվյալներ, միավորներ և ամրագրված տուրեր
+                </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
                 <section className="space-y-2 rounded-2xl border border-border p-4">
@@ -1674,25 +2037,38 @@ function TouristsSection({
                 <section className="space-y-3">
                   <h2 className="text-sm font-black">Գրանցված տուրեր</h2>
                   {bookingsOf(selected.phone).length === 0 && (
-                    <p className="text-sm text-muted-foreground">Այս զբոսաշրջիկը դեռ տուր չի ամրագրել։</p>
+                    <p className="text-sm text-muted-foreground">
+                      Այս զբոսաշրջիկը դեռ տուր չի ամրագրել։
+                    </p>
                   )}
                   {bookingsOf(selected.phone).map((booking) => {
-                    const tour = tours.find((item) => item.id === booking.tourId && item.is_virtual_only !== true);
+                    const tour = tours.find(
+                      (item) => item.id === booking.tourId && item.is_virtual_only !== true,
+                    );
                     const portalTour = portalTours.find((item) => item.id === booking.tourId);
                     const departureDate = portalTour?.departureDate ?? "";
                     const departureTime = tour?.departureTime || portalTour?.departureTime || "—";
                     const seats = booking.adults + booking.children;
                     return (
-                      <article key={booking.id} className="space-y-1 rounded-2xl border border-border p-4 text-sm">
-                        <p className="font-bold">{tour ? tourTitle(tour) : portalTour?.title ?? booking.tourId}</p>
+                      <article
+                        key={booking.id}
+                        className="space-y-1 rounded-2xl border border-border p-4 text-sm"
+                      >
+                        <p className="font-bold">
+                          {tour ? tourTitle(tour) : (portalTour?.title ?? booking.tourId)}
+                        </p>
                         <p className="text-muted-foreground">
                           {formatAssignedDepartureDate(departureDate)} · մեկնում {departureTime}
                         </p>
                         <p>
                           {seats} տեղ · {bookingStatusText(booking)}
                         </p>
-                        <p className="text-xs text-muted-foreground">Զբոսավար՝ {nameOf(tour?.guideId ?? portalTour?.guideId ?? null)}</p>
-                        <p className="text-xs text-muted-foreground">Վարորդ՝ {nameOf(tour?.driverId ?? portalTour?.driverId ?? null)}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Զբոսավար՝ {nameOf(tour?.guideId ?? portalTour?.guideId ?? null)}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Վարորդ՝ {nameOf(tour?.driverId ?? portalTour?.driverId ?? null)}
+                        </p>
                       </article>
                     );
                   })}
@@ -1749,7 +2125,13 @@ function BookingsSection({
   }[];
   revenue: number;
   error: string;
-  conflicts: { id: number; booking_id: string; tour_id: string; ticket_code: string | null; reason: string }[];
+  conflicts: {
+    id: number;
+    booking_id: string;
+    tour_id: string;
+    ticket_code: string | null;
+    reason: string;
+  }[];
   onConfirmLink?: (bookingId: string) => Promise<void>;
 }) {
   const paid = bookings.filter((booking) => booking.paymentStatus === "SUCCESS").length;
@@ -1759,7 +2141,9 @@ function BookingsSection({
     const tour = tours.find((item) => item.id === tourId);
     return tour ? tourTitle(tour) : tourId;
   };
-  const linkedIds = [...new Set(bookings.flatMap((booking) => (booking.departureId ? [booking.departureId] : [])))];
+  const linkedIds = [
+    ...new Set(bookings.flatMap((booking) => (booking.departureId ? [booking.departureId] : []))),
+  ];
   const departures = linkedIds.map((departureId) => {
     const rows = bookings.filter((booking) => booking.departureId === departureId);
     const sample = rows[0];
@@ -1809,14 +2193,17 @@ function BookingsSection({
     <section className="space-y-4">
       <div>
         <h1 className="text-2xl font-black tracking-tight">Ամրագրումներ</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Idram, Telcell և ArCa վճարումներ, գրանցում և եկամուտ</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Idram, Telcell և ArCa վճարումներ, գրանցում և եկամուտ
+        </p>
       </div>
       {error && <p className="text-sm font-medium text-destructive">{error}</p>}
       {(unresolved.length > 0 || conflicts.length > 0) && (
         <div className="rounded-3xl border border-border bg-card px-4 py-3 text-sm">
           <p className="font-semibold">Անորոշ հին ամրագրումներ՝ {reviewCount}</p>
           <p className="mt-1 text-muted-foreground">
-            Սեփական տվյալներով մեկնումը միանշանակ չէ, կամ կապը դեռ հաստատված չէ։ Մինչև հաստատումը այդ գրառումները աշխատակցի ուղևորացուցակում չեն երևում և ազատ տեղերը չեն նվազեցնում։
+            Սեփական տվյալներով մեկնումը միանշանակ չէ, կամ կապը դեռ հաստատված չէ։ Մինչև հաստատումը
+            այդ գրառումները աշխատակցի ուղևորացուցակում չեն երևում և ազատ տեղերը չեն նվազեցնում։
           </p>
           <ul className="mt-2 space-y-1">
             {conflicts.map((conflict) => (
@@ -1832,7 +2219,9 @@ function BookingsSection({
                     className="h-8 rounded-full"
                     onClick={() =>
                       void onConfirmLink(conflict.booking_id).catch((reason: unknown) => {
-                        toast.error(reason instanceof Error ? reason.message : "Մեկնման կապը չհաստատվեց։");
+                        toast.error(
+                          reason instanceof Error ? reason.message : "Մեկնման կապը չհաստատվեց։",
+                        );
                       })
                     }
                   >
@@ -1852,9 +2241,15 @@ function BookingsSection({
       </div>
       <div className="space-y-3">
         {departures.map((departure) => {
-          const seats = departure.rows.reduce((sum, booking) => sum + booking.adults + booking.children, 0);
+          const seats = departure.rows.reduce(
+            (sum, booking) => sum + booking.adults + booking.children,
+            0,
+          );
           return (
-            <article key={departure.key} className="flex flex-col gap-3 rounded-3xl border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
+            <article
+              key={departure.key}
+              className="flex flex-col gap-3 rounded-3xl border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between"
+            >
               <div className="min-w-0">
                 <h2 className="text-base font-black leading-snug">{departure.title}</h2>
                 <p className="mt-1 text-sm text-muted-foreground">{departure.departure}</p>
@@ -1862,7 +2257,12 @@ function BookingsSection({
                 <p className="text-sm">Վարորդ՝ {departure.driverName}</p>
                 <p className="mt-1 text-sm font-semibold">Ամրագրված ուղևորներ՝ {seats}</p>
               </div>
-              <Button type="button" variant="outline" className="rounded-full font-bold" onClick={() => exportDeparture(departure)}>
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-full font-bold"
+                onClick={() => exportDeparture(departure)}
+              >
                 <FileSpreadsheet className="h-4 w-4" />
                 Արտահանել Excel
               </Button>
@@ -1886,7 +2286,9 @@ function BookingsSection({
           <TableBody>
             {bookings.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} className="text-muted-foreground">Ամրագրումներ դեռ չկան։</TableCell>
+                <TableCell colSpan={7} className="text-muted-foreground">
+                  Ամրագրումներ դեռ չկան։
+                </TableCell>
               </TableRow>
             )}
             {bookings.map((booking) => (
@@ -1897,12 +2299,22 @@ function BookingsSection({
                     {booking.adults} մեծ · {booking.children} երեխա
                   </span>
                 </TableCell>
-                <TableCell className="max-w-[220px] whitespace-normal">{titleOf(booking.tourId)}</TableCell>
+                <TableCell className="max-w-[220px] whitespace-normal">
+                  {titleOf(booking.tourId)}
+                </TableCell>
                 <TableCell>{booking.ticketCode}</TableCell>
-                <TableCell>{booking.paymentProvider ? paymentLabel[booking.paymentProvider] : "—"}</TableCell>
-                <TableCell>{booking.paymentStatus ? paymentStatusLabel[booking.paymentStatus] : "—"}</TableCell>
-                <TableCell>{booking.status === "checked_in" ? "Գրանցված է" : "Սպասում է"}</TableCell>
-                <TableCell className="text-right font-semibold">{formatAmd(booking.amount)}</TableCell>
+                <TableCell>
+                  {booking.paymentProvider ? paymentLabel[booking.paymentProvider] : "—"}
+                </TableCell>
+                <TableCell>
+                  {booking.paymentStatus ? paymentStatusLabel[booking.paymentStatus] : "—"}
+                </TableCell>
+                <TableCell>
+                  {booking.status === "checked_in" ? "Գրանցված է" : "Սպասում է"}
+                </TableCell>
+                <TableCell className="text-right font-semibold">
+                  {formatAmd(booking.amount)}
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -1912,7 +2324,13 @@ function BookingsSection({
   );
 }
 
-function SettingsSection({ settings, loadError }: { settings: SiteSettings; loadError?: string | null }) {
+function SettingsSection({
+  settings,
+  loadError,
+}: {
+  settings: SiteSettings;
+  loadError?: string | null;
+}) {
   const [draft, setDraft] = useState(settings);
   const [saving, setSaving] = useState(false);
 
@@ -1942,11 +2360,14 @@ function SettingsSection({ settings, loadError }: { settings: SiteSettings; load
       <div>
         <h1 className="text-2xl font-black tracking-tight">Կարգավորումներ</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Գլխավոր էջի տեքստ, նոր տուրերի լռելյայն մեկնման վայր և հետվճար։ Արդեն պահված տուրերի հասցեն չի փոխվում։
+          Գլխավոր էջի տեքստ, նոր տուրերի լռելյայն մեկնման վայր և հետվճար։ Արդեն պահված տուրերի
+          հասցեն չի փոխվում։
         </p>
       </div>
       {loadError && (
-        <p className="rounded-2xl bg-destructive/10 px-4 py-3 text-sm text-destructive">{loadError}</p>
+        <p className="rounded-2xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          {loadError}
+        </p>
       )}
       <form
         className="space-y-4 rounded-3xl border border-border bg-card p-4 sm:p-5"
@@ -2051,7 +2472,11 @@ function draftFromIdea(idea: TourIdeaResult, tourType: string): Draft {
     price: idea.price == null ? "" : String(idea.price),
     type: catalogTypeFromIdea(tourType),
     returnTime: hoursToClock("08:30", idea.duration_hours || 10),
-    itinerary: itinerary || highlights.map((item, index) => `${String(9 + index).padStart(2, "0")}:00 | ${item} | ${item}`).join("\n"),
+    itinerary:
+      itinerary ||
+      highlights
+        .map((item, index) => `${String(9 + index).padStart(2, "0")}:00 | ${item} | ${item}`)
+        .join("\n"),
     highlights,
   };
 }
@@ -2095,7 +2520,9 @@ function IdeasSection({
   const [savingId, setSavingId] = useState<string | null>(null);
   const [ideas, setIdeas] = useState<TourIdeaResult[]>(cachedRun?.ideas ?? []);
   const [summary, setSummary] = useState(cachedRun?.summary ?? "");
-  const [research, setResearch] = useState<TourIdeaResearch>(cachedRun?.research ?? normalizeResearch(null));
+  const [research, setResearch] = useState<TourIdeaResearch>(
+    cachedRun?.research ?? normalizeResearch(null),
+  );
   const [lastInput, setLastInput] = useState<TourIdeaInput | null>(null);
 
   const generate = async () => {
@@ -2131,13 +2558,18 @@ function IdeasSection({
     }
   };
 
-  const searchNote = searchStatusNote(research.search_status, research.useful_result_count ?? research.results.length);
+  const searchNote = searchStatusNote(
+    research.search_status,
+    research.useful_result_count ?? research.results.length,
+  );
 
   return (
     <section className="space-y-4">
       <div>
         <h1 className="text-2xl font-black tracking-tight">Նոր տուրերի գաղափարներ</h1>
-        <p className="mt-1 text-sm text-muted-foreground">AI գործակալ՝ Արմավիրից մեկօրյա երթուղիների առաջարկների համար</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          AI գործակալ՝ Արմավիրից մեկօրյա երթուղիների առաջարկների համար
+        </p>
       </div>
       <form
         className="space-y-4 rounded-3xl border border-border bg-card p-4 sm:p-5"
@@ -2154,31 +2586,43 @@ function IdeasSection({
               </SelectTrigger>
               <SelectContent>
                 {ideaSeasons.map((item) => (
-                  <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </Field>
           <Field label="Թիրախային լսարան" id="idea-audience">
-            <Select value={form.target_audience} onValueChange={(target_audience) => setForm({ ...form, target_audience })}>
+            <Select
+              value={form.target_audience}
+              onValueChange={(target_audience) => setForm({ ...form, target_audience })}
+            >
               <SelectTrigger id="idea-audience" className="rounded-2xl">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 {ideaAudiences.map((item) => (
-                  <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </Field>
           <Field label="Տուրի տեսակ" id="idea-type">
-            <Select value={form.tour_type} onValueChange={(tour_type) => setForm({ ...form, tour_type })}>
+            <Select
+              value={form.tour_type}
+              onValueChange={(tour_type) => setForm({ ...form, tour_type })}
+            >
               <SelectTrigger id="idea-type" className="rounded-2xl">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 {ideaTourTypes.map((item) => (
-                  <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -2190,7 +2634,10 @@ function IdeasSection({
               value={String(form.duration_days)}
               onChange={(event) => {
                 const value = Math.round(Number(event.target.value));
-                setForm({ ...form, duration_days: Number.isFinite(value) ? Math.min(3, Math.max(1, value)) : 1 });
+                setForm({
+                  ...form,
+                  duration_days: Number.isFinite(value) ? Math.min(3, Math.max(1, value)) : 1,
+                });
               }}
               className="rounded-2xl"
             />
@@ -2222,7 +2669,10 @@ function IdeasSection({
               value={String(form.count)}
               onChange={(event) => {
                 const value = Math.round(Number(event.target.value));
-                setForm({ ...form, count: Number.isFinite(value) ? Math.min(8, Math.max(1, value)) : 3 });
+                setForm({
+                  ...form,
+                  count: Number.isFinite(value) ? Math.min(8, Math.max(1, value)) : 3,
+                });
               }}
               className="rounded-2xl"
             />
@@ -2238,7 +2688,11 @@ function IdeasSection({
           />
         </Field>
         <Button type="submit" className="rounded-full font-bold" disabled={loading}>
-          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+          {loading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Sparkles className="h-4 w-4" />
+          )}
           {loading ? "Գեներացվում է" : "Գեներացնել"}
         </Button>
       </form>
@@ -2247,20 +2701,32 @@ function IdeasSection({
         <p className="rounded-2xl bg-muted px-4 py-3 text-sm text-muted-foreground">{summary}</p>
       ) : null}
       {searchNote ? (
-        <p className="rounded-2xl border border-border bg-accent px-4 py-3 text-sm font-semibold" role="status">
+        <p
+          className="rounded-2xl border border-border bg-accent px-4 py-3 text-sm font-semibold"
+          role="status"
+        >
           {searchNote}
         </p>
       ) : null}
 
-      {(research.queries.length > 0 || research.results.length > 0 || research.search_status || (research.place_candidates && research.place_candidates.length > 0) || (research.onewaytour_tours && research.onewaytour_tours.length > 0) || research.onewaytour_unavailable) ? (
+      {research.queries.length > 0 ||
+      research.results.length > 0 ||
+      research.search_status ||
+      (research.place_candidates && research.place_candidates.length > 0) ||
+      (research.onewaytour_tours && research.onewaytour_tours.length > 0) ||
+      research.onewaytour_unavailable ? (
         <details className="rounded-3xl border border-border bg-card p-4">
           <summary className="cursor-pointer text-sm font-bold">Հետազոտության աղբյուրներ</summary>
-          <p className="mt-2 text-xs text-muted-foreground">{research.disclaimer || "Market reference only. Estimated."}</p>
+          <p className="mt-2 text-xs text-muted-foreground">
+            {research.disclaimer || "Market reference only. Estimated."}
+          </p>
           <p className="mt-2 text-xs text-muted-foreground">
             Tavily {research.provider_status?.tavily || "n/a"}
             {` · key ${research.tavily_key_present || research.provider_status?.tavily_key_present ? "yes" : "no"}`}
             {` · DDGS ${research.provider_status?.ddg || "n/a"}`}
-            {typeof research.useful_result_count === "number" ? ` · useful ${research.useful_result_count}` : ""}
+            {typeof research.useful_result_count === "number"
+              ? ` · useful ${research.useful_result_count}`
+              : ""}
           </p>
           {research.queries.length > 0 ? (
             <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
@@ -2284,7 +2750,12 @@ function IdeasSection({
                       return (
                         <li key={`${tour.url}-${tour.name}`}>
                           {href ? (
-                            <a href={href} target="_blank" rel="noopener noreferrer" className="underline">
+                            <a
+                              href={href}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="underline"
+                            >
                               {tour.name || href}
                             </a>
                           ) : (
@@ -2300,13 +2771,17 @@ function IdeasSection({
                   <>
                     {matched.length > 0 ? (
                       <div>
-                        <p className="text-xs font-semibold text-foreground">OneWayTour համընկնող տուրեր (շուկայական հղում)</p>
+                        <p className="text-xs font-semibold text-foreground">
+                          OneWayTour համընկնող տուրեր (շուկայական հղում)
+                        </p>
                         {renderTours(matched)}
                       </div>
                     ) : null}
                     {other.length > 0 ? (
                       <div>
-                        <p className="text-xs font-semibold text-foreground">այլ մեկօրյա տուրեր (հղում)</p>
+                        <p className="text-xs font-semibold text-foreground">
+                          այլ մեկօրյա տուրեր (հղում)
+                        </p>
                         {renderTours(other)}
                       </div>
                     ) : null}
@@ -2326,13 +2801,20 @@ function IdeasSection({
                   const fromOneWay = source.includes("onewaytour.com");
                   return (
                     <li key={`${place.name_en}-${place.osm_url || place.source_url || ""}`}>
-                      <span>{place.name_hy ? `${place.name_hy} / ${place.name_en}` : place.name_en}</span>
+                      <span>
+                        {place.name_hy ? `${place.name_hy} / ${place.name_en}` : place.name_en}
+                      </span>
                       {place.type ? ` · ${place.type}` : ""}
                       {fromOneWay ? " · OneWayTour" : ""}
                       {osm ? (
                         <>
                           {" · "}
-                          <a href={osm} target="_blank" rel="noopener noreferrer" className="underline">
+                          <a
+                            href={osm}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="underline"
+                          >
                             OSM
                           </a>
                         </>
@@ -2340,7 +2822,12 @@ function IdeasSection({
                       {wiki ? (
                         <>
                           {" · "}
-                          <a href={wiki} target="_blank" rel="noopener noreferrer" className="underline">
+                          <a
+                            href={wiki}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="underline"
+                          >
                             Wikipedia
                           </a>
                         </>
@@ -2348,7 +2835,12 @@ function IdeasSection({
                       {fromOneWay && source ? (
                         <>
                           {" · "}
-                          <a href={source} target="_blank" rel="noopener noreferrer" className="underline">
+                          <a
+                            href={source}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="underline"
+                          >
                             տուր
                           </a>
                         </>
@@ -2365,13 +2857,22 @@ function IdeasSection({
               return (
                 <p key={`${hit.url}-${hit.title}`} className="text-sm">
                   {href ? (
-                    <a href={href} target="_blank" rel="noopener noreferrer" className="font-semibold underline">
+                    <a
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-semibold underline"
+                    >
                       {hit.title || href}
                     </a>
                   ) : (
                     <span className="font-semibold">{hit.title}</span>
                   )}
-                  {hit.snippet ? <span className="mt-0.5 block text-xs text-muted-foreground">{hit.snippet}</span> : null}
+                  {hit.snippet ? (
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      {hit.snippet}
+                    </span>
+                  ) : null}
                 </p>
               );
             })}
@@ -2380,7 +2881,9 @@ function IdeasSection({
       ) : null}
 
       {ideas.length === 0 && !loading ? (
-        <p className="rounded-2xl bg-muted px-4 py-3 text-sm text-muted-foreground">Դեռ գաղափարներ չկան։ Լրացրեք ձևը և սեղմեք գեներացնել։</p>
+        <p className="rounded-2xl bg-muted px-4 py-3 text-sm text-muted-foreground">
+          Դեռ գաղափարներ չկան։ Լրացրեք ձևը և սեղմեք գեներացնել։
+        </p>
       ) : null}
 
       <div className="space-y-3">
@@ -2401,12 +2904,17 @@ function IdeasSection({
             {idea.price != null ? (
               <>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Երթուղի {idea.route_km ?? 0} կմ · աղբյուր {(idea.km_source || "").toLowerCase().includes("osrm") ? "OSRM" : "estimate"}
+                  Երթուղի {idea.route_km ?? 0} կմ · աղբյուր{" "}
+                  {(idea.km_source || "").toLowerCase().includes("osrm") ? "OSRM" : "estimate"}
                   {" · տրանսպորտ "}
-                  {idea.route_km ?? 0} × {idea.transport_rate_per_km_amd ?? 600} = {formatAmd(idea.breakdown?.transport_amd ?? 0)}
+                  {idea.route_km ?? 0} × {idea.transport_rate_per_km_amd ?? 600} ={" "}
+                  {formatAmd(idea.breakdown?.transport_amd ?? 0)}
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Արժեք/անձ (տրանսպորտ + 15000) / 17 = {formatAmd(idea.cost_per_person_amd ?? idea.profitability?.expense_per_person_amd ?? 0)}
+                  Արժեք/անձ (տրանսպորտ + 15000) / 17 ={" "}
+                  {formatAmd(
+                    idea.cost_per_person_amd ?? idea.profitability?.expense_per_person_amd ?? 0,
+                  )}
                   {" · նվազագույն գին (+25%) "}
                   {formatAmd(idea.min_price_amd ?? 0)}
                   {" · վերջնական գին "}
@@ -2414,7 +2922,9 @@ function IdeasSection({
                 </p>
               </>
             ) : (
-              <p className="mt-1 text-xs text-muted-foreground">Խումբ {idea.profitability?.group_size ?? 17}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Խումբ {idea.profitability?.group_size ?? 17}
+              </p>
             )}
             {idea.geocoded_stops && idea.geocoded_stops.length > 0 ? (
               <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">
@@ -2427,10 +2937,14 @@ function IdeasSection({
             ) : null}
             {idea.price != null && idea.market && idea.market.offer_count > 0 ? (
               <p className="mt-1 text-xs font-semibold text-muted-foreground">
-                Մրցակիցներ՝ {formatAmd(idea.market.price_min_amd ?? 0)}–{formatAmd(idea.market.price_max_amd ?? 0)} · մեր գինը {formatAmd(idea.price)} ({marketPositionLabel(idea.market_position)})
+                Մրցակիցներ՝ {formatAmd(idea.market.price_min_amd ?? 0)}–
+                {formatAmd(idea.market.price_max_amd ?? 0)} · մեր գինը {formatAmd(idea.price)} (
+                {marketPositionLabel(idea.market_position)})
               </p>
             ) : (
-              <p className="mt-1 text-xs text-muted-foreground">Գինը՝ ծախս × 1.25. մրցակիցների գները միայն տեղեկատվական են</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Գինը՝ ծախս × 1.25. մրցակիցների գները միայն տեղեկատվական են
+              </p>
             )}
             {idea.market?.offers?.length ? (
               <ul className="mt-2 space-y-1 text-xs">
@@ -2439,14 +2953,21 @@ function IdeasSection({
                   return (
                     <li key={`${offer.url}-${offer.title}`}>
                       {href ? (
-                        <a href={href} target="_blank" rel="noopener noreferrer" className="underline">
+                        <a
+                          href={href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="underline"
+                        >
                           {offer.title || href}
                         </a>
                       ) : (
                         <span>{offer.title}</span>
                       )}
                       {offer.observed_price_amd ? ` · ${formatAmd(offer.observed_price_amd)}` : ""}
-                      {offer.observed_currency && offer.observed_currency !== "AMD" && offer.observed_amount
+                      {offer.observed_currency &&
+                      offer.observed_currency !== "AMD" &&
+                      offer.observed_amount
                         ? ` · ${offer.observed_currency} ${offer.observed_amount}${offer.conversion_estimated ? " (estimated)" : ""}`
                         : ""}
                       {offer.found_on ? ` · ${offer.found_on}` : ""}
@@ -2463,7 +2984,9 @@ function IdeasSection({
               </ul>
             ) : null}
             {idea.budget_fit === "over" ? (
-              <p className="mt-1 text-xs font-semibold text-muted-foreground">Բյուջեից բարձր տարբերակ (գնահատված)</p>
+              <p className="mt-1 text-xs font-semibold text-muted-foreground">
+                Բյուջեից բարձր տարբերակ (գնահատված)
+              </p>
             ) : null}
             {idea.highlights.length > 0 ? (
               <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-foreground">
@@ -2475,9 +2998,9 @@ function IdeasSection({
             {idea.itinerary.length > 0 ? (
               <div className="mt-3 space-y-1 text-sm">
                 {idea.itinerary.map((stop) => (
-                    <p key={`${stop.time}-${stop.title}`}>
-                      <span className="font-bold">{stop.time}</span> · {formatStopTitleHy(stop)}
-                    </p>
+                  <p key={`${stop.time}-${stop.title}`}>
+                    <span className="font-bold">{stop.time}</span> · {formatStopTitleHy(stop)}
+                  </p>
                 ))}
               </div>
             ) : null}

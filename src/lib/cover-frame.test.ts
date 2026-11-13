@@ -23,7 +23,10 @@ describe("cover frame", () => {
       { x: 50, y: 38 },
     );
     assert.equal(coverObjectPosition(coverPositionFromHotspots(stored)), "50% 38%");
-    assert.deepEqual(visibleHotspots(stored).map((item) => item.id), ["spot"]);
+    assert.deepEqual(
+      visibleHotspots(stored).map((item) => item.id),
+      ["spot"],
+    );
   });
 
   it("moves only the overflowing axis and keeps the picture filling the frame", () => {

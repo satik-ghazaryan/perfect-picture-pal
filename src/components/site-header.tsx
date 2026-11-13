@@ -35,12 +35,17 @@ function initial(name: string) {
 export function SiteHeader() {
   const [open, setOpen] = useState(false);
   const lang = useSiteLocale();
-  const cashback = useSyncExternalStore(subscribeAdmin, getAdminSnapshot, getAdminServerSnapshot).settings
-    .cashbackPercent;
-  const tourist = useSyncExternalStore(subscribeTourist, getTouristSnapshot, getTouristServerSnapshot);
+  const cashback = useSyncExternalStore(subscribeAdmin, getAdminSnapshot, getAdminServerSnapshot)
+    .settings.cashbackPercent;
+  const tourist = useSyncExternalStore(
+    subscribeTourist,
+    getTouristSnapshot,
+    getTouristServerSnapshot,
+  );
   const path = useRouterState({ select: (state) => state.location.href });
   const redirect = path.startsWith("/login") ? "/" : path;
-  const staffHome = tourist?.role === "guide" ? "/guide" : tourist?.role === "driver" ? "/driver" : null;
+  const staffHome =
+    tourist?.role === "guide" ? "/guide" : tourist?.role === "driver" ? "/driver" : null;
 
   useEffect(() => {
     hydrateAdmin();
@@ -63,18 +68,18 @@ export function SiteHeader() {
           </Link>
 
           {!staffHome && (
-          <nav className="hidden items-center gap-1 lg:flex">
-          {navItems.map((item) => (
-            <Link
-              key={item.label}
-              to={item.to}
-              {...("hash" in item ? { hash: item.hash } : {})}
-              className="rounded-full px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-primary-soft hover:text-primary"
-            >
-              {item.label}
-            </Link>
-          ))}
-          </nav>
+            <nav className="hidden items-center gap-1 lg:flex">
+              {navItems.map((item) => (
+                <Link
+                  key={item.label}
+                  to={item.to}
+                  {...("hash" in item ? { hash: item.hash } : {})}
+                  className="rounded-full px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-primary-soft hover:text-primary"
+                >
+                  {item.label}
+                </Link>
+              ))}
+            </nav>
           )}
         </div>
 
@@ -98,7 +103,12 @@ export function SiteHeader() {
           {tourist ? (
             <div className="flex items-center gap-2">
               {tourist.role === "tourist" ? (
-                <Button size="sm" variant="outline" className="h-9 rounded-full px-2 font-semibold" asChild>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-9 rounded-full px-2 font-semibold"
+                  asChild
+                >
                   <Link to="/profile">
                     <Avatar className="h-6 w-6">
                       <AvatarFallback className="bg-primary-soft text-[10px] font-bold text-primary">
@@ -109,9 +119,16 @@ export function SiteHeader() {
                   </Link>
                 </Button>
               ) : (
-                <span className="hidden max-w-36 truncate text-sm font-semibold sm:inline">{tourist.fullName}</span>
+                <span className="hidden max-w-36 truncate text-sm font-semibold sm:inline">
+                  {tourist.fullName}
+                </span>
               )}
-              <Button size="sm" variant="outline" className="rounded-full font-semibold" onClick={() => signOutTourist()}>
+              <Button
+                size="sm"
+                variant="outline"
+                className="rounded-full font-semibold"
+                onClick={() => signOutTourist()}
+              >
                 Ելք
               </Button>
             </div>
@@ -136,17 +153,18 @@ export function SiteHeader() {
       {open && (
         <div className="border-t border-border bg-card px-4 py-3 lg:hidden">
           <nav className="flex flex-col">
-            {!staffHome && navItems.map((item) => (
-              <Link
-                key={item.label}
-                to={item.to}
-                {...("hash" in item ? { hash: item.hash } : {})}
-                onClick={() => setOpen(false)}
-                className="rounded-xl px-3 py-2.5 text-sm font-semibold text-foreground hover:bg-primary-soft"
-              >
-                {item.label}
-              </Link>
-            ))}
+            {!staffHome &&
+              navItems.map((item) => (
+                <Link
+                  key={item.label}
+                  to={item.to}
+                  {...("hash" in item ? { hash: item.hash } : {})}
+                  onClick={() => setOpen(false)}
+                  className="rounded-xl px-3 py-2.5 text-sm font-semibold text-foreground hover:bg-primary-soft"
+                >
+                  {item.label}
+                </Link>
+              ))}
             {tourist ? (
               <>
                 {tourist.role === "tourist" && (
@@ -205,7 +223,9 @@ export function SiteHeader() {
                 type="button"
                 onClick={() => setSiteLocale(code)}
                 className={`rounded-full px-2.5 py-1 text-xs font-bold ${
-                  lang === code ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                  lang === code
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground"
                 }`}
               >
                 {label}

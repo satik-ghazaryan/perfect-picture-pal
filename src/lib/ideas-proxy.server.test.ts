@@ -32,7 +32,8 @@ describe("ideas upstream log", () => {
   it("keeps an upstream 401 as a generic 502 and logs only the status", async () => {
     process.env.IDEAS_API_SECRET = "x".repeat(32);
     process.env.PYTHON_BACKEND_URL = "https://ideas.example";
-    globalThis.fetch = async () => Response.json({ detail: "OPENAI_API_KEY is not configured." }, { status: 401 });
+    globalThis.fetch = async () =>
+      Response.json({ detail: "OPENAI_API_KEY is not configured." }, { status: 401 });
     const logs = captureErrors();
     try {
       const response = await forwardToPython("/api/generate-ideas", {
@@ -46,7 +47,10 @@ describe("ideas upstream log", () => {
       assert.deepEqual(logs.lines, [
         "ideas_upstream request_id=c5678-1794233751017-337469a23ecd upstream_status=401",
       ]);
-      assert.equal(logs.lines.some((line) => line.includes("OPENAI") || line.includes("ideas.example")), false);
+      assert.equal(
+        logs.lines.some((line) => line.includes("OPENAI") || line.includes("ideas.example")),
+        false,
+      );
     } finally {
       logs.restore();
     }

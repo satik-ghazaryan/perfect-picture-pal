@@ -139,7 +139,11 @@ function storeReceipt(receipt: TicketNotification) {
   emit();
 }
 
-async function deliver(channel: NotificationChannel, phone: string, body: string): Promise<DeliveryMode> {
+async function deliver(
+  channel: NotificationChannel,
+  phone: string,
+  body: string,
+): Promise<DeliveryMode> {
   if (typeof window === "undefined") {
     const gateway = await import("@/lib/notification-gateway");
     return gateway.deliverNotification(channel, phone, body);
@@ -158,7 +162,8 @@ async function deliver(channel: NotificationChannel, phone: string, body: string
     });
     if (!response.ok) return "failed";
     const payload = (await response.json()) as { mode?: DeliveryMode };
-    if (payload.mode === "live" || payload.mode === "mock" || payload.mode === "failed") return payload.mode;
+    if (payload.mode === "live" || payload.mode === "mock" || payload.mode === "failed")
+      return payload.mode;
     return "failed";
   } catch {
     return "failed";

@@ -98,7 +98,9 @@ export function TouristAuthForm({
     <div className={compact ? "" : "mt-6"}>
       {!compact && (
         <div className="mb-6">
-          <h1 className="text-3xl font-black tracking-tight">{tab === "login" ? loginTitle : "Գրանցում"}</h1>
+          <h1 className="text-3xl font-black tracking-tight">
+            {tab === "login" ? loginTitle : "Գրանցում"}
+          </h1>
           <p className="mt-2 text-sm text-muted-foreground">
             {tab === "login"
               ? "Մուտք գործեք էլ. փոստով կամ հեռախոսահամարով։"
@@ -115,8 +117,12 @@ export function TouristAuthForm({
         className="rounded-3xl border border-border bg-card p-5"
       >
         <TabsList className="grid h-11 w-full grid-cols-2 rounded-full">
-          <TabsTrigger value="login" className="rounded-full">Մուտք</TabsTrigger>
-          <TabsTrigger value="signup" className="rounded-full">Գրանցում</TabsTrigger>
+          <TabsTrigger value="login" className="rounded-full">
+            Մուտք
+          </TabsTrigger>
+          <TabsTrigger value="signup" className="rounded-full">
+            Գրանցում
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="login">
@@ -149,7 +155,9 @@ export function TouristAuthForm({
                 className="h-11 rounded-2xl"
               />
             </div>
-            {error && tab === "login" && <p className="text-xs font-medium text-destructive">{error}</p>}
+            {error && tab === "login" && (
+              <p className="text-xs font-medium text-destructive">{error}</p>
+            )}
             <Button type="submit" className="h-11 w-full rounded-full font-bold" disabled={pending}>
               {pending ? "Մուտք է գործում" : "Մուտք"}
             </Button>
@@ -166,11 +174,25 @@ export function TouristAuthForm({
           >
             <div className="space-y-1.5">
               <Label htmlFor="reg-name">Անուն Ազգանուն</Label>
-              <Input id="reg-name" value={fullName} onChange={(event) => setFullName(event.target.value)} autoComplete="name" className="h-11 rounded-2xl" />
+              <Input
+                id="reg-name"
+                value={fullName}
+                onChange={(event) => setFullName(event.target.value)}
+                autoComplete="name"
+                className="h-11 rounded-2xl"
+              />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="reg-phone">Հեռախոսահամար</Label>
-              <Input id="reg-phone" type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} autoComplete="tel" placeholder="+374 00 000000" className="h-11 rounded-2xl" />
+              <Input
+                id="reg-phone"
+                type="tel"
+                value={phone}
+                onChange={(event) => setPhone(event.target.value)}
+                autoComplete="tel"
+                placeholder="+374 00 000000"
+                className="h-11 rounded-2xl"
+              />
             </div>
             <fieldset className="space-y-1.5">
               <legend className="text-sm font-medium">Ծննդյան ամսաթիվ</legend>
@@ -181,7 +203,9 @@ export function TouristAuthForm({
                   </SelectTrigger>
                   <SelectContent>
                     {Array.from({ length: 31 }, (_, index) => String(index + 1)).map((value) => (
-                      <SelectItem key={value} value={value}>{value}</SelectItem>
+                      <SelectItem key={value} value={value}>
+                        {value}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -191,7 +215,9 @@ export function TouristAuthForm({
                   </SelectTrigger>
                   <SelectContent>
                     {months.map((label, index) => (
-                      <SelectItem key={label} value={String(index + 1)}>{label}</SelectItem>
+                      <SelectItem key={label} value={String(index + 1)}>
+                        {label}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -201,7 +227,9 @@ export function TouristAuthForm({
                   </SelectTrigger>
                   <SelectContent>
                     {years.map((value) => (
-                      <SelectItem key={value} value={value}>{value}</SelectItem>
+                      <SelectItem key={value} value={value}>
+                        {value}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -209,13 +237,29 @@ export function TouristAuthForm({
             </fieldset>
             <div className="space-y-1.5">
               <Label htmlFor="reg-email">Էլ. փոստ</Label>
-              <Input id="reg-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" className="h-11 rounded-2xl" />
+              <Input
+                id="reg-email"
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                autoComplete="email"
+                className="h-11 rounded-2xl"
+              />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="reg-password">Գաղտնաբառ</Label>
-              <Input id="reg-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" className="h-11 rounded-2xl" />
+              <Input
+                id="reg-password"
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                autoComplete="new-password"
+                className="h-11 rounded-2xl"
+              />
             </div>
-            {error && tab === "signup" && <p className="text-xs font-medium text-destructive">{error}</p>}
+            {error && tab === "signup" && (
+              <p className="text-xs font-medium text-destructive">{error}</p>
+            )}
             <Button type="submit" className="h-11 w-full rounded-full font-bold" disabled={pending}>
               {pending ? "Գրանցվում է" : "Գրանցվել"}
             </Button>

@@ -141,8 +141,10 @@ function seedBookings(): BookingRecord[] {
 }
 
 function normalizeTour(tour: AssignedTour): AssignedTour {
-  const guideId = typeof tour.guideId === "string" || tour.guideId === null ? tour.guideId : LOCAL_STAFF_ID;
-  const driverId = typeof tour.driverId === "string" || tour.driverId === null ? tour.driverId : LOCAL_DRIVER_ID;
+  const guideId =
+    typeof tour.guideId === "string" || tour.guideId === null ? tour.guideId : LOCAL_STAFF_ID;
+  const driverId =
+    typeof tour.driverId === "string" || tour.driverId === null ? tour.driverId : LOCAL_DRIVER_ID;
   return { ...tour, guideId, driverId };
 }
 
@@ -164,10 +166,22 @@ function normalizeBooking(booking: BookingRecord): BookingRecord {
   const amount = typeof booking.amount === "number" ? booking.amount : 0;
   const attendance = attendanceOf(booking.attendance);
   if (booking.id === "local-b1" && paymentProvider === null && amount === 0) {
-    return { ...booking, paymentProvider: "idram", paymentStatus: "SUCCESS", amount: 12000, attendance };
+    return {
+      ...booking,
+      paymentProvider: "idram",
+      paymentStatus: "SUCCESS",
+      amount: 12000,
+      attendance,
+    };
   }
   if (booking.id === "local-b2" && paymentProvider === null && amount === 0) {
-    return { ...booking, paymentProvider: "telcell", paymentStatus: "PENDING", amount: 36000, attendance };
+    return {
+      ...booking,
+      paymentProvider: "telcell",
+      paymentStatus: "PENDING",
+      amount: 36000,
+      attendance,
+    };
   }
   return { ...booking, paymentProvider, paymentStatus, amount, attendance };
 }
@@ -245,7 +259,12 @@ function parseGuideProfile(raw: string | null): StaffProfile | null {
   if (!raw) return null;
   try {
     const profile = JSON.parse(raw) as StaffProfile;
-    if (profile.role !== "guide" || typeof profile.id !== "string" || typeof profile.fullName !== "string") return null;
+    if (
+      profile.role !== "guide" ||
+      typeof profile.id !== "string" ||
+      typeof profile.fullName !== "string"
+    )
+      return null;
     return profile;
   } catch {
     return null;
@@ -253,7 +272,10 @@ function parseGuideProfile(raw: string | null): StaffProfile | null {
 }
 
 function readStoredProfile(): StaffProfile | null {
-  const local = typeof localStorage === "undefined" ? null : parseGuideProfile(localStorage.getItem(GUIDE_LOCAL_KEY));
+  const local =
+    typeof localStorage === "undefined"
+      ? null
+      : parseGuideProfile(localStorage.getItem(GUIDE_LOCAL_KEY));
   if (local) return local;
   if (typeof sessionStorage === "undefined") return null;
   return parseGuideProfile(sessionStorage.getItem(SESSION_KEY));
@@ -338,9 +360,14 @@ export async function signOutGuide() {
   });
 }
 
-export async function listAssignedDepartures(userId: string, role: "guide" | "driver"): Promise<AssignedTour[]> {
+export async function listAssignedDepartures(
+  userId: string,
+  role: "guide" | "driver",
+): Promise<AssignedTour[]> {
   if (!supabase) {
-    return state.tours.filter((tour) => (role === "guide" ? tour.guideId === userId : tour.driverId === userId));
+    return state.tours.filter((tour) =>
+      role === "guide" ? tour.guideId === userId : tour.driverId === userId,
+    );
   }
   const column = role === "guide" ? "guide_id" : "driver_id";
   const { data, error } = await supabase
@@ -351,7 +378,10 @@ export async function listAssignedDepartures(userId: string, role: "guide" | "dr
   if (error) throw new Error("Մեկնումները չբեռնվեցին։");
   const tourIds = [...new Set(data.map((row) => row.tour_id))];
   const tourResult = tourIds.length
-    ? await supabase.from("tours").select("id, title_hy, departure_place, departure_time").in("id", tourIds)
+    ? await supabase
+        .from("tours")
+        .select("id, title_hy, departure_place, departure_time")
+        .in("id", tourIds)
     : { data: [], error: null };
   if (tourResult.error) throw new Error("Մեկնումները չբեռնվեցին։");
   const toursById = new Map((tourResult.data ?? []).map((tour) => [tour.id, tour]));
@@ -397,7 +427,9 @@ export function upsertPortalTour(input: {
   departureId?: string;
 }) {
   const departureId = input.departureId ?? "";
-  const existing = state.tours.find((tour) => tour.departureId === departureId && tour.id === input.id);
+  const existing = state.tours.find(
+    (tour) => tour.departureId === departureId && tour.id === input.id,
+  );
   const next: AssignedTour = {
     id: input.id,
     departureId,
@@ -411,7 +443,9 @@ export function upsertPortalTour(input: {
   };
   setState({
     tours: existing
-      ? state.tours.map((tour) => (tour.departureId === departureId && tour.id === input.id ? next : tour))
+      ? state.tours.map((tour) =>
+          tour.departureId === departureId && tour.id === input.id ? next : tour,
+        )
       : [...state.tours, next],
   });
 }
@@ -424,7 +458,9 @@ export async function setAttendance(bookingId: string, attendance: AttendanceSta
   const current = state.bookings.find((booking) => booking.id === bookingId);
   if (!current) throw new Error("Ուղևորը չի գտնվել։");
   setState({
-    bookings: state.bookings.map((booking) => (booking.id === bookingId ? { ...booking, attendance } : booking)),
+    bookings: state.bookings.map((booking) =>
+      booking.id === bookingId ? { ...booking, attendance } : booking,
+    ),
   });
   if (!supabase) return;
   const { error } = await supabase.from("bookings").update({ attendance }).eq("id", bookingId);
@@ -487,7 +523,9 @@ export async function loadDepartureManifest(departureId: string) {
 export async function loadTourManifest(tourId: string, departureDate = "") {
   const byTour = await listBookings(tourId);
   const sameDepartureIds = departureDate
-    ? state.tours.filter((tour) => tour.id === tourId && tour.departureDate === departureDate).map((tour) => tour.id)
+    ? state.tours
+        .filter((tour) => tour.id === tourId && tour.departureDate === departureDate)
+        .map((tour) => tour.id)
     : [];
   const relatedIds = new Set([tourId, ...sameDepartureIds]);
   const localMatches = state.bookings.filter((booking) => relatedIds.has(booking.tourId));
@@ -620,7 +658,10 @@ export async function registerBooking(input: {
   });
 }
 
-export async function checkInPassenger(departureId: string, rawCode: string): Promise<CheckInResult> {
+export async function checkInPassenger(
+  departureId: string,
+  rawCode: string,
+): Promise<CheckInResult> {
   const ticketCode = ticketCodeFromScan(rawCode);
   if (!ticketCode || !departureId) return { ok: false, message: "QR կոդը դատարկ է։" };
 
@@ -635,7 +676,8 @@ export async function checkInPassenger(departureId: string, rawCode: string): Pr
       passengerName: booking?.passengerName ?? "",
     });
     if (!booking || plan.action === "reject") return { ok: false, message: plan.message };
-    if (plan.action === "repeat") return { ok: true, booking, message: plan.message, repeated: true };
+    if (plan.action === "repeat")
+      return { ok: true, booking, message: plan.message, repeated: true };
     const updated: BookingRecord = { ...booking, attendance: "present" };
     setState({
       bookings: state.bookings.map((item) => (item.id === booking.id ? updated : item)),

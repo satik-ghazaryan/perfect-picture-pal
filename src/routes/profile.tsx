@@ -53,7 +53,10 @@ export const Route = createFileRoute("/profile")({
   head: () => ({
     meta: [
       { title: "Իմ էջը — Արի Գնանք" },
-      { name: "description", content: "Զբոսաշրջիկի անձնական էջ՝ միավորներ, ամրագրումներ և նախորդ տուրեր։" },
+      {
+        name: "description",
+        content: "Զբոսաշրջիկի անձնական էջ՝ միավորներ, ամրագրումներ և նախորդ տուրեր։",
+      },
     ],
   }),
   component: ProfilePage,
@@ -96,11 +99,19 @@ function isCompleted(date: string) {
 
 function ProfilePage() {
   const navigate = useNavigate();
-  const session = useSyncExternalStore(subscribeTourist, getTouristSnapshot, getTouristServerSnapshot);
+  const session = useSyncExternalStore(
+    subscribeTourist,
+    getTouristSnapshot,
+    getTouristServerSnapshot,
+  );
   const catalog = useSyncExternalStore(subscribeAdmin, getAdminSnapshot, getAdminServerSnapshot);
   const portal = useSyncExternalStore(subscribePortal, getPortalSnapshot, getPortalServerSnapshot);
   const [ownBookings, setOwnBookings] = useState<BookingRecord[]>([]);
-  const wallet = useSyncExternalStore(subscribeLoyalty, getLoyaltySnapshot, getLoyaltyServerSnapshot);
+  const wallet = useSyncExternalStore(
+    subscribeLoyalty,
+    getLoyaltySnapshot,
+    getLoyaltyServerSnapshot,
+  );
   const lang = useSiteLocale();
   const [ready, setReady] = useState(false);
 
@@ -164,7 +175,9 @@ function ProfilePage() {
   const visibleBookings = isSupabaseConfigured ? ownBookings : portal.bookings;
   const trips = visibleBookings.flatMap((booking) => {
     if (!isSupabaseConfigured && phoneKey(booking.phone) !== digits) return [];
-    const tour = catalog.tours.find((item) => item.id === booking.tourId && item.is_virtual_only !== true);
+    const tour = catalog.tours.find(
+      (item) => item.id === booking.tourId && item.is_virtual_only !== true,
+    );
     const assigned = portal.tours.find((item) => item.departureId === booking.departureId);
     if (!tour && !assigned && !booking.departureDate) return [];
     const departureDate = booking.departureDate || "";
@@ -191,7 +204,9 @@ function ProfilePage() {
     if (!pastByTour.has(trip.tourId)) pastByTour.set(trip.tourId, trip);
   }
   const photos = [...pastByTour.values()].flatMap((trip) => {
-    const cover = trip.image ? [{ id: `cover-${trip.tourId}`, url: trip.image, title: trip.title }] : [];
+    const cover = trip.image
+      ? [{ id: `cover-${trip.tourId}`, url: trip.image, title: trip.title }]
+      : [];
     const uploaded = portal.photos
       .filter((photo) => photo.tourId === trip.tourId)
       .map((photo) => ({ id: photo.id, url: photo.url, title: trip.title }));
@@ -205,7 +220,9 @@ function ProfilePage() {
         <section className="rounded-3xl border border-border bg-card p-5">
           <div className="flex items-center gap-4">
             <Avatar className="h-16 w-16">
-              <AvatarFallback className="bg-primary-soft text-lg font-black text-primary">{initial(fullName)}</AvatarFallback>
+              <AvatarFallback className="bg-primary-soft text-lg font-black text-primary">
+                {initial(fullName)}
+              </AvatarFallback>
             </Avatar>
             <div className="min-w-0">
               <p className="text-xs font-bold uppercase tracking-wide text-primary">Իմ էջը</p>
@@ -231,16 +248,24 @@ function ProfilePage() {
         <section className="flex flex-col gap-4 rounded-3xl bg-primary-soft p-6 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-xs font-semibold text-muted-foreground">Կուտակված միավորներ</p>
-            <p className="mt-2 text-4xl font-black tracking-tight text-primary">⭐ {points} Միավոր</p>
+            <p className="mt-2 text-4xl font-black tracking-tight text-primary">
+              ⭐ {points} Միավոր
+            </p>
           </div>
           <RedeemPoints phone={phone} fullName={fullName} points={points} credits={credits} />
         </section>
 
         <Tabs defaultValue="current">
           <TabsList className="grid h-auto w-full grid-cols-1 gap-1 rounded-2xl p-1 sm:grid-cols-3">
-            <TabsTrigger value="current" className="rounded-xl">Ընթացիկ Ամրագրումներ</TabsTrigger>
-            <TabsTrigger value="past" className="rounded-xl">Նախորդ Տուրեր</TabsTrigger>
-            <TabsTrigger value="photos" className="rounded-xl">Տուրերի Լուսանկարներ</TabsTrigger>
+            <TabsTrigger value="current" className="rounded-xl">
+              Ընթացիկ Ամրագրումներ
+            </TabsTrigger>
+            <TabsTrigger value="past" className="rounded-xl">
+              Նախորդ Տուրեր
+            </TabsTrigger>
+            <TabsTrigger value="photos" className="rounded-xl">
+              Տուրերի Լուսանկարներ
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="current" className="mt-4 space-y-4">
@@ -288,7 +313,9 @@ function ProfilePage() {
                 <article key={trip.id} className="rounded-3xl border border-border bg-card p-4">
                   <div className="flex items-start justify-between gap-3">
                     <h2 className="text-base font-black leading-snug">{trip.title}</h2>
-                    <span className="shrink-0 rounded-full bg-muted px-2.5 py-1 text-xs font-bold">{trip.status}</span>
+                    <span className="shrink-0 rounded-full bg-muted px-2.5 py-1 text-xs font-bold">
+                      {trip.status}
+                    </span>
                   </div>
                   <p className="mt-2 text-sm text-muted-foreground">
                     {formatDeparture(trip.departureDate)}
@@ -308,9 +335,18 @@ function ProfilePage() {
             ) : (
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 {photos.map((photo) => (
-                  <figure key={photo.id} className="overflow-hidden rounded-2xl border border-border bg-card">
-                    <img src={photo.url} alt={photo.title} className="aspect-square w-full object-cover" />
-                    <figcaption className="px-2 py-2 text-xs font-semibold leading-snug">{photo.title}</figcaption>
+                  <figure
+                    key={photo.id}
+                    className="overflow-hidden rounded-2xl border border-border bg-card"
+                  >
+                    <img
+                      src={photo.url}
+                      alt={photo.title}
+                      className="aspect-square w-full object-cover"
+                    />
+                    <figcaption className="px-2 py-2 text-xs font-semibold leading-snug">
+                      {photo.title}
+                    </figcaption>
                   </figure>
                 ))}
               </div>
@@ -368,7 +404,9 @@ function RedeemPoints({
         <DialogContent className="rounded-3xl sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Փոխարինել զեղչի</DialogTitle>
-            <DialogDescription>1 միավոր = 1 ֏։ Կտրոնը կիրառվում է հաջորդ ամրագրման ժամանակ։</DialogDescription>
+            <DialogDescription>
+              1 միավոր = 1 ֏։ Կտրոնը կիրառվում է հաջորդ ամրագրման ժամանակ։
+            </DialogDescription>
           </DialogHeader>
           <p className="text-sm font-semibold">Հասանելի է՝ {points} միավոր</p>
           <form
@@ -390,18 +428,27 @@ function RedeemPoints({
               />
             </div>
             {error && <p className="text-xs font-medium text-destructive">{error}</p>}
-            <Button type="submit" className="w-full rounded-full font-bold" disabled={saving || points < 1}>
+            <Button
+              type="submit"
+              className="w-full rounded-full font-bold"
+              disabled={saving || points < 1}
+            >
               {saving ? "Պահվում է" : "Փոխարինել զեղչի"}
             </Button>
           </form>
           <div className="space-y-2">
-            <p className="text-xs font-semibold text-muted-foreground">Ակտիվ զեղչեր՝ {formatAmd(creditTotal)}</p>
+            <p className="text-xs font-semibold text-muted-foreground">
+              Ակտիվ զեղչեր՝ {formatAmd(creditTotal)}
+            </p>
             {credits.length === 0 ? (
               <p className="text-sm text-muted-foreground">Ակտիվ կտրոն դեռ չկա։</p>
             ) : (
               <ul className="space-y-2">
                 {credits.map((credit) => (
-                  <li key={credit.id} className="flex items-center justify-between rounded-2xl bg-muted px-3 py-2 text-sm">
+                  <li
+                    key={credit.id}
+                    className="flex items-center justify-between rounded-2xl bg-muted px-3 py-2 text-sm"
+                  >
                     <span className="font-bold">{credit.code}</span>
                     <span>{formatAmd(credit.amount)}</span>
                   </li>

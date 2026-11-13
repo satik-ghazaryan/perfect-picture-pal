@@ -32,8 +32,16 @@ export const Route = createFileRoute("/driver")({
 
 function DriverPage() {
   const navigate = useNavigate();
-  const session = useSyncExternalStore(subscribeTourist, getTouristSnapshot, getTouristServerSnapshot);
-  const accountStatus = useSyncExternalStore(subscribeTourist, getAccountStatus, () => "ready" as const);
+  const session = useSyncExternalStore(
+    subscribeTourist,
+    getTouristSnapshot,
+    getTouristServerSnapshot,
+  );
+  const accountStatus = useSyncExternalStore(
+    subscribeTourist,
+    getAccountStatus,
+    () => "ready" as const,
+  );
   const catalog = useSyncExternalStore(subscribeAdmin, getAdminSnapshot, getAdminServerSnapshot);
   const portal = useSyncExternalStore(subscribePortal, getPortalSnapshot, getPortalServerSnapshot);
   const [ready, setReady] = useState(false);
@@ -88,11 +96,19 @@ function DriverPage() {
             ) : (
               tours.map((tour) => {
                 const details = catalog.tours.find((item) => item.id === tour.id);
-                const passengers = portal.bookings.filter((booking) => booking.departureId === tour.departureId);
-                const count = passengers.reduce((sum, booking) => sum + booking.adults + booking.children, 0);
+                const passengers = portal.bookings.filter(
+                  (booking) => booking.departureId === tour.departureId,
+                );
+                const count = passengers.reduce(
+                  (sum, booking) => sum + booking.adults + booking.children,
+                  0,
+                );
                 const when = formatAssignedDepartureDate(tour.departureDate);
                 return (
-                  <article key={tour.departureId} className="space-y-2 rounded-3xl border border-border bg-card p-4 sm:p-5">
+                  <article
+                    key={tour.departureId}
+                    className="space-y-2 rounded-3xl border border-border bg-card p-4 sm:p-5"
+                  >
                     <h2 className="text-lg font-black leading-snug">{tour.title}</h2>
                     <p className="text-sm text-muted-foreground">
                       {when} · մեկնում {tour.departureTime}

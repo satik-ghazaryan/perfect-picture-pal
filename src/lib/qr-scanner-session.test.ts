@@ -8,7 +8,12 @@ import {
 } from "./qr-scanner-session";
 
 const hidden: ScannerSurface = { isConnected: true, clientWidth: 0, clientHeight: 0, hidden: true };
-const ready: ScannerSurface = { isConnected: true, clientWidth: 320, clientHeight: 240, hidden: false };
+const ready: ScannerSurface = {
+  isConnected: true,
+  clientWidth: 320,
+  clientHeight: 240,
+  hidden: false,
+};
 
 describe("scanner surface", () => {
   it("waits until the reader is mounted, visible, and has a positive size", () => {
@@ -23,10 +28,14 @@ describe("scanner surface", () => {
   it("starts only after the surface reports a positive box and stops when cancelled", async () => {
     const surface = { ...hidden };
     let notify: () => void = () => undefined;
-    const pending = waitForScannerSurface(() => surface, () => false, (check) => {
-      notify = check;
-      return () => undefined;
-    });
+    const pending = waitForScannerSurface(
+      () => surface,
+      () => false,
+      (check) => {
+        notify = check;
+        return () => undefined;
+      },
+    );
     let resolved = false;
     const done = pending.then(() => {
       resolved = true;
@@ -43,13 +52,17 @@ describe("scanner surface", () => {
 
     let cancelled = false;
     await assert.rejects(
-      waitForScannerSurface(() => hidden, () => cancelled, (check) => {
-        queueMicrotask(() => {
-          cancelled = true;
-          check();
-        });
-        return () => undefined;
-      }),
+      waitForScannerSurface(
+        () => hidden,
+        () => cancelled,
+        (check) => {
+          queueMicrotask(() => {
+            cancelled = true;
+            check();
+          });
+          return () => undefined;
+        },
+      ),
       (error: unknown) => error instanceof DOMException && error.name === "AbortError",
     );
   });

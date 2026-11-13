@@ -31,7 +31,13 @@ export function hotspotsWithCover(hotspots: Hotspot[], position?: CoverPosition 
   if (point.x === 50 && point.y === 50) return clean;
   return [
     ...clean,
-    { id: COVER_HOTSPOT_ID, x: clampCover(point.x), y: clampCover(point.y), title: "", description: "" },
+    {
+      id: COVER_HOTSPOT_ID,
+      x: clampCover(point.x),
+      y: clampCover(point.y),
+      title: "",
+      description: "",
+    },
   ];
 }
 
@@ -50,7 +56,11 @@ export function coverPositionAfterDrag(
   };
 }
 
-export function coverPositionAfterArrow(position: CoverPosition, key: string, step = 2): CoverPosition | null {
+export function coverPositionAfterArrow(
+  position: CoverPosition,
+  key: string,
+  step = 2,
+): CoverPosition | null {
   if (key === "ArrowLeft") return { x: clampCover(position.x + step), y: position.y };
   if (key === "ArrowRight") return { x: clampCover(position.x - step), y: position.y };
   if (key === "ArrowUp") return { x: position.x, y: clampCover(position.y + step) };

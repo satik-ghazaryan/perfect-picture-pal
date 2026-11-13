@@ -38,7 +38,14 @@ import { TourCard } from "@/components/tour-card";
 import { regions, tourTypeLabels, tourTypes } from "@/data/tours";
 import { pickLocale, useSiteLocale } from "@/lib/locale";
 import { CatalogStatusPanel } from "@/components/catalog-status-panel";
-import { catalogIsPending, getAdminServerSnapshot, getAdminSnapshot, hydrateAdmin, retryLiveCatalog, subscribeAdmin } from "@/lib/admin";
+import {
+  catalogIsPending,
+  getAdminServerSnapshot,
+  getAdminSnapshot,
+  hydrateAdmin,
+  retryLiveCatalog,
+  subscribeAdmin,
+} from "@/lib/admin";
 import heroImage from "@/assets/hero-armenia.jpg";
 
 export const Route = createFileRoute("/")({
@@ -118,7 +125,9 @@ function Index() {
   }, []);
 
   const filtered = tourList.filter(
-    (t) => (region === "all" || t.category === region || t.location_hy === region) && (type === "all" || t.type === type),
+    (t) =>
+      (region === "all" || t.category === region || t.location_hy === region) &&
+      (type === "all" || t.type === type),
   );
 
   return (
@@ -149,7 +158,9 @@ function Index() {
             </span>
             <h1 className="mt-4 max-w-3xl text-4xl font-black leading-[1.05] tracking-tight text-navy-foreground sm:text-6xl">
               {catalog.settings.bannerTitle.split("\n").map((line, index) => (
-                <span key={`${index}-${line}`} className="block">{line}</span>
+                <span key={`${index}-${line}`} className="block">
+                  {line}
+                </span>
               ))}
             </h1>
             <p className="mt-4 max-w-xl text-sm text-navy-foreground/80 sm:text-base">
@@ -235,7 +246,11 @@ function Index() {
               Առաջարկվող մեկօրյա տուրեր
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              {catalog.catalogStatus === "loaded" ? `Գտնվել է ${filtered.length} տուր` : catalog.catalogStatus === "error" ? "Ցանկը չբեռնվեց" : "Բեռնվում է..."}
+              {catalog.catalogStatus === "loaded"
+                ? `Գտնվել է ${filtered.length} տուր`
+                : catalog.catalogStatus === "error"
+                  ? "Ցանկը չբեռնվեց"
+                  : "Բեռնվում է..."}
             </p>
           </div>
           <div className="hidden shrink-0 items-center gap-3 text-xs text-muted-foreground sm:flex">
@@ -259,8 +274,16 @@ function Index() {
       <section id="loyalty" className="mx-auto max-w-7xl px-4 pb-12 sm:px-6">
         <div className="grid gap-4 rounded-3xl bg-primary-soft p-6 sm:grid-cols-3">
           {[
-            { icon: Sparkles, title: "Հավատարմության միավորներ", text: `Արմավիրից ամրագրված յուրաքանչյուր տուրի ${catalog.settings.cashbackPercent}%-ը վերադառնում է միավորներով։` },
-            { icon: ShieldCheck, title: "Անվճար չեղարկում", text: "Չեղարկեք մեկնումից մինչև 24 ժամ առաջ։" },
+            {
+              icon: Sparkles,
+              title: "Հավատարմության միավորներ",
+              text: `Արմավիրից ամրագրված յուրաքանչյուր տուրի ${catalog.settings.cashbackPercent}%-ը վերադառնում է միավորներով։`,
+            },
+            {
+              icon: ShieldCheck,
+              title: "Անվճար չեղարկում",
+              text: "Չեղարկեք մեկնումից մինչև 24 ժամ առաջ։",
+            },
             { icon: Headphones, title: "Գիդեր 3 լեզվով", text: "Հայերեն, անգլերեն և ռուսերեն։" },
           ].map((item) => (
             <div key={item.title} className="flex min-w-0 items-start gap-3">
@@ -299,10 +322,26 @@ function Index() {
           <div>
             <p className="text-sm font-bold">Բացահայտեք</p>
             <ul className="mt-3 space-y-2 text-xs text-navy-foreground/70">
-              <li><a href="#calendar" className="hover:text-accent">Տուրերի օրացույց</a></li>
-              <li><a href="#tours" className="hover:text-accent">Աուդիոգիդեր</a></li>
-              <li><Link to="/virtual" className="hover:text-accent">360° Վիրտուալ Տուրեր</Link></li>
-              <li><Link to="/loyalty" className="hover:text-accent">Հավատարմության միավորներ</Link></li>
+              <li>
+                <a href="#calendar" className="hover:text-accent">
+                  Տուրերի օրացույց
+                </a>
+              </li>
+              <li>
+                <a href="#tours" className="hover:text-accent">
+                  Աուդիոգիդեր
+                </a>
+              </li>
+              <li>
+                <Link to="/virtual" className="hover:text-accent">
+                  360° Վիրտուալ Տուրեր
+                </Link>
+              </li>
+              <li>
+                <Link to="/loyalty" className="hover:text-accent">
+                  Հավատարմության միավորներ
+                </Link>
+              </li>
             </ul>
           </div>
           <div>
@@ -310,7 +349,11 @@ function Index() {
             <ul className="mt-3 space-y-2 text-xs text-navy-foreground/70">
               {policies.map((item) => (
                 <li key={item.id}>
-                  <button type="button" className="hover:text-accent" onClick={() => setPolicyId(item.id)}>
+                  <button
+                    type="button"
+                    className="hover:text-accent"
+                    onClick={() => setPolicyId(item.id)}
+                  >
                     {item.title}
                   </button>
                 </li>
@@ -320,8 +363,12 @@ function Index() {
           <div>
             <p className="text-sm font-bold">Կապ մեզ հետ</p>
             <ul className="mt-3 space-y-2 text-xs text-navy-foreground/70">
-              <li className="flex items-center gap-2"><Phone className="h-3.5 w-3.5" /> +374 10 000 000</li>
-              <li className="flex items-center gap-2"><MessageCircle className="h-3.5 w-3.5" /> WhatsApp / Viber</li>
+              <li className="flex items-center gap-2">
+                <Phone className="h-3.5 w-3.5" /> +374 10 000 000
+              </li>
+              <li className="flex items-center gap-2">
+                <MessageCircle className="h-3.5 w-3.5" /> WhatsApp / Viber
+              </li>
               <li>Կենտրոնական հրապարակ, Արմավիր</li>
             </ul>
           </div>
@@ -331,7 +378,12 @@ function Index() {
         </div>
       </footer>
 
-      <Dialog open={policy !== undefined} onOpenChange={(open) => { if (!open) setPolicyId(null); }}>
+      <Dialog
+        open={policy !== undefined}
+        onOpenChange={(open) => {
+          if (!open) setPolicyId(null);
+        }}
+      >
         <DialogContent className="max-h-[90vh] overflow-y-auto rounded-3xl sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{policy?.title}</DialogTitle>

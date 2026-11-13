@@ -4,7 +4,14 @@ import { useSyncExternalStore } from "react";
 import { SiteHeader } from "@/components/site-header";
 import { TourPanorama } from "@/components/tour-panorama";
 import { CatalogStatusPanel } from "@/components/catalog-status-panel";
-import { catalogIsPending, getAdminServerSnapshot, getAdminSnapshot, hydrateAdmin, retryLiveCatalog, subscribeAdmin } from "@/lib/admin";
+import {
+  catalogIsPending,
+  getAdminServerSnapshot,
+  getAdminSnapshot,
+  hydrateAdmin,
+  retryLiveCatalog,
+  subscribeAdmin,
+} from "@/lib/admin";
 import { tourDescription, tourLocation, tourTitle, useSiteLocale } from "@/lib/locale";
 
 export const Route = createFileRoute("/virtual")({
@@ -63,23 +70,27 @@ function VirtualToursPage() {
               const title = tourTitle(tour, lang);
               const summary = tourDescription(tour, lang);
               return (
-              <article key={tour.id} id={tour.id} className="scroll-mt-24 space-y-4">
-                <div>
-                  <p className="text-xs font-semibold text-primary">{tourLocation(tour, lang)}</p>
-                  <h2 className="mt-1 text-2xl font-black tracking-tight">{title}</h2>
-                </div>
-                <TourPanorama tour={tour} />
-                {summary.length > 0 && (
-                  <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground sm:text-base">{summary}</p>
-                )}
-                {tour.highlights.length > 0 && (
-                  <ul className="grid gap-2">
-                    {tour.highlights.map((item) => (
-                      <li key={item} className="text-sm leading-relaxed">{item}</li>
-                    ))}
-                  </ul>
-                )}
-              </article>
+                <article key={tour.id} id={tour.id} className="scroll-mt-24 space-y-4">
+                  <div>
+                    <p className="text-xs font-semibold text-primary">{tourLocation(tour, lang)}</p>
+                    <h2 className="mt-1 text-2xl font-black tracking-tight">{title}</h2>
+                  </div>
+                  <TourPanorama tour={tour} />
+                  {summary.length > 0 && (
+                    <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground sm:text-base">
+                      {summary}
+                    </p>
+                  )}
+                  {tour.highlights.length > 0 && (
+                    <ul className="grid gap-2">
+                      {tour.highlights.map((item) => (
+                        <li key={item} className="text-sm leading-relaxed">
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </article>
               );
             })}
           </div>

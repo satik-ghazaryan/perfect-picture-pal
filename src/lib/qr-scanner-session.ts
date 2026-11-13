@@ -8,10 +8,10 @@ export type ScannerSurface = {
 export function scannerSurfaceReady(element: ScannerSurface | null): boolean {
   return Boolean(
     element &&
-      element.isConnected &&
-      !element.hidden &&
-      element.clientWidth > 0 &&
-      element.clientHeight > 0,
+    element.isConnected &&
+    !element.hidden &&
+    element.clientWidth > 0 &&
+    element.clientHeight > 0,
   );
 }
 

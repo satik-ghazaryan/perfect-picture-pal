@@ -113,8 +113,16 @@ export function TourCalendar() {
                 const title = tourTitle(tour, lang);
                 const soldOut = row.availableSeats <= 0;
                 return (
-                  <article key={row.id} className="flex flex-col overflow-hidden rounded-3xl border border-border bg-card shadow-card">
-                    <TourCover src={tour.image_url} alt={title} position={tour.coverPosition} variant="card" />
+                  <article
+                    key={row.id}
+                    className="flex flex-col overflow-hidden rounded-3xl border border-border bg-card shadow-card"
+                  >
+                    <TourCover
+                      src={tour.image_url}
+                      alt={title}
+                      position={tour.coverPosition}
+                      variant="card"
+                    />
                     <div className="flex flex-1 flex-col gap-3 p-4">
                       <h3 className="text-base font-bold leading-snug">{title}</h3>
                       <p className="text-sm text-muted-foreground">
@@ -128,7 +136,9 @@ export function TourCalendar() {
                       <Button
                         className="mt-auto rounded-full font-semibold"
                         disabled={soldOut}
-                        onClick={() => navigate({ to: "/tours/$id", params: { id: tour.id }, hash: "book" })}
+                        onClick={() =>
+                          navigate({ to: "/tours/$id", params: { id: tour.id }, hash: "book" })
+                        }
                       >
                         Ամրագրել
                       </Button>
@@ -148,8 +158,16 @@ export function TourCalendar() {
               {published.map((tour) => {
                 const title = tourTitle(tour, lang);
                 return (
-                  <article key={tour.id} className="flex flex-col overflow-hidden rounded-3xl border border-border bg-card shadow-card">
-                    <TourCover src={tour.image_url} alt={title} position={tour.coverPosition} variant="card" />
+                  <article
+                    key={tour.id}
+                    className="flex flex-col overflow-hidden rounded-3xl border border-border bg-card shadow-card"
+                  >
+                    <TourCover
+                      src={tour.image_url}
+                      alt={title}
+                      position={tour.coverPosition}
+                      variant="card"
+                    />
                     <div className="flex flex-1 flex-col gap-3 p-4">
                       <h3 className="text-base font-bold leading-snug">{title}</h3>
                       {upcoming !== null && !upcomingTourIds.has(tour.id) && (

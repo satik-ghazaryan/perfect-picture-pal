@@ -1,5 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { forwardToPython, isUuid, jsonError, methodNotAllowed, requireAdmin } from "@/lib/ideas-proxy.server";
+import {
+  forwardToPython,
+  isUuid,
+  jsonError,
+  methodNotAllowed,
+  requireAdmin,
+} from "@/lib/ideas-proxy.server";
 
 async function handleGet({ request, params }: { request: Request; params: { runId: string } }) {
   const admin = await requireAdmin(request);

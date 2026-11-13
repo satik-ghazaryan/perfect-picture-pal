@@ -238,7 +238,12 @@ function persist() {
   if (isSupabaseConfigured || typeof localStorage === "undefined") return;
   localStorage.setItem(
     CATALOG_KEY,
-    JSON.stringify({ tours: state.tours, settings: state.settings, users: state.users, departures: localDepartures }),
+    JSON.stringify({
+      tours: state.tours,
+      settings: state.settings,
+      users: state.users,
+      departures: localDepartures,
+    }),
   );
 }
 
@@ -283,7 +288,10 @@ async function refreshLiveCatalog() {
   if (!isSupabaseConfigured || !remote) return;
   const request = ++liveCatalogRequest;
   try {
-    const [outcome, staff] = await Promise.all([loadRemoteCatalog(remote, defaultSettings), loadCatalogStaff()]);
+    const [outcome, staff] = await Promise.all([
+      loadRemoteCatalog(remote, defaultSettings),
+      loadCatalogStaff(),
+    ]);
     if (request !== liveCatalogRequest) return;
     if (outcome.status === "error") {
       setState({
@@ -293,7 +301,11 @@ async function refreshLiveCatalog() {
       });
       return;
     }
-    const next = clearBrokenLinks(outcome.tours.map((tour) => asManaged(tour)).filter((tour): tour is ManagedTour => tour !== null));
+    const next = clearBrokenLinks(
+      outcome.tours
+        .map((tour) => asManaged(tour))
+        .filter((tour): tour is ManagedTour => tour !== null),
+    );
     setState({
       tours: next,
       users: staff,
@@ -384,7 +396,9 @@ function sanitizeTour(value: unknown): ManagedTour | null {
 }
 
 function clearBrokenLinks(tours: ManagedTour[]) {
-  const virtualIds = new Set(tours.filter((tour) => tour.is_virtual_only === true).map((tour) => tour.id));
+  const virtualIds = new Set(
+    tours.filter((tour) => tour.is_virtual_only === true).map((tour) => tour.id),
+  );
   return tours.map((tour) => {
     const linked = tour.virtual_tour_id?.trim() ?? "";
     if (!linked || tour.is_virtual_only || !virtualIds.has(linked)) {
@@ -418,11 +432,12 @@ function sanitizeUser(value: unknown): DirectoryUser | null {
     fullName: raw.fullName.trim(),
     phone: typeof raw.phone === "string" ? raw.phone : "",
     email: typeof raw.email === "string" ? raw.email : "",
-    password: typeof raw.password === "string" && raw.password ? raw.password : seeded?.password ?? "",
+    password:
+      typeof raw.password === "string" && raw.password ? raw.password : (seeded?.password ?? ""),
     role: normalizeRole(raw.role),
     avatarUrl: typeof raw.avatarUrl === "string" ? raw.avatarUrl : "",
     bio: typeof raw.bio === "string" ? raw.bio : "",
-    birthDate: typeof raw.birthDate === "string" ? raw.birthDate : seeded?.birthDate ?? "",
+    birthDate: typeof raw.birthDate === "string" ? raw.birthDate : (seeded?.birthDate ?? ""),
     ...(typeof raw.createdAt === "string" && raw.createdAt
       ? { createdAt: raw.createdAt }
       : seeded?.createdAt
@@ -440,29 +455,51 @@ function readUsers(value: unknown): DirectoryUser[] | null {
   return users.length > 0 ? users : null;
 }
 
-function readCatalog(): { tours: ManagedTour[]; settings: SiteSettings; users: DirectoryUser[] | null } | null {
+function readCatalog(): {
+  tours: ManagedTour[];
+  settings: SiteSettings;
+  users: DirectoryUser[] | null;
+} | null {
   if (typeof localStorage === "undefined") return null;
   const raw = localStorage.getItem(CATALOG_KEY);
   if (!raw) return null;
   try {
-    const parsed = JSON.parse(raw) as { tours?: unknown; settings?: unknown; users?: unknown; departures?: unknown };
+    const parsed = JSON.parse(raw) as {
+      tours?: unknown;
+      settings?: unknown;
+      users?: unknown;
+      departures?: unknown;
+    };
     if (!Array.isArray(parsed.tours)) return null;
-    const nextTours = clearBrokenLinks(parsed.tours.map(sanitizeTour).filter((tour): tour is ManagedTour => tour !== null));
+    const nextTours = clearBrokenLinks(
+      parsed.tours.map(sanitizeTour).filter((tour): tour is ManagedTour => tour !== null),
+    );
     if (parsed.tours.length > 0 && nextTours.length === 0) return null;
     if (Array.isArray(parsed.departures)) {
-      localDepartures.splice(0, localDepartures.length, ...parsed.departures.flatMap((item) => {
-        if (!item || typeof item !== "object") return [];
-        const row = item as CatalogDeparture;
-        if (!isExplicitDepartureDate(row.departureDate) || typeof row.id !== "string" || typeof row.tourId !== "string") return [];
-        return [{
-          id: row.id,
-          tourId: row.tourId,
-          departureDate: row.departureDate,
-          availableSeats: Number.isFinite(row.availableSeats) ? row.availableSeats : 0,
-          guideId: row.guideId ?? null,
-          driverId: row.driverId ?? null,
-        }];
-      }));
+      localDepartures.splice(
+        0,
+        localDepartures.length,
+        ...parsed.departures.flatMap((item) => {
+          if (!item || typeof item !== "object") return [];
+          const row = item as CatalogDeparture;
+          if (
+            !isExplicitDepartureDate(row.departureDate) ||
+            typeof row.id !== "string" ||
+            typeof row.tourId !== "string"
+          )
+            return [];
+          return [
+            {
+              id: row.id,
+              tourId: row.tourId,
+              departureDate: row.departureDate,
+              availableSeats: Number.isFinite(row.availableSeats) ? row.availableSeats : 0,
+              guideId: row.guideId ?? null,
+              driverId: row.driverId ?? null,
+            },
+          ];
+        }),
+      );
     }
     return {
       tours: nextTours,
@@ -501,7 +538,8 @@ function readTourist(users: DirectoryUser[]): TouristSession | null {
       return null;
     }
     const user = users.find((item) => item.id === value.id);
-    if (!user || (user.role !== "tourist" && user.role !== "guide" && user.role !== "driver")) return null;
+    if (!user || (user.role !== "tourist" && user.role !== "guide" && user.role !== "driver"))
+      return null;
     return {
       id: user.id,
       fullName: user.fullName,
@@ -528,7 +566,8 @@ function openAccountSession(user: DirectoryUser, token: string) {
     token,
   };
   tourist = session;
-  if (typeof localStorage !== "undefined") localStorage.setItem(TOURIST_KEY, JSON.stringify(session));
+  if (typeof localStorage !== "undefined")
+    localStorage.setItem(TOURIST_KEY, JSON.stringify(session));
   emitTourist();
   return session;
 }
@@ -538,19 +577,20 @@ export function refreshStoredDirectory() {
   if (typeof localStorage === "undefined") return;
   const stored = readCatalog();
   if (!stored?.users) return;
-  const changed = stored.users.some((user) => {
-    const current = state.users.find((item) => item.id === user.id);
-    return (
-      !current ||
-      current.role !== user.role ||
-      current.fullName !== user.fullName ||
-      current.phone !== user.phone ||
-      current.email !== user.email ||
-      current.password !== user.password ||
-      current.avatarUrl !== user.avatarUrl ||
-      current.bio !== user.bio
-    );
-  }) || stored.users.length !== state.users.length;
+  const changed =
+    stored.users.some((user) => {
+      const current = state.users.find((item) => item.id === user.id);
+      return (
+        !current ||
+        current.role !== user.role ||
+        current.fullName !== user.fullName ||
+        current.phone !== user.phone ||
+        current.email !== user.email ||
+        current.password !== user.password ||
+        current.avatarUrl !== user.avatarUrl ||
+        current.bio !== user.bio
+      );
+    }) || stored.users.length !== state.users.length;
   if (changed) setState({ users: stored.users });
   const nextTourist = readTourist(state.users);
   if (!nextTourist) {
@@ -742,7 +782,11 @@ function commitSavedTour(saved: ManagedTour) {
     : [...state.tours, saved];
   const toursNext = saved.is_virtual_only
     ? replaced
-    : replaced.map((item) => (item.id !== saved.id && item.virtual_tour_id === saved.id ? { ...item, virtual_tour_id: null } : item));
+    : replaced.map((item) =>
+        item.id !== saved.id && item.virtual_tour_id === saved.id
+          ? { ...item, virtual_tour_id: null }
+          : item,
+      );
   setState({ tours: clearBrokenLinks(toursNext), catalogError: null });
   if (saved.is_virtual_only) removePortalTour(saved.id);
   else syncPortal(saved);
@@ -789,7 +833,11 @@ async function requireAssignee(expected: "guide" | "driver", accountId: string |
     if (message) throw new Error(message);
     return;
   }
-  const { data, error } = await supabase.from("profiles").select("role").eq("id", accountId).maybeSingle();
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", accountId)
+    .maybeSingle();
   if (error || !data) throw new Error("Ընտրված հաշիվը չի գտնվել։");
   const message = assigneeRoleError(expected, data.role);
   if (message) throw new Error(message);
@@ -802,9 +850,14 @@ export function listLocalDepartures(): CatalogDeparture[] {
 }
 
 export function departureShownOnTourForm(rows: CatalogDeparture[], tourId: string) {
-  const mine = rows.filter((row) => row.tourId === tourId && isExplicitDepartureDate(row.departureDate));
+  const mine = rows.filter(
+    (row) => row.tourId === tourId && isExplicitDepartureDate(row.departureDate),
+  );
   if (mine.length === 0) return null;
-  return [...mine].sort((left, right) => left.departureDate.localeCompare(right.departureDate) || left.id.localeCompare(right.id))[0];
+  return [...mine].sort(
+    (left, right) =>
+      left.departureDate.localeCompare(right.departureDate) || left.id.localeCompare(right.id),
+  )[0];
 }
 
 function rememberLocalDeparture(saved: CatalogDeparture) {
@@ -825,7 +878,9 @@ export async function saveTourDeparture(input: {
   const seats = Math.max(0, Math.round(input.seats));
   if (!supabase) {
     const existing = input.departureId
-      ? localDepartures.find((item) => item.id === input.departureId && item.tourId === input.tourId)
+      ? localDepartures.find(
+          (item) => item.id === input.departureId && item.tourId === input.tourId,
+        )
       : undefined;
     if (existing) {
       return rememberLocalDeparture({ ...existing, departureDate: input.departureDate });
@@ -990,10 +1045,14 @@ export async function loadDirectory(): Promise<DirectoryUser[]> {
 export async function loadStaff(): Promise<StaffMember[]> {
   if (state.session?.role === "admin") {
     const users = await loadDirectory();
-    return users.filter((user): user is StaffMember => user.role === "guide" || user.role === "driver");
+    return users.filter(
+      (user): user is StaffMember => user.role === "guide" || user.role === "driver",
+    );
   }
   const users = await loadCatalogStaff();
-  return users.filter((user): user is StaffMember => user.role === "guide" || user.role === "driver");
+  return users.filter(
+    (user): user is StaffMember => user.role === "guide" || user.role === "driver",
+  );
 }
 
 export async function updateDirectoryUser(next: DirectoryUser) {
@@ -1089,11 +1148,15 @@ function bookingFromRow(row: {
   amount: number;
 }): BookingRecord {
   const provider: PaymentProviderName | null =
-    row.payment_provider === "idram" || row.payment_provider === "telcell" || row.payment_provider === "arca"
+    row.payment_provider === "idram" ||
+    row.payment_provider === "telcell" ||
+    row.payment_provider === "arca"
       ? row.payment_provider
       : null;
   const paymentStatus: PaymentState | null =
-    row.payment_status === "SUCCESS" || row.payment_status === "FAILED" || row.payment_status === "PENDING"
+    row.payment_status === "SUCCESS" ||
+    row.payment_status === "FAILED" ||
+    row.payment_status === "PENDING"
       ? row.payment_status
       : null;
   return {
@@ -1198,8 +1261,12 @@ export async function signInTourist(identifier: string, password: string) {
   const digits = raw.replace(/\D/g, "");
   if (isSupabaseConfigured && supabase) {
     if (!byEmail) throw new Error("Մուտք գործեք էլ. փոստով։");
-    const { data, error } = await supabase.auth.signInWithPassword({ email: raw.toLowerCase(), password });
-    if (error || !data.user || !data.session) throw new Error("Էլ. փոստը, հեռախոսը կամ գաղտնաբառը սխալ է։");
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: raw.toLowerCase(),
+      password,
+    });
+    if (error || !data.user || !data.session)
+      throw new Error("Էլ. փոստը, հեռախոսը կամ գաղտնաբառը սխալ է։");
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
       .select("id, full_name, phone, email, role")
@@ -1297,7 +1364,10 @@ export async function createStaffAccount(input: {
         bio: input.bio,
       }),
     });
-    const payload = (await response.json().catch(() => null)) as { error?: unknown; id?: unknown } | null;
+    const payload = (await response.json().catch(() => null)) as {
+      error?: unknown;
+      id?: unknown;
+    } | null;
     if (!response.ok || !payload || typeof payload.id !== "string") {
       throw new Error(typeof payload?.error === "string" ? payload.error : "Հաշիվը չստեղծվեց։");
     }
@@ -1318,7 +1388,8 @@ export async function createStaffAccount(input: {
   const fullName = input.fullName.trim();
   const phone = input.phone.trim();
   const email = input.email.trim().toLowerCase();
-  if (input.role !== "guide" && input.role !== "driver") throw new Error("Ընտրեք զբոսավար կամ վարորդ։");
+  if (input.role !== "guide" && input.role !== "driver")
+    throw new Error("Ընտրեք զբոսավար կամ վարորդ։");
   const role = input.role === "driver" ? "driver" : "guide";
   if (fullName.length < 2) throw new Error("Գրեք անունը և ազգանունը։");
   if (!validAccountPhone(phone)) throw new Error("Գրեք գործող հեռախոսահամար։");
@@ -1418,7 +1489,9 @@ export async function loadAdminBookings(): Promise<BookingRecord[]> {
 
 export async function confirmBookingDeparture(bookingId: string) {
   if (!supabase) throw new Error("Supabase-ը կարգավորված չէ։");
-  const { data, error } = await supabase.rpc("confirm_booking_departure", { p_booking_id: bookingId });
+  const { data, error } = await supabase.rpc("confirm_booking_departure", {
+    p_booking_id: bookingId,
+  });
   if (error || !data?.ok) throw new Error(data?.message || "Մեկնման կապը չհաստատվեց։");
   return data;
 }

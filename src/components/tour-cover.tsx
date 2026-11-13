@@ -18,7 +18,15 @@ type Props = {
   className?: string;
 };
 
-export function TourCover({ src, alt, position, variant, interactive = false, onPosition, className }: Props) {
+export function TourCover({
+  src,
+  alt,
+  position,
+  variant,
+  interactive = false,
+  onPosition,
+  className,
+}: Props) {
   const frameRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
   const dragRef = useRef<{ x: number; y: number; position: CoverPosition } | null>(null);
@@ -30,13 +38,10 @@ export function TourCover({ src, alt, position, variant, interactive = false, on
     const image = imageRef.current;
     if (!drag || !frame || !image || !onPosition) return;
     onPosition(
-      coverPositionAfterDrag(
-        drag.position,
-        event.clientX - drag.x,
-        event.clientY - drag.y,
-        frame,
-        { width: image.naturalWidth, height: image.naturalHeight },
-      ),
+      coverPositionAfterDrag(drag.position, event.clientX - drag.x, event.clientY - drag.y, frame, {
+        width: image.naturalWidth,
+        height: image.naturalHeight,
+      }),
     );
   };
 
@@ -46,7 +51,8 @@ export function TourCover({ src, alt, position, variant, interactive = false, on
       className={cn(
         "relative overflow-hidden bg-muted",
         variant === "card" ? "h-48 w-full sm:h-52" : "aspect-video w-full",
-        interactive && "cursor-grab touch-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary active:cursor-grabbing",
+        interactive &&
+          "cursor-grab touch-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary active:cursor-grabbing",
         className,
       )}
       tabIndex={interactive ? 0 : undefined}
@@ -70,8 +76,20 @@ export function TourCover({ src, alt, position, variant, interactive = false, on
           : undefined
       }
       onPointerMove={interactive ? move : undefined}
-      onPointerUp={interactive ? () => { dragRef.current = null; } : undefined}
-      onPointerCancel={interactive ? () => { dragRef.current = null; } : undefined}
+      onPointerUp={
+        interactive
+          ? () => {
+              dragRef.current = null;
+            }
+          : undefined
+      }
+      onPointerCancel={
+        interactive
+          ? () => {
+              dragRef.current = null;
+            }
+          : undefined
+      }
     >
       <img
         ref={imageRef}

@@ -45,8 +45,10 @@ export function upcomingDepartures<T extends UpcomingDepartureInput>(rows: T[], 
     .filter((row) => !departureBookingClosed(row.departureDate, row.departureTime, now))
     .slice()
     .sort((left, right) => {
-      const leftStart = yerevanDepartureStart(left.departureDate, left.departureTime)?.getTime() ?? 0;
-      const rightStart = yerevanDepartureStart(right.departureDate, right.departureTime)?.getTime() ?? 0;
+      const leftStart =
+        yerevanDepartureStart(left.departureDate, left.departureTime)?.getTime() ?? 0;
+      const rightStart =
+        yerevanDepartureStart(right.departureDate, right.departureTime)?.getTime() ?? 0;
       return leftStart - rightStart || left.id.localeCompare(right.id);
     });
 }

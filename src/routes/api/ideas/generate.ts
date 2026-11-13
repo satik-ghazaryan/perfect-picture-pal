@@ -15,7 +15,8 @@ function asTrimmedString(value: unknown) {
 
 function asInt(value: unknown) {
   if (typeof value === "number" && Number.isInteger(value)) return value;
-  if (typeof value === "string" && /^-?\d+$/.test(value.trim())) return Number.parseInt(value.trim(), 10);
+  if (typeof value === "string" && /^-?\d+$/.test(value.trim()))
+    return Number.parseInt(value.trim(), 10);
   return null;
 }
 
@@ -54,7 +55,8 @@ async function handlePost({ request }: { request: Request }) {
   const admin = await requireAdmin(request);
   if (admin instanceof Response) return admin;
   const declared = Number(request.headers.get("content-length") ?? "");
-  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) return jsonError(413, "Payload too large");
+  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES)
+    return jsonError(413, "Payload too large");
   let raw: string;
   try {
     raw = await request.text();

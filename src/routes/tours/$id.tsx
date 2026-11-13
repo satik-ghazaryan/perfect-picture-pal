@@ -13,7 +13,15 @@ import { CHAT_TEST_TOUR_ID, chatTestTour } from "@/lib/chat-test-fixture";
 import { packingList, tourTypeLabels } from "@/data/tours";
 import { pickLocale, tourDescription, tourLocation, tourTitle, useSiteLocale } from "@/lib/locale";
 import { CatalogStatusPanel } from "@/components/catalog-status-panel";
-import { catalogIsPending, getAdminServerSnapshot, getAdminSnapshot, hydrateAdmin, resolveTour, retryLiveCatalog, subscribeAdmin } from "@/lib/admin";
+import {
+  catalogIsPending,
+  getAdminServerSnapshot,
+  getAdminSnapshot,
+  hydrateAdmin,
+  resolveTour,
+  retryLiveCatalog,
+  subscribeAdmin,
+} from "@/lib/admin";
 import { withPublishedGarniAudio } from "@/lib/garni-audio";
 
 export const Route = createFileRoute("/tours/$id")({
@@ -24,7 +32,10 @@ export const Route = createFileRoute("/tours/$id")({
   },
   loader: ({ params }) => ({
     id: params.id,
-    tour: params.id === CHAT_TEST_TOUR_ID && import.meta.env.DEV ? chatTestTour() : resolveTour(params.id),
+    tour:
+      params.id === CHAT_TEST_TOUR_ID && import.meta.env.DEV
+        ? chatTestTour()
+        : resolveTour(params.id),
   }),
   head: ({ loaderData }) => ({
     meta: [
@@ -33,7 +44,9 @@ export const Route = createFileRoute("/tours/$id")({
       },
       {
         name: "description",
-        content: loaderData?.tour ? tourDescription(loaderData.tour) || "Մեկօրյա տուրեր Արմավիրից։" : "Մեկօրյա տուրեր Արմավիրից։",
+        content: loaderData?.tour
+          ? tourDescription(loaderData.tour) || "Մեկօրյա տուրեր Արմավիրից։"
+          : "Մեկօրյա տուրեր Արմավիրից։",
       },
     ],
   }),
@@ -71,8 +84,12 @@ function TourDetailPage() {
   const tour =
     catalog.catalogStatus === "loaded" && resolved ? withPublishedGarniAudio(resolved) : undefined;
   const { ticket: shownTicket = "" } = Route.useSearch();
-  const [ticketView, setTicketView] = useState<{ ticketCode: string; title: string; dateLabel: string } | null>(null);
-  const linkedId = tour?.is_virtual_only ? "" : tour?.virtual_tour_id?.trim() ?? "";
+  const [ticketView, setTicketView] = useState<{
+    ticketCode: string;
+    title: string;
+    dateLabel: string;
+  } | null>(null);
+  const linkedId = tour?.is_virtual_only ? "" : (tour?.virtual_tour_id?.trim() ?? "");
   const linkedTour = linkedId
     ? catalog.tours.find((item) => item.id === linkedId && item.is_virtual_only === true)
     : undefined;
@@ -99,12 +116,23 @@ function TourDetailPage() {
       body: JSON.stringify({ action: "isolated-ticket", ticketCode: shownTicket }),
     })
       .then((response) => (response.ok ? response.json() : null))
-      .then((payload: { ticket?: { ticketCode?: string; tourId?: string; title?: string; dateLabel?: string } } | null) => {
-        const ticket = payload?.ticket;
-        if (cancel || !ticket || ticket.ticketCode !== shownTicket || ticket.tourId !== id) return;
-        if (!ticket.title || !ticket.dateLabel) return;
-        setTicketView({ ticketCode: ticket.ticketCode, title: ticket.title, dateLabel: ticket.dateLabel });
-      })
+      .then(
+        (
+          payload: {
+            ticket?: { ticketCode?: string; tourId?: string; title?: string; dateLabel?: string };
+          } | null,
+        ) => {
+          const ticket = payload?.ticket;
+          if (cancel || !ticket || ticket.ticketCode !== shownTicket || ticket.tourId !== id)
+            return;
+          if (!ticket.title || !ticket.dateLabel) return;
+          setTicketView({
+            ticketCode: ticket.ticketCode,
+            title: ticket.title,
+            dateLabel: ticket.dateLabel,
+          });
+        },
+      )
       .catch(() => undefined);
     return () => {
       cancel = true;
@@ -165,7 +193,12 @@ function TourDetailPage() {
                 onClick={() => setPhotoOpen(true)}
                 aria-label="Բացել ամբողջ լուսանկարը"
               >
-                <TourCover src={tour.image_url} alt={title} position={tour.coverPosition} variant="page" />
+                <TourCover
+                  src={tour.image_url}
+                  alt={title}
+                  position={tour.coverPosition}
+                  variant="page"
+                />
               </button>
               <Dialog open={photoOpen} onOpenChange={setPhotoOpen}>
                 <DialogContent className="flex max-h-[95vh] w-auto max-w-[95vw] items-center justify-center border-0 bg-transparent p-2 shadow-none">
@@ -178,7 +211,9 @@ function TourDetailPage() {
                 </DialogContent>
               </Dialog>
               <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
-                <span className="rounded-full bg-primary-soft px-2.5 py-1 text-primary">{regionLabel}</span>
+                <span className="rounded-full bg-primary-soft px-2.5 py-1 text-primary">
+                  {regionLabel}
+                </span>
                 <span className="rounded-full bg-muted px-2.5 py-1">{typeLabel}</span>
                 <span className="inline-flex items-center gap-1 rounded-full bg-accent/15 px-2.5 py-1">
                   <Star className="h-3.5 w-3.5 fill-accent text-accent" />
@@ -252,12 +287,17 @@ function TourDetailPage() {
             <h2 className="text-xl font-black">Օրվա ծրագիր</h2>
             <ol className="mt-4">
               {tour.itinerary.map((stop, index) => (
-                <li key={`${stop.time}-${stop.title}`} className="grid grid-cols-[auto_minmax(0,1fr)] gap-4">
+                <li
+                  key={`${stop.time}-${stop.title}`}
+                  className="grid grid-cols-[auto_minmax(0,1fr)] gap-4"
+                >
                   <div className="flex flex-col items-center">
                     <span className="grid h-8 w-8 place-items-center rounded-full bg-primary text-[11px] font-bold text-primary-foreground">
                       {index + 1}
                     </span>
-                    {index < tour.itinerary.length - 1 && <span className="w-px flex-1 bg-border" />}
+                    {index < tour.itinerary.length - 1 && (
+                      <span className="w-px flex-1 bg-border" />
+                    )}
                   </div>
                   <div className="pb-6">
                     <p className="text-xs font-bold text-primary">{stop.time}</p>
@@ -305,13 +345,24 @@ function DetailFact({
   );
 }
 
-function ItemList({ title, items, muted = false }: { title: string; items: string[]; muted?: boolean }) {
+function ItemList({
+  title,
+  items,
+  muted = false,
+}: {
+  title: string;
+  items: string[];
+  muted?: boolean;
+}) {
   return (
     <div className="rounded-3xl border border-border bg-card p-4">
       <h2 className="text-base font-black">{title}</h2>
       <ul className="mt-3 space-y-2">
         {items.map((item) => (
-          <li key={item} className={cn("flex items-start gap-2 text-sm", muted && "text-muted-foreground")}>
+          <li
+            key={item}
+            className={cn("flex items-start gap-2 text-sm", muted && "text-muted-foreground")}
+          >
             <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
             <span>{item}</span>
           </li>
@@ -337,7 +388,9 @@ function PackingList() {
                 aria-pressed={on}
                 onClick={() =>
                   setChecked((current) =>
-                    current.includes(item) ? current.filter((entry) => entry !== item) : [...current, item],
+                    current.includes(item)
+                      ? current.filter((entry) => entry !== item)
+                      : [...current, item],
                   )
                 }
                 className="flex w-full items-center gap-3 rounded-2xl border border-border bg-card px-3 py-2.5 text-left"
@@ -350,7 +403,9 @@ function PackingList() {
                 >
                   {on && <Check className="h-3.5 w-3.5" />}
                 </span>
-                <span className={cn("text-sm", on && "text-muted-foreground line-through")}>{item}</span>
+                <span className={cn("text-sm", on && "text-muted-foreground line-through")}>
+                  {item}
+                </span>
               </button>
             </li>
           );

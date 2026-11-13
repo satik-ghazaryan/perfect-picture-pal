@@ -12,7 +12,12 @@ import {
 
 function safeRedirect(value: unknown) {
   if (typeof value !== "string") return "/";
-  if (!value.startsWith("/") || value.startsWith("//") || value.includes("://") || value.startsWith("/login")) {
+  if (
+    !value.startsWith("/") ||
+    value.startsWith("//") ||
+    value.includes("://") ||
+    value.startsWith("/login")
+  ) {
     return "/";
   }
   return value;
@@ -25,7 +30,10 @@ export const Route = createFileRoute("/login")({
   head: () => ({
     meta: [
       { title: "Մուտք — Արի Գնանք" },
-      { name: "description", content: "Զբոսաշրջիկի մուտք և գրանցում Արի Գնանք մեկօրյա տուրերի համար։" },
+      {
+        name: "description",
+        content: "Զբոսաշրջիկի մուտք և գրանցում Արի Գնանք մեկօրյա տուրերի համար։",
+      },
     ],
   }),
   component: LoginPage,
@@ -43,7 +51,8 @@ function destination(role: "tourist" | "guide" | "driver" | undefined, redirect:
   if (role === "guide") return "/guide";
   if (role === "driver") return "/driver";
   if (role === "tourist") {
-    if (isGuideRedirect(redirect) || isDriverRedirect(redirect) || redirect === "/admin") return "/";
+    if (isGuideRedirect(redirect) || isDriverRedirect(redirect) || redirect === "/admin")
+      return "/";
     return redirect;
   }
   if (isGuideRedirect(redirect)) return "/guide";
@@ -54,8 +63,16 @@ function destination(role: "tourist" | "guide" | "driver" | undefined, redirect:
 function LoginPage() {
   const { redirect } = Route.useSearch();
   const navigate = useNavigate();
-  const tourist = useSyncExternalStore(subscribeTourist, getTouristSnapshot, getTouristServerSnapshot);
-  const accountStatus = useSyncExternalStore(subscribeTourist, getAccountStatus, () => "ready" as const);
+  const tourist = useSyncExternalStore(
+    subscribeTourist,
+    getTouristSnapshot,
+    getTouristServerSnapshot,
+  );
+  const accountStatus = useSyncExternalStore(
+    subscribeTourist,
+    getAccountStatus,
+    () => "ready" as const,
+  );
   const guideEntry = isGuideRedirect(redirect);
   const driverEntry = isDriverRedirect(redirect);
 
@@ -80,10 +97,12 @@ function LoginPage() {
         {accountStatus !== "ready" ? (
           <p className="text-sm text-muted-foreground">Բեռնվում է...</p>
         ) : (
-        <TouristAuthForm
-          loginTitle={guideEntry ? "Զբոսավարի մուտք" : driverEntry ? "Վարորդի մուտք" : "Մուտք համակարգ"}
-          onSuccess={go}
-        />
+          <TouristAuthForm
+            loginTitle={
+              guideEntry ? "Զբոսավարի մուտք" : driverEntry ? "Վարորդի մուտք" : "Մուտք համակարգ"
+            }
+            onSuccess={go}
+          />
         )}
       </main>
     </div>

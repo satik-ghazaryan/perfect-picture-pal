@@ -89,14 +89,19 @@ export async function loadPublicTourFacts(): Promise<ChatFacts> {
       auth: { persistSession: false, autoRefreshToken: false },
     });
     const [tours, departures, settings] = await Promise.all([
-      client.from("tours").select("id,title_hy,price,departure_time,departure_place,highlights,included,excluded,is_virtual_only,location_hy,region"),
+      client
+        .from("tours")
+        .select(
+          "id,title_hy,price,departure_time,departure_place,highlights,included,excluded,is_virtual_only,location_hy,region",
+        ),
       client.from("departures").select("id,tour_id,departure_date,available_seats"),
       client.from("site_settings").select("cashback_percent").eq("id", 1).maybeSingle(),
     ]);
     if (tours.error || departures.error) return { ok: false, tours: [] };
     const facts = publicFactsFromRows(tours.data, departures.data);
     const cashback = settings.data?.cashback_percent;
-    facts.cashbackPercent = typeof cashback === "number" && Number.isInteger(cashback) && cashback >= 0 ? cashback : null;
+    facts.cashbackPercent =
+      typeof cashback === "number" && Number.isInteger(cashback) && cashback >= 0 ? cashback : null;
     return facts;
   } catch {
     return { ok: false, tours: [] };
@@ -104,7 +109,11 @@ export async function loadPublicTourFacts(): Promise<ChatFacts> {
 }
 
 function withoutPrivateNumbers(text: string) {
-  return text.replace(/\+?\d[\d\s-]{6,}\d/gu, " ").replace(/\s+/g, " ").trim().slice(0, 500);
+  return text
+    .replace(/\+?\d[\d\s-]{6,}\d/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 500);
 }
 
 export async function classifyChatIntent(input: {
@@ -146,10 +155,15 @@ export async function classifyChatIntent(input: {
       signal: AbortSignal.timeout(8000),
     });
     if (!response.ok) return null;
-    return validatedChatReading(await response.json(), input.message, {
-      direction: input.direction,
-      tour: input.tour,
-    }, input.tours);
+    return validatedChatReading(
+      await response.json(),
+      input.message,
+      {
+        direction: input.direction,
+        tour: input.tour,
+      },
+      input.tours,
+    );
   } catch {
     return null;
   }
@@ -167,17 +181,33 @@ function readToolCalls(value: unknown): ChatToolCall[] {
     const record = item as Record<string, unknown>;
     const name = record["name"];
     if (
-      name !== "search_tours" && name !== "get_program" && name !== "get_price"
-      && name !== "get_departures" && name !== "get_seats" && name !== "suggest_action"
-    ) return [];
-    const tourId = typeof record["tourId"] === "string" && /^[a-z0-9-]{1,64}$/.test(record["tourId"]) ? record["tourId"] : null;
-    const party = typeof record["party"] === "number" && Number.isInteger(record["party"]) && record["party"] >= 1 && record["party"] <= 12
-      ? record["party"]
-      : null;
+      name !== "search_tours" &&
+      name !== "get_program" &&
+      name !== "get_price" &&
+      name !== "get_departures" &&
+      name !== "get_seats" &&
+      name !== "suggest_action"
+    )
+      return [];
+    const tourId =
+      typeof record["tourId"] === "string" && /^[a-z0-9-]{1,64}$/.test(record["tourId"])
+        ? record["tourId"]
+        : null;
+    const party =
+      typeof record["party"] === "number" &&
+      Number.isInteger(record["party"]) &&
+      record["party"] >= 1 &&
+      record["party"] <= 12
+        ? record["party"]
+        : null;
     const query = typeof record["query"] === "string" ? record["query"].slice(0, 80) : null;
-    const action = record["action"] === "booking" || record["action"] === "interest" || record["action"] === "choices" || record["action"] === "none"
-      ? record["action"]
-      : null;
+    const action =
+      record["action"] === "booking" ||
+      record["action"] === "interest" ||
+      record["action"] === "choices" ||
+      record["action"] === "none"
+        ? record["action"]
+        : null;
     return [{ name, tourId, party, query, action }];
   });
 }
@@ -190,7 +220,11 @@ export async function answerChatWithTools(input: {
   now?: Date | undefined;
   requestId?: string | null | undefined;
   skipModel?: boolean | undefined;
-}): Promise<{ reply: string; calls: ChatToolCall[]; suggest: "none" | "booking" | "interest" | "choices" } | null> {
+}): Promise<{
+  reply: string;
+  calls: ChatToolCall[];
+  suggest: "none" | "booking" | "interest" | "choices";
+} | null> {
   if (input.skipModel || !input.facts.ok) return null;
   const base = envValue("PYTHON_BACKEND_URL").replace(/\/$/, "");
   const secret = envValue("CHAT_INTENT_API_SECRET");
@@ -231,9 +265,12 @@ export async function answerChatWithTools(input: {
     if (!response.ok) return null;
     const payload = (await response.json()) as Record<string, unknown>;
     const reply = typeof payload["reply"] === "string" ? payload["reply"].slice(0, 1200) : "";
-    const suggest = payload["suggest"] === "booking" || payload["suggest"] === "interest" || payload["suggest"] === "choices"
-      ? payload["suggest"]
-      : "none";
+    const suggest =
+      payload["suggest"] === "booking" ||
+      payload["suggest"] === "interest" ||
+      payload["suggest"] === "choices"
+        ? payload["suggest"]
+        : "none";
     return { reply, calls: readToolCalls(payload["calls"]), suggest };
   } catch {
     return null;
@@ -263,7 +300,11 @@ export async function replyToTourQuestion(input: {
       now: input.now,
       registered: input.registered,
     });
-    return { ...opened, understood: "rules", selectedTourId: input.selectedTourId ?? input.pageTourId ?? null };
+    return {
+      ...opened,
+      understood: "rules",
+      selectedTourId: input.selectedTourId ?? input.pageTourId ?? null,
+    };
   }
   if (!facts.ok) return { ...catalogFailureReply(), understood: "rules", selectedTourId: null };
   const pageTour = selectedTour(facts, input.selectedTourId ?? null, input.pageTourId ?? null);
@@ -276,7 +317,12 @@ export async function replyToTourQuestion(input: {
     requestId: input.requestId,
     skipModel: input.skipModel,
   });
-  if (!model) return { ...modelFailureReply(facts.tours), understood: "rules", selectedTourId: pageTour?.id ?? null };
+  if (!model)
+    return {
+      ...modelFailureReply(facts.tours),
+      understood: "rules",
+      selectedTourId: pageTour?.id ?? null,
+    };
   const grounded = groundChatAnswer({
     reply: model.reply,
     calls: model.calls,

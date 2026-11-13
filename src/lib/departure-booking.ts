@@ -1,5 +1,6 @@
 export const LEGACY_NO_DATE = "Ամրագրման սեփական տվյալներով մեկնումը միանշանակ չէ։";
-export const LEGACY_UNVERIFIED_LINK = "Նոր հոսքով չի ստեղծվել և ամրագրման սեփական ամսաթիվ չկա. կապը մնացել է ձեռքով վերանայման։";
+export const LEGACY_UNVERIFIED_LINK =
+  "Նոր հոսքով չի ստեղծվել և ամրագրման սեփական ամսաթիվ չկա. կապը մնացել է ձեռքով վերանայման։";
 
 export type BookableDeparture = {
   id: string;
@@ -35,7 +36,10 @@ export function listBookableDepartures(rows: BookableDeparture[], today = localD
   return rows
     .filter((row) => row.departureDate >= today && row.availableSeats > 0)
     .slice()
-    .sort((left, right) => left.departureDate.localeCompare(right.departureDate) || left.id.localeCompare(right.id));
+    .sort(
+      (left, right) =>
+        left.departureDate.localeCompare(right.departureDate) || left.id.localeCompare(right.id),
+    );
 }
 
 export function partySize(adults: number, children: number) {
@@ -45,12 +49,14 @@ export function partySize(adults: number, children: number) {
 }
 
 export function groupSeatNumbers(firstSeat: number, count: number) {
-  if (!Number.isInteger(firstSeat) || firstSeat < 1 || !Number.isInteger(count) || count < 1) return [];
+  if (!Number.isInteger(firstSeat) || firstSeat < 1 || !Number.isInteger(count) || count < 1)
+    return [];
   return Array.from({ length: count }, (_, index) => firstSeat + index);
 }
 
 export function departureTotal(unitPrice: number, seats: number) {
-  if (!Number.isInteger(unitPrice) || unitPrice < 0 || !Number.isInteger(seats) || seats < 1) return null;
+  if (!Number.isInteger(unitPrice) || unitPrice < 0 || !Number.isInteger(seats) || seats < 1)
+    return null;
   return unitPrice * seats;
 }
 
@@ -81,9 +87,12 @@ export function decideDepartureBooking(
   request: { key: string; party: number; expectedSeats: number },
 ): { state: SeatState; decision: SeatDecision } {
   const existing = state.keys[request.key];
-  if (existing) return { state, decision: { result: "repeat", bookingId: existing, seats: state.seats } };
-  if (state.seats < request.party) return { state, decision: { result: "sold_out", seats: state.seats } };
-  if (state.seats !== request.expectedSeats) return { state, decision: { result: "stale", seats: state.seats } };
+  if (existing)
+    return { state, decision: { result: "repeat", bookingId: existing, seats: state.seats } };
+  if (state.seats < request.party)
+    return { state, decision: { result: "sold_out", seats: state.seats } };
+  if (state.seats !== request.expectedSeats)
+    return { state, decision: { result: "stale", seats: state.seats } };
   const bookingId = `booking-${Object.keys(state.keys).length + 1}`;
   return {
     state: {
@@ -91,7 +100,12 @@ export function decideDepartureBooking(
       nextSeat: state.nextSeat + request.party,
       keys: { ...state.keys, [request.key]: bookingId },
     },
-    decision: { result: "booked", bookingId, seats: state.seats - request.party, firstSeat: state.nextSeat },
+    decision: {
+      result: "booked",
+      bookingId,
+      seats: state.seats - request.party,
+      firstSeat: state.nextSeat,
+    },
   };
 }
 
@@ -118,7 +132,11 @@ export function confirmationAccess(
   request: { booker: string; proof: string; fingerprint: string },
 ) {
   if (!stored) return "create" as const;
-  if (stored.booker !== request.booker || stored.proof !== request.proof || stored.fingerprint !== request.fingerprint) {
+  if (
+    stored.booker !== request.booker ||
+    stored.proof !== request.proof ||
+    stored.fingerprint !== request.fingerprint
+  ) {
     return "reject" as const;
   }
   return "repeat" as const;

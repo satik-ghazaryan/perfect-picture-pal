@@ -60,7 +60,9 @@ export function TourCard({ tour }: { tour: Tour }) {
             <MapPin className="h-3.5 w-3.5 shrink-0" />
             <span className="truncate">{tour.departurePlace}</span>
           </p>
-          <p>{tour.reviews} կարծիք · {typeLabel}</p>
+          <p>
+            {tour.reviews} կարծիք · {typeLabel}
+          </p>
         </div>
 
         <div className="mt-auto flex items-end justify-between gap-3 pt-1">

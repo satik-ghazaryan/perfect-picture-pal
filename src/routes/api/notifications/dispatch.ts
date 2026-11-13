@@ -17,14 +17,23 @@ export const Route = createFileRoute("/api/notifications/dispatch")({
         }
         let payload: { channel?: NotificationChannel; phone?: string; body?: string };
         try {
-          payload = (await request.json()) as { channel?: NotificationChannel; phone?: string; body?: string };
+          payload = (await request.json()) as {
+            channel?: NotificationChannel;
+            phone?: string;
+            body?: string;
+          };
         } catch {
           return Response.json({ mode: "failed" }, { status: 400 });
         }
         const channel = payload.channel;
         const phone = typeof payload.phone === "string" ? payload.phone.trim() : "";
         const body = typeof payload.body === "string" ? payload.body.trim() : "";
-        if ((channel !== "sms" && channel !== "whatsapp") || phone.replace(/\D/g, "").length < 8 || !body || body.length > 2000) {
+        if (
+          (channel !== "sms" && channel !== "whatsapp") ||
+          phone.replace(/\D/g, "").length < 8 ||
+          !body ||
+          body.length > 2000
+        ) {
           return Response.json({ mode: "failed" }, { status: 400 });
         }
         const mode = await deliverNotification(channel, phone, body);

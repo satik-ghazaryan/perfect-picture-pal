@@ -78,7 +78,13 @@ export function AdminLogin() {
           </Button>
         </form>
         {import.meta.env.DEV && !isSupabaseConfigured && (
-          <Button type="button" variant="outline" className="mt-3 w-full rounded-full" disabled={busy} onClick={() => void mock()}>
+          <Button
+            type="button"
+            variant="outline"
+            className="mt-3 w-full rounded-full"
+            disabled={busy}
+            onClick={() => void mock()}
+          >
             Մտնել որպես ադմին
           </Button>
         )}

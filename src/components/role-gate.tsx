@@ -20,8 +20,16 @@ function restrictedRedirect(role: TouristSession["role"], pathname: string) {
 
 export function RoleGate() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const session = useSyncExternalStore(subscribeTourist, getTouristSnapshot, getTouristServerSnapshot);
-  const accountStatus = useSyncExternalStore(subscribeTourist, getAccountStatus, () => "ready" as const);
+  const session = useSyncExternalStore(
+    subscribeTourist,
+    getTouristSnapshot,
+    getTouristServerSnapshot,
+  );
+  const accountStatus = useSyncExternalStore(
+    subscribeTourist,
+    getAccountStatus,
+    () => "ready" as const,
+  );
   const navigate = useNavigate();
 
   useEffect(() => {

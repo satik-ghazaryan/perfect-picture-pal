@@ -38,8 +38,7 @@ function LanguageSelect({ lang, onChange }: { lang: string; onChange: (value: st
   );
 }
 
-const fmt = (s: number) =>
-  `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
 const emptyChapters: AudioChapter[] = [];
 
@@ -60,7 +59,7 @@ export function AudioGuidePlayer({ chapters = emptyChapters }: { chapters?: Audi
   const safeIndex = list.length === 0 ? 0 : Math.min(index, list.length - 1);
   const current = list[safeIndex];
   const total = useMemo(() => list.reduce((sum, chapter) => sum + chapter.duration, 0), [list]);
-  const duration = mediaDuration > 0 ? mediaDuration : current?.duration ?? 0;
+  const duration = mediaDuration > 0 ? mediaDuration : (current?.duration ?? 0);
 
   useEffect(() => {
     setIndex(0);
@@ -132,7 +131,9 @@ export function AudioGuidePlayer({ chapters = emptyChapters }: { chapters?: Audi
           </div>
         )}
         <p className="text-sm text-muted-foreground">
-          {source.length > 0 ? "Այս լեզվով գլուխներ դեռ չկան։" : "Աուդիոգիդը այս տուրի համար դեռ հասանելի չէ։"}
+          {source.length > 0
+            ? "Այս լեզվով գլուխներ դեռ չկան։"
+            : "Աուդիոգիդը այս տուրի համար դեռ հասանելի չէ։"}
         </p>
       </div>
     );

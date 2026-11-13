@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { resetTicketNoticeCalls, sendBookingSMS, sendBookingWhatsApp, ticketNoticeCallCount } from "./notifications";
+import {
+  resetTicketNoticeCalls,
+  sendBookingSMS,
+  sendBookingWhatsApp,
+  ticketNoticeCallCount,
+} from "./notifications";
 import {
   confirmationAccess,
   decideDepartureBooking,
@@ -30,12 +35,21 @@ describe("departure booking", () => {
       [
         { id: "past", tourId: "1-ui", departureDate: "2026-11-01", availableSeats: 4, price: 1000 },
         { id: "full", tourId: "1-ui", departureDate: "2026-11-14", availableSeats: 0, price: 1000 },
-        { id: "later", tourId: "1-ui", departureDate: "2026-11-15", availableSeats: 2, price: 1000 },
+        {
+          id: "later",
+          tourId: "1-ui",
+          departureDate: "2026-11-15",
+          availableSeats: 2,
+          price: 1000,
+        },
         { id: "soon", tourId: "1-ui", departureDate: "2026-11-14", availableSeats: 3, price: 1000 },
       ],
       "2026-11-07",
     );
-    assert.deepEqual(rows.map((row) => row.id), ["soon", "later"]);
+    assert.deepEqual(
+      rows.map((row) => row.id),
+      ["soon", "later"],
+    );
   });
 
   it("counts a group by adults and children and numbers consecutive seats", () => {
@@ -60,7 +74,8 @@ describe("departure booking", () => {
     const second = decideDepartureBooking(first.state, { key: "two", party: 1, expectedSeats: 1 });
     const repeat = decideDepartureBooking(first.state, { key: "one", party: 1, expectedSeats: 1 });
     assert.equal(first.decision.result, "booked");
-    if (first.decision.result === "booked") assert.deepEqual(groupSeatNumbers(first.decision.firstSeat, 1), [1]);
+    if (first.decision.result === "booked")
+      assert.deepEqual(groupSeatNumbers(first.decision.firstSeat, 1), [1]);
     assert.equal(second.decision.result, "sold_out");
     assert.equal(repeat.decision.result, "repeat");
     assert.equal(first.state.seats, 0);
@@ -68,14 +83,29 @@ describe("departure booking", () => {
 
   it("does not treat the tour's current date as proof for an old booking", () => {
     const planned = planLegacyBookingLinks([
-      { id: "checkout", tourId: "tour", ticketCode: "AG-NEW", departureId: "nov14", confirmed: true },
+      {
+        id: "checkout",
+        tourId: "tour",
+        ticketCode: "AG-NEW",
+        departureId: "nov14",
+        confirmed: true,
+      },
       { id: "old", tourId: "tour", ticketCode: "AG-OLD", departureId: "current-date" },
       { id: "historical", tourId: "tour", ticketCode: "AG-HIST", departureId: null },
     ]);
     assert.deepEqual(planned.links, []);
-    assert.equal(planned.conflicts.find((item) => item.bookingId === "historical")?.reason, LEGACY_NO_DATE);
-    assert.equal(planned.reviews.find((item) => item.bookingId === "old")?.reason, LEGACY_UNVERIFIED_LINK);
-    assert.equal(planned.reviews.some((item) => item.bookingId === "checkout"), false);
+    assert.equal(
+      planned.conflicts.find((item) => item.bookingId === "historical")?.reason,
+      LEGACY_NO_DATE,
+    );
+    assert.equal(
+      planned.reviews.find((item) => item.bookingId === "old")?.reason,
+      LEGACY_UNVERIFIED_LINK,
+    );
+    assert.equal(
+      planned.reviews.some((item) => item.bookingId === "checkout"),
+      false,
+    );
   });
 
   it("repeats only the same booker and order, and does not send another ticket", async () => {
@@ -90,7 +120,10 @@ describe("departure booking", () => {
     const stored = { booker: "guest", proof: "secret", fingerprint };
     assert.equal(confirmationAccess(null, stored), "create");
     assert.equal(confirmationAccess(stored, stored), "repeat");
-    assert.equal(confirmationAccess(stored, { ...stored, fingerprint: `${fingerprint}x` }), "reject");
+    assert.equal(
+      confirmationAccess(stored, { ...stored, fingerprint: `${fingerprint}x` }),
+      "reject",
+    );
     assert.equal(confirmationAccess(stored, { ...stored, booker: "user:other" }), "reject");
     assert.equal(shouldDeliverTicket(false, true), true);
     assert.equal(shouldDeliverTicket(true, true), false);
