@@ -247,7 +247,10 @@ def render_reply(text: str, origin: str, payload: dict | None = None) -> str:
     if booking and booking.get("tourId"):
         url = tour_url(origin, str(booking["tourId"]))
         if url and url not in body and url not in " ".join(extra):
-            extra.append(f"Ամրագրել՝ {url}")
+            extra.append(
+                "Ամրագրումը կատարվում է կայքում։ Բացիր էջը, սեղմիր «Ամրագրել հիմա» "
+                f"և լրացրու անունդ ու հեռախոսդ՝ {url}#book"
+            )
     if extra:
         body = f"{body}\n" + "\n".join(extra)
     for choice in record.get("choices") or []:

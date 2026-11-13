@@ -223,3 +223,22 @@ def test_webhook_status_reports_what_telegram_says_without_secrets():
     elsewhere = _json.loads(webhook_status(token, backend, http=_Http({"result": {"url": "https://other.example/hook"}})))
     assert elsewhere["points_here"] is False and elsewhere["host"] == "other.example"
     assert webhook_status(token, backend, http=_Http({"ok": False})) == "unavailable"
+
+
+def test_booking_reply_sends_people_to_the_booking_form_instead_of_claiming_a_booking():
+    from telegram_bot import render_reply
+
+    text = render_reply(
+        "Ազատ է 17 տեղ։",
+        "https://perfect-picture-pal-beige.vercel.app",
+        {"booking": {"tourId": "dilijan-autumn"}},
+    )
+    assert "https://perfect-picture-pal-beige.vercel.app/tours/dilijan-autumn#book" in text
+    assert "լրացրու անունդ ու հեռախոսդ" in text
+    assert "արված է" not in text
+
+
+def test_chat_rules_forbid_claiming_a_booking():
+    import chat_answer
+
+    assert "cannot make, hold or confirm a booking" in chat_answer._RULES

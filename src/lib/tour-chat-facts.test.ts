@@ -1245,6 +1245,43 @@ describe("catalog tools for free text", () => {
       /^2 հոգով կլինի 18000 դրամ։/,
     );
     assert.doesNotMatch(groundChatAnswer(echoedParty).reply, /^2 հոգով/);
+    for (const claim of [
+      "Ամրագրումը արված է, 2 տեղ քեզ համար է։",
+      "Լավ, ամրագրեցի 2 տեղ։",
+      "Ձեր ամրագրումը հաստատված է։",
+      "2 տեղը պահված է քո անունով։",
+    ]) {
+      const refused = groundChatAnswer({
+        reply: claim,
+        calls: [
+          { name: "get_seats", tourId: "lori", party: 2, query: null, action: null },
+          { name: "suggest_action", tourId: "lori", party: null, query: null, action: "booking" },
+        ],
+        suggest: "booking",
+        facts: priced,
+        now,
+        message: "ամրագրի 2 տեղ",
+      });
+      assert.ok(!refused.reply.includes(claim), `dropped the false claim: ${claim}`);
+      assert.match(refused.reply, /Չաթից ամրագրում չեմ կարող անել/);
+      assert.ok(refused.booking, "still offers the real booking form");
+    }
+    const noLookup = groundChatAnswer({
+      reply: "Ամրագրումը արված է։",
+      calls: [],
+      suggest: "none",
+      facts: priced,
+      now,
+    });
+    assert.match(noLookup.reply, /^Չաթից ամրագրում չեմ կարող անել/);
+    const fullyBooked = groundChatAnswer({
+      reply: "Երկուսով կլինի 18000 դրամ, ամրագրելու համար սեղմիր կոճակը։",
+      calls: priceCall,
+      suggest: "none",
+      facts: priced,
+      now,
+    });
+    assert.match(fullyBooked.reply, /^Երկուսով կլինի 18000 դրամ/);
     const softerClosed = groundChatAnswer({
       reply: "Տաթևի գինը դեռ հրապարակված չի, ու բաց մեկնում առայժմ չկա։",
       calls: [
