@@ -9,6 +9,7 @@ import type {
 import { planPassengerCheckIn } from "@/lib/check-in";
 import { loadPublicStaff } from "@/lib/crew";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
+import { COVER_UPLOAD_ERROR, tourCoverObjectPath } from "@/lib/tour-cover-upload";
 
 export { loadPublicStaff };
 
@@ -688,6 +689,23 @@ export async function updateTourStatus(tourId: string, status: TourStatus) {
   if (state.profile) {
     setState({ tours: await listAssignedTours(state.profile.id) });
   }
+}
+
+export async function uploadTourCover(tourId: string, file: File) {
+  if (!file.type.startsWith("image/")) throw new Error("Ընտրեք լուսանկար։");
+  if (!supabase) {
+    const photo = await readLocalPhoto(file, tourId);
+    return photo.url;
+  }
+  const path = tourCoverObjectPath(tourId, file.name, crypto.randomUUID());
+  const { error: uploadError } = await supabase.storage.from("tour-albums").upload(path, file, {
+    contentType: file.type,
+    upsert: false,
+  });
+  if (uploadError) throw new Error(COVER_UPLOAD_ERROR);
+  const { data: publicUrl } = supabase.storage.from("tour-albums").getPublicUrl(path);
+  if (!publicUrl.publicUrl) throw new Error(COVER_UPLOAD_ERROR);
+  return publicUrl.publicUrl;
 }
 
 export async function uploadTourPhotos(tourId: string, files: File[], userId: string) {

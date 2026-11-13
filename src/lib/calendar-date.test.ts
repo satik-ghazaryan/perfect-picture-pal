@@ -6,9 +6,10 @@ import {
   isValidIsoDate,
   UNASSIGNED_DEPARTURE_LABEL,
   UNASSIGNED_SCHEDULE_LABEL,
+  weekdayNameFromIsoDate,
   weekendDayFromIsoDate,
   weekendScheduleLabel,
-} from "./calendar-date";
+} from "./calendar-date.ts";
 
 describe("assigned departure dates", () => {
   it("does not throw on empty or invalid dates", () => {
@@ -28,5 +29,12 @@ describe("assigned departure dates", () => {
     assert.equal(catalogDayFromRow({ day: null, departure_date: "2026-11-08" }), "sunday");
     assert.equal(catalogDayFromRow({ day: null, departure_date: "2026-11-11" }), "");
     assert.equal(weekendScheduleLabel(""), UNASSIGNED_SCHEDULE_LABEL);
+  });
+
+  it("names every weekday from the selected date", () => {
+    assert.equal(weekdayNameFromIsoDate("2026-11-13"), "ուրբաթ");
+    assert.equal(weekdayNameFromIsoDate("2026-11-16"), "երկուշաբթի");
+    assert.equal(weekdayNameFromIsoDate("2026-11-14"), "շաբաթ");
+    assert.equal(weekdayNameFromIsoDate(""), "");
   });
 });

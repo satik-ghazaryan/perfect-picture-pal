@@ -28,13 +28,25 @@ export function TourPanorama({ tour }: { tour: Tour }) {
   const embed = safeHttpUrl(tour.virtual_tour_url ?? "");
   if (embed && !isImageUrl(embed)) {
     return (
-      <iframe
-        title={`${title} · 360°`}
-        src={embed}
-        className="h-[260px] w-full rounded-3xl border border-border bg-navy sm:h-[420px]"
-        allow="fullscreen; xr-spatial-tracking; gyroscope; accelerometer"
-        allowFullScreen
-      />
+      <div>
+        <iframe
+          title={tour.title_hy || title}
+          src={embed}
+          loading="lazy"
+          allow="fullscreen; xr-spatial-tracking; gyroscope; accelerometer"
+          allowFullScreen
+          className="block rounded-3xl bg-navy"
+          style={{ width: "100%", height: "clamp(320px, 65vh, 600px)", border: 0 }}
+        />
+        <a
+          href={embed}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-3 inline-flex text-sm font-bold text-primary underline underline-offset-4"
+        >
+          Բացել 360° տուրը նոր պատուհանում
+        </a>
+      </div>
     );
   }
   const image = embed && isImageUrl(embed) ? embed : panoramaSource(tour);

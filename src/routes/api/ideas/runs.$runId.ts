@@ -9,6 +9,7 @@ async function handleGet({ request, params }: { request: Request; params: { runI
   return forwardToPython(`/api/idea-runs/${encodeURIComponent(runId)}`, {
     method: "GET",
     userId: admin.userId,
+    requestId: request.headers.get("x-vercel-id") ?? request.headers.get("x-request-id"),
   });
 }
 

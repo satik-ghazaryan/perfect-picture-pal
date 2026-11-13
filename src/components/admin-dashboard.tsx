@@ -1,10 +1,12 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { useSyncExternalStore } from "react";
 import { format, parseISO } from "date-fns";
 import { hy } from "date-fns/locale";
 import { toast } from "sonner";
+import { CENTER_COVER, type CoverPosition } from "@/lib/cover-frame";
 import { CalendarDays, ChevronDown, ChevronUp, FileSpreadsheet, Loader2, LogOut, Plus, Rotate3d, Settings, Sparkles, Ticket, Trash2, UserRound, Users } from "lucide-react";
+import { TourCover } from "@/components/tour-cover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,6 +42,7 @@ import {
   deleteTour,
   getAdminServerSnapshot,
   getAdminSnapshot,
+  departureShownOnTourForm,
   loadAdminBookings,
   confirmBookingDeparture,
   loadBookingLinkConflicts,
@@ -51,6 +54,7 @@ import {
   retryLiveCatalog,
   saveSettings,
   saveTour,
+  saveTourDeparture,
   signOutAdmin,
   subscribeAdmin,
   defaultSettings,
@@ -61,7 +65,8 @@ import {
   type SiteSettings,
 } from "@/lib/admin";
 import { CatalogTransferPanel } from "@/components/catalog-transfer-panel";
-import { assignedWeekendDay, formatAssignedDepartureDate, weekendScheduleLabel } from "@/lib/calendar-date";
+import { assignedWeekendDay, formatAssignedDepartureDate, weekdayNameFromIsoDate, weekendDayFromIsoDate, weekendScheduleLabel } from "@/lib/calendar-date";
+import { isExplicitDepartureDate } from "@/lib/departure-assignment";
 import { getPortalServerSnapshot, getPortalSnapshot, subscribePortal, upcomingDepartureDate, type AssignedTour, type BookingRecord } from "@/lib/guide-api";
 import {
   adjustLoyaltyPoints,
@@ -73,6 +78,8 @@ import {
   subscribeLoyalty,
 } from "@/lib/loyalty";
 import { downloadPassengerWorkbook } from "@/lib/passenger-export";
+import { uploadTourCover } from "@/lib/guide-api";
+import { coverImageToStore } from "@/lib/tour-cover-upload";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import { formatStopTitleHy, formatVerifyNoteHy, generateTourIdeas, normalizeResearch, readCachedIdeaRun, saveTourIdeaDraft, searchStatusNote } from "@/lib/tour-ideas";
 import type { TourIdeaInput, TourIdeaResearch, TourIdeaResult } from "@/types";
@@ -128,6 +135,7 @@ type Draft = {
   type: Tour["type"];
   summary: LocalizedText;
   image: string;
+  coverPosition: CoverPosition;
   panoramaUrl: string;
   virtualTourUrl: string;
   virtualTourId: string;
@@ -136,6 +144,8 @@ type Draft = {
   chapters: ChapterDraft[];
   highlights: string[];
   departurePlace: string;
+  departureDate: string;
+  departureId: string | null;
 };
 
 const chapterLanguages: { value: AudioLanguage; label: string }[] = [
@@ -157,6 +167,7 @@ function emptyDraft(virtualOnly = false): Draft {
     type: "Մշակութային",
     summary: emptyLocalized(),
     image: "",
+    coverPosition: { ...CENTER_COVER },
     panoramaUrl: "",
     virtualTourUrl: "",
     virtualTourId: "",
@@ -165,10 +176,12 @@ function emptyDraft(virtualOnly = false): Draft {
     chapters: [],
     highlights: [],
     departurePlace: virtualOnly ? "" : getAdminSnapshot().settings.departurePlace,
+    departureDate: "",
+    departureId: null,
   };
 }
 
-function draftFromTour(tour: ManagedTour): Draft {
+function draftFromTour(tour: ManagedTour, departure?: CatalogDeparture | null): Draft {
   return {
     id: tour.id,
     title: columnsToLocalized(tour.title_hy, tour.title_en, tour.title_ru),
@@ -181,6 +194,7 @@ function draftFromTour(tour: ManagedTour): Draft {
     type: tour.type,
     summary: columnsToLocalized(tour.description_hy, tour.description_en, tour.description_ru),
     image: tour.image_url,
+    coverPosition: tour.coverPosition ?? { ...CENTER_COVER },
     panoramaUrl: tour.panoramaUrl,
     virtualTourUrl: tour.virtual_tour_url || tour.panoramaUrl || "",
     virtualTourId: tour.virtual_tour_id ?? "",
@@ -188,6 +202,8 @@ function draftFromTour(tour: ManagedTour): Draft {
     itinerary: tour.itinerary.map((stop) => `${stop.time} | ${stop.title} | ${stop.description}`).join("\n"),
     highlights: [...tour.highlights],
     departurePlace: tour.departurePlace,
+    departureDate: departure?.departureDate ?? "",
+    departureId: departure?.id ?? null,
     chapters: tour.audioChapters.map((chapter) => ({
       id: chapter.id,
       title: chapter.title,
@@ -557,13 +573,55 @@ function ToursSection({
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [coverPreview, setCoverPreview] = useState<string | null>(null);
+  const [coverError, setCoverError] = useState<string | null>(null);
+  const [departures, setDepartures] = useState<CatalogDeparture[]>([]);
+  const coverInput = useRef<HTMLInputElement>(null);
+
+  const clearCoverSelection = () => {
+    setCoverFile(null);
+    setCoverPreview((current) => {
+      if (current?.startsWith("blob:")) URL.revokeObjectURL(current);
+      return null;
+    });
+    if (coverInput.current) coverInput.current.value = "";
+  };
+
+  const openDraft = (next: Draft) => {
+    setFormLang("hy");
+    setCoverError(null);
+    clearCoverSelection();
+    setDraft(next);
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadDepartures()
+      .then((rows) => {
+        if (!cancelled) setDepartures(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setDepartures([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!seedDraft || mode !== "departures") return;
     setFormLang("hy");
+    clearCoverSelection();
     setDraft(seedDraft);
     onSeedApplied?.();
   }, [seedDraft, mode, onSeedApplied]);
+
+  useEffect(() => {
+    return () => {
+      if (coverPreview?.startsWith("blob:")) URL.revokeObjectURL(coverPreview);
+    };
+  }, [coverPreview]);
 
   const update = (patch: Partial<Draft>) => {
     setDraft((current) => (current ? { ...current, ...patch } : current));
@@ -603,9 +661,24 @@ function ToursSection({
     const linkedVirtual = !virtualOnly
       ? tours.find((item) => item.id === draft.virtualTourId && item.is_virtual_only === true && item.id !== id)
       : undefined;
-    const image = draft.image.trim() || (virtualOnly ? "" : existing?.image_url || tours[0]?.image_url || "");
+    const previousImage = draft.image.trim() || (virtualOnly ? "" : existing?.image_url || tours[0]?.image_url || "");
+    setSaving(true);
+    let image = previousImage;
+    if (coverFile) {
+      try {
+        image = coverImageToStore(previousImage, await uploadTourCover(id, coverFile));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Նկարը չվերբեռնվեց։ Նախկին նկարը պահպանված է։";
+        toast.error(message);
+        clearCoverSelection();
+        setCoverError(message);
+        setSaving(false);
+        return;
+      }
+    }
     if (!image) {
       toast.error("Ավելացրեք նկարի հղում։");
+      setSaving(false);
       return;
     }
     const description = trimLocalized(draft.summary);
@@ -622,6 +695,7 @@ function ToursSection({
       location_en: location.en,
       location_ru: location.ru,
       image_url: image,
+      coverPosition: draft.coverPosition,
       category: location.hy,
       type: draft.type,
       departurePlace: virtualOnly ? "" : draft.departurePlace.trim(),
@@ -633,7 +707,7 @@ function ToursSection({
       reviews: existing?.reviews ?? 0,
       has360: panoramaUrl.length > 0 || virtualTourUrl.length > 0 || virtualOnly || existing?.has360 === true,
       hasAudioGuide: audio.length > 0,
-      day: virtualOnly ? "saturday" : draft.day,
+      day: virtualOnly ? "saturday" : (weekendDayFromIsoDate(draft.departureDate) ?? ""),
       highlights: virtualOnly ? [] : draft.highlights.map((item) => item.trim()).filter(Boolean),
       itinerary: virtualOnly ? [] : parseItinerary(draft.itinerary),
       included: virtualOnly ? [] : existing?.included ?? ["Հարմարավետ ավտոբուս Արմավիրից և վերադարձ", "Հայախոս ուղեկցորդ"],
@@ -648,10 +722,23 @@ function ToursSection({
     };
     if (existing?.oldPrice !== undefined) next.oldPrice = existing.oldPrice;
     if (virtualTourUrl) next.virtual_tour_url = virtualTourUrl;
-    setSaving(true);
     try {
       await saveTour(next);
+      if (!virtualOnly && isExplicitDepartureDate(draft.departureDate)) {
+        const savedDeparture = await saveTourDeparture({
+          tourId: id,
+          departureId: draft.departureId,
+          departureDate: draft.departureDate,
+          seats,
+        });
+        setDepartures((current) => {
+          const rest = current.filter((item) => item.id !== savedDeparture.id);
+          return [...rest, savedDeparture];
+        });
+      }
       toast.success(draft.id ? "Տուրը թարմացվեց" : "Տուրը ավելացվեց");
+      clearCoverSelection();
+      setCoverError(null);
       setDraft(null);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Չպահպանվեց։");
@@ -686,7 +773,7 @@ function ToursSection({
               : "Արմավիրից մեկնող մեկօրյա տուրեր"}
           </p>
         </div>
-        <Button type="button" className="rounded-full font-bold" onClick={() => { setFormLang("hy"); setDraft(emptyDraft(mode === "virtual")); }}>
+        <Button type="button" className="rounded-full font-bold" onClick={() => openDraft(emptyDraft(mode === "virtual"))}>
           <Plus className="h-4 w-4" />
           {mode === "virtual" ? "Նոր վիրտուալ տուր" : "Նոր տուր"}
         </Button>
@@ -731,7 +818,7 @@ function ToursSection({
                 <Button type="button" variant="outline" size="sm" className="rounded-full" asChild>
                   <Link to="/tours/$id" params={{ id: tour.id }}>Դիտել</Link>
                 </Button>
-                <Button type="button" variant="outline" size="sm" className="rounded-full" onClick={() => { setFormLang("hy"); setDraft(draftFromTour(tour)); }}>
+                <Button type="button" variant="outline" size="sm" className="rounded-full" onClick={() => openDraft(draftFromTour(tour, departureShownOnTourForm(departures, tour.id)))}>
                   Խմբագրել
                 </Button>
                 {confirmId === tour.id ? (
@@ -763,6 +850,26 @@ function ToursSection({
               ? draft.id ? "Խմբագրել վիրտուալ տուրը" : "Նոր վիրտուալ տուր"
               : draft.id ? "Խմբագրել տուրը" : "Նոր տուր"}
           </h2>
+          {draft.id && (
+            <div className="space-y-3">
+              {(coverPreview || draft.image.trim()) && (
+                <img
+                  src={coverPreview || draft.image.trim()}
+                  alt="Տուրի նկար"
+                  className="h-40 w-full max-w-md rounded-2xl object-cover"
+                />
+              )}
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full rounded-full font-bold sm:w-auto"
+                onClick={() => coverInput.current?.click()}
+              >
+                {draft.image.trim() ? "Փոխել նկարը" : "Ավելացնել նկար"}
+              </Button>
+              {coverError && <p className="text-sm text-destructive">{coverError}</p>}
+            </div>
+          )}
           <div className="space-y-4 rounded-2xl border border-border bg-muted/40 p-3 sm:p-4">
             <div className="flex flex-wrap gap-2" role="tablist" aria-label="Լեզու">
               {formLanguages.map(({ code, label }) => {
@@ -829,22 +936,19 @@ function ToursSection({
                 <Field label="Վերադարձ" id="tour-return">
                   <Input id="tour-return" type="time" value={draft.returnTime} onChange={(event) => update({ returnTime: event.target.value })} className="rounded-2xl" />
                 </Field>
-                <Field label="Օր" id="tour-day">
-                  <Select
-                    value={draft.day === "sunday" ? "sunday" : draft.day === "saturday" ? "saturday" : "unset"}
-                    onValueChange={(day) =>
-                      update({ day: day === "sunday" ? "sunday" : day === "saturday" ? "saturday" : "" })
-                    }
-                  >
-                    <SelectTrigger id="tour-day" className="rounded-2xl">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="unset">Դեռ նշանակված չէ</SelectItem>
-                      <SelectItem value="saturday">Շաբաթ</SelectItem>
-                      <SelectItem value="sunday">Կիրակի</SelectItem>
-                    </SelectContent>
-                  </Select>
+                <Field label="Մեկնման ամսաթիվ" id="tour-departure-date">
+                  <Input
+                    id="tour-departure-date"
+                    type="date"
+                    value={draft.departureDate}
+                    onChange={(event) => update({ departureDate: event.target.value })}
+                    className="rounded-2xl"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {draft.departureDate
+                      ? `Շաբաթվա օրը՝ ${weekdayNameFromIsoDate(draft.departureDate)}`
+                      : "Հին տուրի շաբաթվա օրը ամսաթիվ չի դառնում, մինչև ամսաթիվ ընտրես։"}
+                  </p>
                 </Field>
                 <Field label="Մեկնման վայր" id="tour-departure-place">
                   <Input
@@ -872,6 +976,90 @@ function ToursSection({
           <Field label="Նկարի հղում" id="tour-image">
             <Input id="tour-image" value={draft.image} onChange={(event) => update({ image: event.target.value })} placeholder="https://..." className="rounded-2xl" />
           </Field>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <input
+              ref={coverInput}
+              id="tour-cover-file"
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (!file) return;
+                if (!file.type.startsWith("image/")) {
+                  setCoverError("Ընտրեք լուսանկար։");
+                  return;
+                }
+                setCoverError(null);
+                setCoverFile(file);
+                setCoverPreview((current) => {
+                  if (current?.startsWith("blob:")) URL.revokeObjectURL(current);
+                  return URL.createObjectURL(file);
+                });
+              }}
+            />
+            {!draft.id && (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full rounded-full font-bold sm:w-auto"
+                onClick={() => coverInput.current?.click()}
+              >
+                Վերբեռնել նկար
+              </Button>
+            )}
+            {!draft.id && (
+              <p className="text-xs text-muted-foreground">
+                {coverFile ? "Նախադիտումը երևում է ներքևում։ Պահպանելիս նկարը կվերբեռնվի։" : "Նոր նկար չընտրելու դեպքում կմնա եղածը։"}
+              </p>
+            )}
+          </div>
+          {!draft.id && coverError && <p className="text-sm text-destructive">{coverError}</p>}
+          {(coverPreview || draft.image.trim()) && (
+            <div className="space-y-3">
+              <div>
+                <p className="text-sm font-bold">Կարգավորել նկարի դիրքը</p>
+                <p className="text-xs text-muted-foreground">Քաշեք նկարը մկնիկով կամ մատով, կամ ընտրեք շրջանակը և սեղմեք սլաքները։</p>
+              </div>
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div className="space-y-2">
+                  <p className="text-sm font-bold">Կատալոգի քարտ</p>
+                  <div className="w-full max-w-[24.7rem] overflow-hidden rounded-3xl">
+                    <TourCover
+                      src={coverPreview || draft.image.trim()}
+                      alt="Կատալոգի քարտ"
+                      variant="card"
+                      position={draft.coverPosition}
+                      interactive
+                      onPosition={(coverPosition) => update({ coverPosition })}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-bold">Տուրի էջ</p>
+                  <div className="overflow-hidden rounded-2xl">
+                    <TourCover
+                      src={coverPreview || draft.image.trim()}
+                      alt="Տուրի էջ"
+                      variant="page"
+                      position={draft.coverPosition}
+                      interactive
+                      onPosition={(coverPosition) => update({ coverPosition })}
+                    />
+                  </div>
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-full font-bold"
+                onClick={() => update({ coverPosition: { ...CENTER_COVER } })}
+              >
+                Կենտրոնացնել
+              </Button>
+            </div>
+          )}
           {mode === "departures" && (
             <Field label="360° Վիրտուալ Տուր" id="tour-virtual-link">
               <Select
@@ -929,7 +1117,7 @@ function ToursSection({
             <Button type="submit" className="rounded-full font-bold" disabled={saving}>
               {saving ? "Պահվում է" : "Պահպանել"}
             </Button>
-            <Button type="button" variant="outline" className="rounded-full" onClick={() => setDraft(null)}>
+            <Button type="button" variant="outline" className="rounded-full" onClick={() => { clearCoverSelection(); setCoverError(null); setDraft(null); }}>
               Փակել
             </Button>
           </div>

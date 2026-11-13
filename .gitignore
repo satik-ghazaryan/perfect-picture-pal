@@ -43,6 +43,7 @@ supabase/apply-now.sql
 .env*
 !.env.example
 !.env.local-test
+.worktrees/
 
 # Python agent service
 venv/

@@ -1,5 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { TourCover } from "@/components/tour-cover";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatAssignedDepartureDate } from "@/lib/calendar-date";
@@ -8,6 +9,7 @@ import {
   getAdminServerSnapshot,
   getAdminSnapshot,
   hydrateAdmin,
+  listLocalDepartures,
   subscribeAdmin,
 } from "@/lib/admin";
 import { tourTitle, useSiteLocale } from "@/lib/locale";
@@ -38,10 +40,7 @@ export function TourCalendar() {
   }, []);
 
   useEffect(() => {
-    if (!isSupabaseConfigured || !supabase) {
-      setDepartures([]);
-      return;
-    }
+    if (!isSupabaseConfigured || !supabase) return;
     let cancelled = false;
     void supabase
       .from("departures")
@@ -67,12 +66,13 @@ export function TourCalendar() {
     catalog.catalogStatus === "loaded"
       ? catalog.tours.filter((tour) => tour.is_virtual_only !== true)
       : [];
+  const departureRows = !isSupabaseConfigured || !supabase ? listLocalDepartures() : departures;
   const toursById = new Map(published.map((tour) => [tour.id, tour]));
   const upcoming =
-    departures === null
+    departureRows === null
       ? null
       : upcomingDepartures(
-          departures.flatMap((row) => {
+          departureRows.flatMap((row) => {
             const tour = toursById.get(row.tourId);
             if (!tour) return [];
             return [{ ...row, departureTime: tour.departureTime }];
@@ -114,14 +114,7 @@ export function TourCalendar() {
                 const soldOut = row.availableSeats <= 0;
                 return (
                   <article key={row.id} className="flex flex-col overflow-hidden rounded-3xl border border-border bg-card shadow-card">
-                    <img
-                      src={tour.image_url}
-                      alt={title}
-                      loading="lazy"
-                      width={1024}
-                      height={768}
-                      className="h-48 w-full object-cover sm:h-52"
-                    />
+                    <TourCover src={tour.image_url} alt={title} position={tour.coverPosition} variant="card" />
                     <div className="flex flex-1 flex-col gap-3 p-4">
                       <h3 className="text-base font-bold leading-snug">{title}</h3>
                       <p className="text-sm text-muted-foreground">
@@ -156,14 +149,7 @@ export function TourCalendar() {
                 const title = tourTitle(tour, lang);
                 return (
                   <article key={tour.id} className="flex flex-col overflow-hidden rounded-3xl border border-border bg-card shadow-card">
-                    <img
-                      src={tour.image_url}
-                      alt={title}
-                      loading="lazy"
-                      width={1024}
-                      height={768}
-                      className="h-48 w-full object-cover sm:h-52"
-                    />
+                    <TourCover src={tour.image_url} alt={title} position={tour.coverPosition} variant="card" />
                     <div className="flex flex-1 flex-col gap-3 p-4">
                       <h3 className="text-base font-bold leading-snug">{title}</h3>
                       {upcoming !== null && !upcomingTourIds.has(tour.id) && (
