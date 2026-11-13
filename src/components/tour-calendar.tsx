@@ -8,6 +8,7 @@ import {
   getAdminServerSnapshot,
   getAdminSnapshot,
   hydrateAdmin,
+  listLocalDepartures,
   subscribeAdmin,
 } from "@/lib/admin";
 import { tourTitle, useSiteLocale } from "@/lib/locale";
@@ -38,10 +39,7 @@ export function TourCalendar() {
   }, []);
 
   useEffect(() => {
-    if (!isSupabaseConfigured || !supabase) {
-      setDepartures([]);
-      return;
-    }
+    if (!isSupabaseConfigured || !supabase) return;
     let cancelled = false;
     void supabase
       .from("departures")
@@ -67,12 +65,13 @@ export function TourCalendar() {
     catalog.catalogStatus === "loaded"
       ? catalog.tours.filter((tour) => tour.is_virtual_only !== true)
       : [];
+  const departureRows = !isSupabaseConfigured || !supabase ? listLocalDepartures() : departures;
   const toursById = new Map(published.map((tour) => [tour.id, tour]));
   const upcoming =
-    departures === null
+    departureRows === null
       ? null
       : upcomingDepartures(
-          departures.flatMap((row) => {
+          departureRows.flatMap((row) => {
             const tour = toursById.get(row.tourId);
             if (!tour) return [];
             return [{ ...row, departureTime: tour.departureTime }];

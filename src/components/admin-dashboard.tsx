@@ -46,11 +46,13 @@ import {
   createStaffAccount,
   updateDirectoryUser,
   loadAssignmentConflicts,
+  departureShownOnTourForm,
   loadDepartures,
   loadDirectory,
   retryLiveCatalog,
   saveSettings,
   saveTour,
+  saveTourDeparture,
   signOutAdmin,
   subscribeAdmin,
   defaultSettings,
@@ -61,7 +63,8 @@ import {
   type SiteSettings,
 } from "@/lib/admin";
 import { CatalogTransferPanel } from "@/components/catalog-transfer-panel";
-import { assignedWeekendDay, formatAssignedDepartureDate, weekendScheduleLabel } from "@/lib/calendar-date";
+import { assignedWeekendDay, formatAssignedDepartureDate, weekdayNameFromIsoDate, weekendDayFromIsoDate, weekendScheduleLabel } from "@/lib/calendar-date";
+import { isExplicitDepartureDate } from "@/lib/departure-assignment";
 import { getPortalServerSnapshot, getPortalSnapshot, subscribePortal, upcomingDepartureDate, uploadTourCover, type AssignedTour, type BookingRecord } from "@/lib/guide-api";
 import {
   adjustLoyaltyPoints,
@@ -137,6 +140,8 @@ type Draft = {
   chapters: ChapterDraft[];
   highlights: string[];
   departurePlace: string;
+  departureDate: string;
+  departureId: string | null;
 };
 
 const chapterLanguages: { value: AudioLanguage; label: string }[] = [
@@ -166,10 +171,12 @@ function emptyDraft(virtualOnly = false): Draft {
     chapters: [],
     highlights: [],
     departurePlace: virtualOnly ? "" : getAdminSnapshot().settings.departurePlace,
+    departureDate: "",
+    departureId: null,
   };
 }
 
-function draftFromTour(tour: ManagedTour): Draft {
+function draftFromTour(tour: ManagedTour, departure?: CatalogDeparture | null): Draft {
   return {
     id: tour.id,
     title: columnsToLocalized(tour.title_hy, tour.title_en, tour.title_ru),
@@ -189,6 +196,8 @@ function draftFromTour(tour: ManagedTour): Draft {
     itinerary: tour.itinerary.map((stop) => `${stop.time} | ${stop.title} | ${stop.description}`).join("\n"),
     highlights: [...tour.highlights],
     departurePlace: tour.departurePlace,
+    departureDate: departure?.departureDate ?? "",
+    departureId: departure?.id ?? null,
     chapters: tour.audioChapters.map((chapter) => ({
       id: chapter.id,
       title: chapter.title,
@@ -561,6 +570,7 @@ function ToursSection({
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const [coverPreview, setCoverPreview] = useState<string | null>(null);
   const [coverError, setCoverError] = useState<string | null>(null);
+  const [departures, setDepartures] = useState<CatalogDeparture[]>([]);
   const coverInput = useRef<HTMLInputElement>(null);
 
   const clearCoverSelection = () => {
@@ -578,6 +588,20 @@ function ToursSection({
     clearCoverSelection();
     setDraft(next);
   };
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadDepartures()
+      .then((rows) => {
+        if (!cancelled) setDepartures(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setDepartures([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!seedDraft || mode !== "departures") return;
@@ -676,7 +700,7 @@ function ToursSection({
       reviews: existing?.reviews ?? 0,
       has360: panoramaUrl.length > 0 || virtualTourUrl.length > 0 || virtualOnly || existing?.has360 === true,
       hasAudioGuide: audio.length > 0,
-      day: virtualOnly ? "saturday" : draft.day,
+      day: virtualOnly ? "saturday" : (weekendDayFromIsoDate(draft.departureDate) ?? ""),
       highlights: virtualOnly ? [] : draft.highlights.map((item) => item.trim()).filter(Boolean),
       itinerary: virtualOnly ? [] : parseItinerary(draft.itinerary),
       included: virtualOnly ? [] : existing?.included ?? ["Հարմարավետ ավտոբուս Արմավիրից և վերադարձ", "Հայախոս ուղեկցորդ"],
@@ -693,6 +717,15 @@ function ToursSection({
     if (virtualTourUrl) next.virtual_tour_url = virtualTourUrl;
     try {
       await saveTour(next);
+      if (!virtualOnly && isExplicitDepartureDate(draft.departureDate)) {
+        const savedDeparture = await saveTourDeparture({
+          tourId: id,
+          departureId: draft.departureId,
+          departureDate: draft.departureDate,
+          seats,
+        });
+        setDepartures((current) => [...current.filter((item) => item.id !== savedDeparture.id), savedDeparture]);
+      }
       toast.success(draft.id ? "Տուրը թարմացվեց" : "Տուրը ավելացվեց");
       clearCoverSelection();
       setCoverError(null);
@@ -775,7 +808,7 @@ function ToursSection({
                 <Button type="button" variant="outline" size="sm" className="rounded-full" asChild>
                   <Link to="/tours/$id" params={{ id: tour.id }}>Դիտել</Link>
                 </Button>
-                <Button type="button" variant="outline" size="sm" className="rounded-full" onClick={() => openDraft(draftFromTour(tour))}>
+                <Button type="button" variant="outline" size="sm" className="rounded-full" onClick={() => openDraft(draftFromTour(tour, departureShownOnTourForm(departures, tour.id)))}>
                   Խմբագրել
                 </Button>
                 {confirmId === tour.id ? (
@@ -838,9 +871,9 @@ function ToursSection({
             >
               {draft.image.trim() ? "Փոխել նկարը" : "Ավելացնել նկար"}
             </Button>
-            {coverPreview && (
-              <img src={coverPreview} alt="Ընտրված նկար" className="h-40 w-full max-w-md rounded-2xl object-cover" />
-            )}
+            {coverPreview || draft.image.trim() ? (
+              <img src={coverPreview || draft.image.trim()} alt="Տուրի նկար" className="h-40 w-full max-w-md rounded-2xl object-cover" />
+            ) : null}
             {coverError && <p className="text-sm text-destructive">{coverError}</p>}
             <p className="text-xs text-muted-foreground">
               {coverFile ? "Նախադիտումը երևում է վերևում։ Նկարը կվերբեռնվի Պահպանել սեղմելիս։" : "Նոր նկար չընտրելու դեպքում կմնա եղածը։"}
@@ -912,22 +945,19 @@ function ToursSection({
                 <Field label="Վերադարձ" id="tour-return">
                   <Input id="tour-return" type="time" value={draft.returnTime} onChange={(event) => update({ returnTime: event.target.value })} className="rounded-2xl" />
                 </Field>
-                <Field label="Օր" id="tour-day">
-                  <Select
-                    value={draft.day === "sunday" ? "sunday" : draft.day === "saturday" ? "saturday" : "unset"}
-                    onValueChange={(day) =>
-                      update({ day: day === "sunday" ? "sunday" : day === "saturday" ? "saturday" : "" })
-                    }
-                  >
-                    <SelectTrigger id="tour-day" className="rounded-2xl">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="unset">Դեռ նշանակված չէ</SelectItem>
-                      <SelectItem value="saturday">Շաբաթ</SelectItem>
-                      <SelectItem value="sunday">Կիրակի</SelectItem>
-                    </SelectContent>
-                  </Select>
+                <Field label="Մեկնման ամսաթիվ" id="tour-departure-date">
+                  <Input
+                    id="tour-departure-date"
+                    type="date"
+                    value={draft.departureDate}
+                    onChange={(event) => update({ departureDate: event.target.value })}
+                    className="rounded-2xl"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {draft.departureDate
+                      ? `Շաբաթվա օրը՝ ${weekdayNameFromIsoDate(draft.departureDate)}`
+                      : "Հին տուրի շաբաթվա օրը ամսաթիվ չի դառնում, մինչև ամսաթիվ ընտրես։"}
+                  </p>
                 </Field>
                 <Field label="Մեկնման վայր" id="tour-departure-place">
                   <Input

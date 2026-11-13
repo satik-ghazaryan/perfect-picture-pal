@@ -238,7 +238,7 @@ function persist() {
   if (isSupabaseConfigured || typeof localStorage === "undefined") return;
   localStorage.setItem(
     CATALOG_KEY,
-    JSON.stringify({ tours: state.tours, settings: state.settings, users: state.users }),
+    JSON.stringify({ tours: state.tours, settings: state.settings, users: state.users, departures: localDepartures }),
   );
 }
 
@@ -445,10 +445,25 @@ function readCatalog(): { tours: ManagedTour[]; settings: SiteSettings; users: D
   const raw = localStorage.getItem(CATALOG_KEY);
   if (!raw) return null;
   try {
-    const parsed = JSON.parse(raw) as { tours?: unknown; settings?: unknown; users?: unknown };
+    const parsed = JSON.parse(raw) as { tours?: unknown; settings?: unknown; users?: unknown; departures?: unknown };
     if (!Array.isArray(parsed.tours)) return null;
     const nextTours = clearBrokenLinks(parsed.tours.map(sanitizeTour).filter((tour): tour is ManagedTour => tour !== null));
     if (parsed.tours.length > 0 && nextTours.length === 0) return null;
+    if (Array.isArray(parsed.departures)) {
+      localDepartures.splice(0, localDepartures.length, ...parsed.departures.flatMap((item) => {
+        if (!item || typeof item !== "object") return [];
+        const row = item as CatalogDeparture;
+        if (!isExplicitDepartureDate(row.departureDate) || typeof row.id !== "string" || typeof row.tourId !== "string") return [];
+        return [{
+          id: row.id,
+          tourId: row.tourId,
+          departureDate: row.departureDate,
+          availableSeats: Number.isFinite(row.availableSeats) ? row.availableSeats : 0,
+          guideId: row.guideId ?? null,
+          driverId: row.driverId ?? null,
+        }];
+      }));
+    }
     return {
       tours: nextTours,
       settings: readSettings(parsed.settings) ?? defaultSettings,
@@ -780,8 +795,91 @@ async function requireAssignee(expected: "guide" | "driver", accountId: string |
   if (message) throw new Error(message);
 }
 
+const localDepartures: CatalogDeparture[] = [];
+
+export function listLocalDepartures(): CatalogDeparture[] {
+  return localDepartures.map((item) => ({ ...item }));
+}
+
+export function departureShownOnTourForm(rows: CatalogDeparture[], tourId: string) {
+  const mine = rows.filter((row) => row.tourId === tourId && isExplicitDepartureDate(row.departureDate));
+  if (mine.length === 0) return null;
+  return [...mine].sort((left, right) => left.departureDate.localeCompare(right.departureDate) || left.id.localeCompare(right.id))[0];
+}
+
+function rememberLocalDeparture(saved: CatalogDeparture) {
+  const index = localDepartures.findIndex((item) => item.id === saved.id);
+  if (index >= 0) localDepartures[index] = saved;
+  else localDepartures.push(saved);
+  setState({});
+  return saved;
+}
+
+export async function saveTourDeparture(input: {
+  tourId: string;
+  departureId: string | null;
+  departureDate: string;
+  seats: number;
+}) {
+  if (!isExplicitDepartureDate(input.departureDate)) throw new Error("Նշեք մեկնման ամսաթիվը։");
+  const seats = Math.max(0, Math.round(input.seats));
+  if (!supabase) {
+    const existing = input.departureId
+      ? localDepartures.find((item) => item.id === input.departureId && item.tourId === input.tourId)
+      : undefined;
+    if (existing) {
+      return rememberLocalDeparture({ ...existing, departureDate: input.departureDate });
+    }
+    return rememberLocalDeparture({
+      id: crypto.randomUUID(),
+      tourId: input.tourId,
+      departureDate: input.departureDate,
+      availableSeats: seats,
+      guideId: null,
+      driverId: null,
+    });
+  }
+  if (input.departureId) {
+    const { data, error } = await supabase
+      .from("departures")
+      .update({ departure_date: input.departureDate })
+      .eq("id", input.departureId)
+      .eq("tour_id", input.tourId)
+      .select("id, tour_id, departure_date, available_seats, guide_id, driver_id")
+      .maybeSingle();
+    if (!error && data) {
+      return {
+        id: data.id,
+        tourId: data.tour_id,
+        departureDate: data.departure_date,
+        availableSeats: data.available_seats,
+        guideId: data.guide_id,
+        driverId: data.driver_id,
+      } satisfies CatalogDeparture;
+    }
+  }
+  const { data, error } = await supabase
+    .from("departures")
+    .insert({
+      tour_id: input.tourId,
+      departure_date: input.departureDate,
+      available_seats: seats,
+    })
+    .select("id, tour_id, departure_date, available_seats, guide_id, driver_id")
+    .single();
+  if (error || !data) throw new Error("Մեկնումը չպահպանվեց։");
+  return {
+    id: data.id,
+    tourId: data.tour_id,
+    departureDate: data.departure_date,
+    availableSeats: data.available_seats,
+    guideId: data.guide_id,
+    driverId: data.driver_id,
+  } satisfies CatalogDeparture;
+}
+
 export async function loadDepartures(): Promise<CatalogDeparture[]> {
-  if (!supabase) return [];
+  if (!supabase) return listLocalDepartures();
   const { data, error } = await supabase
     .from("departures")
     .select("id, tour_id, departure_date, available_seats, guide_id, driver_id")

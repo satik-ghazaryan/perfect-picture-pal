@@ -20,6 +20,13 @@ export function formatAssignedDepartureDate(value: string | null | undefined) {
 
 export const UNASSIGNED_SCHEDULE_LABEL = "Մեկնման օրը դեռ նշանակված չէ";
 
+export function weekdayNameFromIsoDate(value: string | null | undefined) {
+  if (!isValidIsoDate(value) || !value) return "";
+  const trimmed = value.trim();
+  const parsed = parseISO(trimmed.length > 10 ? trimmed : `${trimmed}T12:00:00`);
+  return format(parsed, "EEEE", { locale: hy });
+}
+
 export function weekendDayFromIsoDate(
   value: string | null | undefined,
 ): "saturday" | "sunday" | null {
