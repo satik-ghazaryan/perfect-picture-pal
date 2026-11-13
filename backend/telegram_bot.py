@@ -160,7 +160,7 @@ def plan_message(memory: ChatMemory, text: str) -> dict:
 def site_body(memory: ChatMemory, plan: dict) -> dict:
     body: dict = {
         "message": plan["message"],
-        "history": memory.history[-8:],
+        "history": memory.history[-16:],
         "selectedTourId": memory.selected,
     }
     if plan["kind"] == "section":
@@ -176,7 +176,7 @@ def remember(memory: ChatMemory, user_text: str, payload: dict) -> None:
     reply = payload.get("reply") if isinstance(payload.get("reply"), str) else ""
     if reply:
         memory.history.append({"role": "assistant", "text": clean_text(reply)})
-    memory.history = memory.history[-8:]
+    memory.history = memory.history[-16:]
     selected = payload.get("selectedTourId")
     if isinstance(selected, str) and _TOUR_ID.fullmatch(selected):
         memory.selected = selected

@@ -1678,6 +1678,14 @@ function toolFact(call: ChatToolCall, tours: PublicTourFact[], now: Date) {
   return { text: fullProgram(tour, now), tours: [tour] };
 }
 
+const PRICE_MISSING_SAID = /հրապարակված\s+չ(է|ի)/u;
+const NO_DEPARTURE_SAID = /մեկնում\s+(դեռ\s+|դեռևս\s+|հիմա\s+|առայժմ\s+)?չկա/u;
+
+/** "16,000", "16 000" and "16.000" are the same published number as "16000". */
+function plainNumbers(text: string) {
+  return text.replace(/(?<=\d)[ \u00a0\u202f,.](?=\d{3}(?!\d))/gu, "");
+}
+
 export function groundChatAnswer(input: {
   reply: string;
   calls: ChatToolCall[];
@@ -1685,6 +1693,8 @@ export function groundChatAnswer(input: {
   facts: ChatFacts;
   now?: Date | undefined;
   registered?: { tourId: string | null; key: string }[] | undefined;
+  /** The visitor's own message. Numbers they typed (party size) may be repeated back. */
+  message?: string | undefined;
 }): ChatAnswer & { selectedTourId: string | null; grounded: boolean } {
   if (!input.facts.ok) return { ...catalogFailureReply(), selectedTourId: null, grounded: false };
   const now = input.now ?? new Date();
@@ -1698,9 +1708,12 @@ export function groundChatAnswer(input: {
     .replace(/\+?\d[\d\s-]{6,}\d/gu, "")
     .trim()
     .slice(0, 1200);
-  const allowed = new Set(factText.match(/\d+/g) ?? []);
+  const allowed = new Set([
+    ...(plainNumbers(factText).match(/\d+/g) ?? []),
+    ...(plainNumbers(input.message ?? "").match(/\d+/g) ?? []),
+  ]);
   const allowedLinks = new Set(factText.match(/\/tours\/[a-z0-9-]+/g) ?? []);
-  const numbersOk = (reply.match(/\d+/g) ?? []).every((value) => allowed.has(value));
+  const numbersOk = (plainNumbers(reply).match(/\d+/g) ?? []).every((value) => allowed.has(value));
   const linksOk = (reply.match(/\/tours\/[a-z0-9-]+/g) ?? []).every((link) =>
     allowedLinks.has(link),
   );
@@ -1720,8 +1733,8 @@ export function groundChatAnswer(input: {
     reply.length > 0 &&
     numbersOk &&
     linksOk &&
-    (!priceMissing || reply.includes("դեռ հրապարակված չէ")) &&
-    (!closed || reply.includes("բաց մեկնում դեռ չկա"));
+    (!priceMissing || PRICE_MISSING_SAID.test(reply)) &&
+    (!closed || NO_DEPARTURE_SAID.test(reply));
   const onlySearch =
     calls.length > 0 &&
     calls.every((call) => call.name === "search_tours" || call.name === "suggest_action");

@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import {
+  HISTORY_TURNS,
   clientAddress,
   loadPublicTourFacts,
   rateLimitTourChat,
@@ -69,7 +70,7 @@ function readShown(value: unknown) {
 
 function readHistory(value: unknown): ChatTurn[] {
   if (!Array.isArray(value)) return [];
-  return value.slice(-6).flatMap((item) => {
+  return value.slice(-HISTORY_TURNS).flatMap((item) => {
     if (!item || typeof item !== "object") return [];
     const record = item as Record<string, unknown>;
     const role =

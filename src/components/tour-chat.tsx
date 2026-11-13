@@ -124,7 +124,7 @@ export function TourChat() {
   ) {
     const message = (text ?? input).trim();
     if ((!message && !command) || pending) return;
-    const history = [{ role: "assistant" as const, text: intro }, ...messages].slice(-12);
+    const history = [{ role: "assistant" as const, text: intro }, ...messages].slice(-16);
     const nextTourId = command?.tourId || selectedTourId;
     if (command?.tourId) setSelectedTourId(command.tourId);
     setInput("");

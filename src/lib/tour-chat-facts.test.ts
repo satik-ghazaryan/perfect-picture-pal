@@ -1212,6 +1212,50 @@ describe("catalog tools for free text", () => {
     assert.match(missing.reply, /բաց մեկնում դեռ չկա/);
     assert.equal(missing.interest?.tourId, "tatev");
     assert.doesNotMatch(missing.reply, /10000/);
+    const priceCall = [
+      { name: "get_price" as const, tourId: "lori", party: 2, query: null, action: null },
+    ];
+    for (const written of ["18,000", "18 000", "18.000", "18\u00a0000"]) {
+      const formatted = groundChatAnswer({
+        reply: `Երկուսով կլինի ${written} դրամ։`,
+        calls: priceCall,
+        suggest: "none",
+        facts: priced,
+        now,
+      });
+      assert.ok(formatted.reply.includes(written), `kept the natural reply for ${written}`);
+    }
+    const inventedFormatted = groundChatAnswer({
+      reply: "Երկուսով կլինի 5,000 դրամ։",
+      calls: priceCall,
+      suggest: "none",
+      facts: priced,
+      now,
+    });
+    assert.doesNotMatch(inventedFormatted.reply, /5,000/);
+    const echoedParty = {
+      reply: "2 հոգով կլինի 18000 դրամ։",
+      calls: priceCall,
+      suggest: "none" as const,
+      facts: priced,
+      now,
+    };
+    assert.match(
+      groundChatAnswer({ ...echoedParty, message: "2 հոգով ինչ կարժենա" }).reply,
+      /^2 հոգով կլինի 18000 դրամ։/,
+    );
+    assert.doesNotMatch(groundChatAnswer(echoedParty).reply, /^2 հոգով/);
+    const softerClosed = groundChatAnswer({
+      reply: "Տաթևի գինը դեռ հրապարակված չի, ու բաց մեկնում առայժմ չկա։",
+      calls: [
+        { name: "get_price", tourId: "tatev", party: null, query: null, action: null },
+        { name: "get_departures", tourId: "tatev", party: null, query: null, action: null },
+      ],
+      suggest: "interest",
+      facts: facts(),
+      now,
+    });
+    assert.match(softerClosed.reply, /առայժմ չկա/);
   });
 
   it("searches a region from the catalog and offers a choice when several tours match", () => {

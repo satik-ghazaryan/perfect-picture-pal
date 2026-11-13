@@ -17,6 +17,8 @@ import {
   type PublicTourFact,
 } from "./tour-chat-facts.ts";
 
+/** How many earlier messages the model sees. Fewer than this and follow-up questions lose their subject. */
+export const HISTORY_TURNS = 16;
 const WINDOW_MS = 60_000;
 const LIMIT = 8;
 const hits = new Map<string, number[]>();
@@ -241,13 +243,13 @@ export async function answerChatWithTools(input: {
   const requestId = (input.requestId ?? "").trim();
   const safeId = /^[A-Za-z0-9_.:-]{1,120}$/.test(requestId) ? requestId : "";
   const now = input.now ?? new Date();
-  const history = (input.history ?? []).slice(-8).flatMap((turn) => {
+  const history = (input.history ?? []).slice(-HISTORY_TURNS).flatMap((turn) => {
     const text = withoutPrivateNumbers(turn.text);
     if (!text || (turn.role !== "user" && turn.role !== "assistant")) return [];
     return [{ role: turn.role, text }];
   });
-  try {
-    const response = await fetch(`${parsed.origin}/api/chat-answer`, {
+  const ask = (turns: typeof history) =>
+    fetch(`${parsed.origin}/api/chat-answer`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -256,12 +258,16 @@ export async function answerChatWithTools(input: {
       },
       body: JSON.stringify({
         message: question,
-        history,
+        history: turns,
         selectedTourId: input.selectedTourId,
         tours: catalogSnapshot(input.facts.tours, now),
       }),
       signal: AbortSignal.timeout(20000),
     });
+  try {
+    let response = await ask(history);
+    // An older backend accepts at most 8 turns and answers 422 to more. Keep the chat working.
+    if (response.status === 422 && history.length > 8) response = await ask(history.slice(-8));
     if (!response.ok) return null;
     const payload = (await response.json()) as Record<string, unknown>;
     const reply = typeof payload["reply"] === "string" ? payload["reply"].slice(0, 1200) : "";
@@ -330,6 +336,7 @@ export async function replyToTourQuestion(input: {
     facts,
     now: input.now,
     registered: input.registered,
+    message: input.message,
   });
   return {
     reply: grounded.reply,
