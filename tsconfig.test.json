@@ -1,6 +1,6 @@
 {
   "extends": "./tsconfig.json",
-  "include": ["src/**/*.test.ts"],
+  "include": ["src/**/*.test.ts", "src/env.d.ts"],
   "exclude": [],
   "compilerOptions": {
     "types": ["node", "vite/client"],

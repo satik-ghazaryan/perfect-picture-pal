@@ -1,18 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { deliverNotification } from "@/lib/notification-gateway";
 import type { NotificationChannel } from "@/lib/notifications";
-
-function paymentSecret() {
-  if (typeof process === "undefined" || !process.env) return "";
-  return process.env["PAYMENT_SECRET"]?.trim() || "";
-}
+import { requestCarriesPaymentSecret } from "@/lib/payment-secret";
 
 export const Route = createFileRoute("/api/notifications/dispatch")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const secret = paymentSecret();
-        if (!secret || request.headers.get("x-payment-secret") !== secret) {
+        if (!requestCarriesPaymentSecret(request)) {
           return Response.json({ mode: "failed" }, { status: 401 });
         }
         let payload: { channel?: NotificationChannel; phone?: string; body?: string };

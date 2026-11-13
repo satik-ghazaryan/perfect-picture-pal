@@ -1,5 +1,6 @@
 import { peekNextSeat, registerBooking } from "@/lib/guide-api";
 import { partySize, shouldDeliverTicket } from "@/lib/departure-booking";
+import { requestCarriesPaymentSecret, serverPaymentSecret } from "@/lib/payment-secret";
 import { supabase } from "@/lib/supabase";
 import {
   accountForPhone,
@@ -52,11 +53,6 @@ const PROVIDERS: Record<PaymentProvider, { label: string; path: string }> = {
   telcell: { label: "Telcell", path: "/api/payment/telcell-callback" },
   arca: { label: "ArCa / Visa", path: "/api/payment/arca-callback" },
 };
-
-function serverPaymentSecret() {
-  if (typeof process === "undefined" || !process.env) return "";
-  return process.env["PAYMENT_SECRET"]?.trim() || "";
-}
 
 function checksumWithSecret(
   secret: string,
@@ -257,6 +253,9 @@ export async function respondToCallback(
   }
   const result = interpretCallback(provider, payload);
   if (result.status !== "SUCCESS") return result;
+  // The sandbox checksum is public, so it must never be enough to reach a real phone.
+  // Messages go out only when the caller also proves it knows PAYMENT_SECRET.
+  if (!requestCarriesPaymentSecret(request)) return result;
   const notice = readNotice(payload["notification"]);
   if (!notice) return result;
   try {
