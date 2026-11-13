@@ -1678,6 +1678,12 @@ function toolFact(call: ChatToolCall, tours: PublicTourFact[], now: Date) {
   return { text: fullProgram(tour, now), tours: [tour] };
 }
 
+/** The chat cannot book. A reply saying a booking exists would send people to a departure with no seat. */
+const BOOKING_CLAIM =
+  /ամրագր\S*\s+(արված|արվել|կատարված|կատարվել|հաստատված|հաստատվել|գրանցված|գրանցվել|ընդունված|ընդունվել|պատրաստ)|ամրագրեցի|ամրագրել\s+եմ|ամրագրված\s+(է|են)|տեղ\S*\s+(պահված|պահել\s+եմ|պահեցի)|забронирова|\bbooked\b|\breserved\b/iu;
+export const BOOKING_STEP =
+  "Չաթից ամրագրում չեմ կարող անել։ Անունդ ու հեռախոսդ լրացնում ես ամրագրման ձևում, և տեղերը պահվում են միայն դրանից հետո։";
+
 const PRICE_MISSING_SAID = /հրապարակված\s+չ(է|ի)/u;
 const NO_DEPARTURE_SAID = /մեկնում\s+(դեռ\s+|դեռևս\s+|հիմա\s+|առայժմ\s+)?չկա/u;
 
@@ -1729,8 +1735,10 @@ export function groundChatAnswer(input: {
     ? (tours.find((item) => item.id === departureCall.tourId) ?? null)
     : null;
   const closed = departureTour ? readDeparture(departureTour, now).kind === "none" : false;
+  const claimsBooking = BOOKING_CLAIM.test(reply);
   const natural =
     reply.length > 0 &&
+    !claimsBooking &&
     numbersOk &&
     linksOk &&
     (!priceMissing || PRICE_MISSING_SAID.test(reply)) &&
@@ -1748,6 +1756,7 @@ export function groundChatAnswer(input: {
       .map((item) => item.text)
       .filter(Boolean)
       .join("\n");
+  if (claimsBooking) text = [text, BOOKING_STEP].filter(Boolean).join("\n");
   if (!text) return { ...modelFailureReply(tours), selectedTourId: null, grounded: false };
   const focus = usedTours.length === 1 ? (usedTours[0] ?? null) : null;
   if (focus && !text.includes(tourLink(focus))) text = `${text}\n${pageLink(focus)}`;
