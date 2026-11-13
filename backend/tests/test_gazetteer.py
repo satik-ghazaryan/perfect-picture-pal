@@ -116,3 +116,27 @@ def test_odd_model_output_is_tidied_instead_of_losing_the_idea():
     assert parsed.highlights == ["Bulls of Sardarapat", "Bronze Age observatory"]
     assert parsed.duration_hours == 10 and parsed.appeal_score == 10
     assert parsed.location_en == "Armavir" and parsed.title_hy == "Sardarapat and Metsamor"
+
+
+def test_armenian_copy_with_a_leftover_english_word_is_sent_back():
+    from agent.quality import hy_copy_ok
+
+    idea = {
+        "title_hy": "Սարդարապատի հուշահամալիր — Մեծամորի հնավայր",
+        "description_hy": "Օրը սկսեք Սարդարապատի հուշահամալիրից, որը նվիրված է 1918 թվականի ճակատամարտին։",
+        "location_hy": "Արմավիր",
+        "highlights": ["Սարդարապատի կարմիր տուֆե ցուլերը"],
+        "itinerary": [],
+    }
+    assert hy_copy_ok(idea) is True
+    assert hy_copy_ok({**idea, "description_hy": "Օրը սկսեք հուշահամալիրից, որտեղ commemorates 1918-ի մարտը։"}) is False
+    assert hy_copy_ok({**idea, "highlights": ["Միացեք ձեր տեսախցիկը գեղեցկությունըCapture-ի համար։"]}) is False
+    assert hy_copy_ok({**idea, "highlights": ["English point"]}) is False
+
+
+def test_generation_prompt_asks_for_a_full_day():
+    import inspect
+
+    source = inspect.getsource(graph.generation_node)
+    assert "leave Armavir between 07:30 and 09:00" in source
+    assert "Do not default to the places nearest Armavir" in source

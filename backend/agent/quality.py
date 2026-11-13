@@ -554,9 +554,26 @@ def hy_text_ok(value: str) -> bool:
     return len(latin) <= 3
 
 
+_LATIN_LEFTOVER_RE = re.compile(r"[A-Za-z]{3,}")
+
+
+def hy_customer_text_ok(value: str) -> bool:
+    """Customer-facing Armenian must not carry a single untranslated word («որտեղ commemorates»)."""
+    text = _text(value)
+    return bool(text) and bool(ARMENIAN_RE.search(text)) and not _LATIN_LEFTOVER_RE.search(text)
+
+
 def hy_copy_ok(idea: dict[str, Any]) -> bool:
-    if not hy_text_ok(_text(idea.get("title_hy"))) or not hy_text_ok(_text(idea.get("description_hy"))):
+    if not hy_customer_text_ok(_text(idea.get("title_hy"))):
         return False
+    if not hy_customer_text_ok(_text(idea.get("description_hy"))):
+        return False
+    for point in idea.get("highlights") or []:
+        # The pricing step adds this fixed line itself; it is translated when shown.
+        if _text(point).startswith("Meals and entrance fees are not included"):
+            continue
+        if not hy_customer_text_ok(_text(point)):
+            return False
     location = _text(idea.get("location_hy"))
     if location and not hy_text_ok(location):
         return False

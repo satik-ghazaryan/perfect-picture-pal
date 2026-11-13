@@ -387,7 +387,10 @@ Rules:
 - ALWAYS depart from Armavir and return to Armavir.
 - Each itinerary stop MUST have place_name and activity as separate fields. title_en is display only: "{{place_name}} — {{activity}}".
 - place_name MUST be copied exactly from PLACE CANDIDATES name_en, or be "Armavir". Do not invent names. Do not pick places that are not on that list.
-- Choose 2–3 candidates that are geographically sensible for a one-day round trip from Armavir (total one-way km <= about 220). Prefer clustered sights.
+- Plan a full day out, not a half-day errand: leave Armavir between 07:30 and 09:00 and be back between 17:00 and 20:00. duration_hours is the time from departure to return.
+- Choose 3-4 candidates in one area that are geographically sensible for a one-day round trip from Armavir (total one-way km <= about 220); two are enough only when the area is far (over 120 km straight line). Prefer clustered sights.
+- Do not default to the places nearest Armavir. Pick the area that best fits the season, audience and tour type. The budget is a ceiling per person; the price is worked out from the distance afterwards, so a longer, richer day is fine when it fits the brief.
+- Put lunch between 12:30 and 14:30, after at least one visit.
 - activity is free text (arrival, lunch, walk, visit, cultural exploration). Never put activity words into place_name.
 - Lunch/rest stops: place_name must be null; they are not places and are never geocoded.
 - Name at least four timed stops: Armavir departure, two or more CONCRETE places from PLACE CANDIDATES, optional lunch, Armavir return. Copy source_url from that candidate.
@@ -623,6 +626,7 @@ ARMENIAN PLACE NAMES (use exactly these):
 
 Do not change place_name, activity, title_en, source_url, lat, lon, times, stop order, numbers, notes or any English and Russian field.
 Do not put Latin names in parentheses. Do not add places, prices, scores or new facts.
+Every word of the Armenian fields must be Armenian: no English word may remain inside a sentence (write «նվիրված է 1918 թվականի ճակատամարտին», never «commemorates 1918-ի մարտը»; write «լուսանկարելու համար», never «Capture-ի համար»).
 
 IDEAS JSON:
 {json.dumps([{key: value for key, value in idea.items() if key != "_structured_stops"} for idea in ideas], ensure_ascii=False)}
