@@ -56,3 +56,63 @@ def test_armenian_step_is_told_the_season_and_the_place_names():
 def test_a_route_between_listed_places_gets_a_real_price():
     idea = apply_unit_economics({"id": "x", "itinerary": []}, route_km=190.0, km_sourced=True, has_away_stop=True)
     assert idea["price"] and idea["price"] > 5000
+
+
+def test_armenian_step_cannot_lose_english_text_or_a_whole_idea():
+    originals = {
+        "a": {
+            "id": "a",
+            "title_en": "Sardarapat and Metsamor",
+            "title_hy": "x",
+            "description_en": "A day west of Armavir.",
+            "duration_hours": 8,
+            "highlights": ["Bulls of Sardarapat"],
+            "itinerary": [{"time": "09:00", "place_name": "Sardarapat Memorial", "activity": "visit", "title_en": "Sardarapat Memorial — visit"}],
+        },
+        "b": {"id": "b", "title_en": "Second idea", "itinerary": []},
+    }
+    partial = [
+        {
+            "id": "a",
+            "title_hy": "Սարդարապատ և Մեծամոր",
+            "description_hy": "Օրը սկսում ենք Սարդարապատի հուշահամալիրից։",
+            "location_hy": "Արմավիր",
+            "highlights": ["Սարդարապատի ցուլերը"],
+            "itinerary": [{"time": "09:00", "title_hy": "Սարդարապատի հուշահամալիր — այցելություն"}],
+        }
+    ]
+    merged = graph._merge_hy_ideas(originals, partial)
+    assert [item["id"] for item in merged] == ["a", "b"]
+    first = merged[0]
+    assert first["title_en"] == "Sardarapat and Metsamor" and first["duration_hours"] == 8
+    assert first["title_hy"] == "Սարդարապատ և Մեծամոր"
+    assert first["highlights"] == ["Սարդարապատի ցուլերը"]
+    assert first["itinerary"][0]["title_hy"] == "Սարդարապատի հուշահամալիր — այցելություն"
+    assert first["itinerary"][0]["place_name"] == "Sardarapat Memorial"
+    assert merged[1]["title_en"] == "Second idea"
+    english = graph._merge_hy_ideas(originals, [{"id": "a", "title_hy": "Still English", "highlights": ["English point"]}])
+    assert english[0]["title_hy"] == "x" and english[0]["highlights"] == ["Bulls of Sardarapat"]
+
+
+def test_odd_model_output_is_tidied_instead_of_losing_the_idea():
+    from schemas import TourIdea
+
+    idea = graph.tidy_idea(
+        {
+            "id": "Sardarapat & Metsamor!",
+            "title_en": "Sardarapat and Metsamor",
+            "description_en": "A day west of Armavir.",
+            "notes": {"Հայեցակարգ": "պատմության օր", "Ռիսկեր": ["շոգ", "քամի"]},
+            "highlights": "- Bulls of Sardarapat\n- Bronze Age observatory",
+            "duration_hours": "ten",
+            "appeal_score": 85,
+            "verify": None,
+        },
+        {"region_en": "Armavir"},
+    )
+    parsed = TourIdea.model_validate(idea)
+    assert parsed.id == "sardarapat-metsamor"
+    assert parsed.notes == "Հայեցակարգ՝ պատմության օր Ռիսկեր՝ շոգ քամի"
+    assert parsed.highlights == ["Bulls of Sardarapat", "Bronze Age observatory"]
+    assert parsed.duration_hours == 10 and parsed.appeal_score == 10
+    assert parsed.location_en == "Armavir" and parsed.title_hy == "Sardarapat and Metsamor"
