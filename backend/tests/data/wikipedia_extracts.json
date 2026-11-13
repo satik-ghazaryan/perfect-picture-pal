@@ -1,0 +1,37 @@
+{
+  "query": {
+    "pages": {
+      "111": {
+        "pageid": 111,
+        "title": "Black Fortress",
+        "extract": "The Black Fortress is an abandoned 19th-century Russian fortress in Gyumri.",
+        "fullurl": "https://en.wikipedia.org/wiki/Black_Fortress"
+      },
+      "222": {
+        "pageid": 222,
+        "title": "List of people from Gyumri",
+        "extract": "This is a list of notable people from Gyumri.",
+        "fullurl": "https://en.wikipedia.org/wiki/List_of_people_from_Gyumri"
+      },
+      "333": {
+        "pageid": 333,
+        "title": "Gyumri (disambiguation)",
+        "extract": "Gyumri may refer to...",
+        "description": "disambiguation page",
+        "fullurl": "https://en.wikipedia.org/wiki/Gyumri_(disambiguation)"
+      },
+      "444": {
+        "pageid": 444,
+        "title": "Cathedral of the Holy Mother of God, Gyumri",
+        "extract": "A 19th-century church in Gyumri, Armenia.",
+        "fullurl": "https://en.wikipedia.org/wiki/Cathedral_of_the_Holy_Mother_of_God,_Gyumri"
+      },
+      "555": {
+        "pageid": 555,
+        "title": "Akhuryan River",
+        "extract": "A river in Armenia and Turkey.",
+        "fullurl": "https://en.wikipedia.org/wiki/Akhuryan_River"
+      }
+    }
+  }
+}
