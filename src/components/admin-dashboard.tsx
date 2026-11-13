@@ -1034,51 +1034,6 @@ function ToursSection({
                 ? "Խմբագրել տուրը"
                 : "Նոր տուր"}
           </h2>
-          <div className="space-y-3">
-            <input
-              ref={coverInput}
-              id="tour-cover-file"
-              type="file"
-              accept="image/*"
-              className="sr-only"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                event.target.value = "";
-                if (!file) return;
-                if (!file.type.startsWith("image/")) {
-                  setCoverError("Ընտրեք լուսանկար։");
-                  return;
-                }
-                setCoverError(null);
-                setCoverFile(file);
-                setCoverPreview((current) => {
-                  if (current?.startsWith("blob:")) URL.revokeObjectURL(current);
-                  return URL.createObjectURL(file);
-                });
-              }}
-            />
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full rounded-full font-bold sm:w-auto"
-              onClick={() => coverInput.current?.click()}
-            >
-              {draft.image.trim() ? "Փոխել նկարը" : "Ավելացնել նկար"}
-            </Button>
-            {coverPreview || draft.image.trim() ? (
-              <img
-                src={coverPreview || draft.image.trim()}
-                alt="Տուրի նկար"
-                className="h-40 w-full max-w-md rounded-2xl object-cover"
-              />
-            ) : null}
-            {coverError && <p className="text-sm text-destructive">{coverError}</p>}
-            <p className="text-xs text-muted-foreground">
-              {coverFile
-                ? "Նախադիտումը երևում է վերևում։ Նկարը կվերբեռնվի Պահպանել սեղմելիս։"
-                : "Նոր նկար չընտրելու դեպքում կմնա եղածը։"}
-            </p>
-          </div>
           <div className="space-y-4 rounded-2xl border border-border bg-muted/40 p-3 sm:p-4">
             <div className="flex flex-wrap gap-2" role="tablist" aria-label="Լեզու">
               {formLanguages.map(({ code, label }) => {
@@ -1218,6 +1173,45 @@ function ToursSection({
                 </SelectContent>
               </Select>
             </Field>
+          </div>
+          <div className="space-y-3">
+            <p className="text-sm font-bold">Տուրի նկար</p>
+            <input
+              ref={coverInput}
+              id="tour-cover-file"
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (!file) return;
+                if (!file.type.startsWith("image/")) {
+                  setCoverError("Ընտրեք լուսանկար։");
+                  return;
+                }
+                setCoverError(null);
+                setCoverFile(file);
+                setCoverPreview((current) => {
+                  if (current?.startsWith("blob:")) URL.revokeObjectURL(current);
+                  return URL.createObjectURL(file);
+                });
+              }}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full rounded-full font-bold sm:w-auto"
+              onClick={() => coverInput.current?.click()}
+            >
+              {draft.image.trim() ? "Փոխել նկարը" : "Ավելացնել նկար"}
+            </Button>
+            {coverError && <p className="text-sm text-destructive">{coverError}</p>}
+            <p className="text-xs text-muted-foreground">
+              {coverFile
+                ? "Նախադիտումը երևում է ներքևում։ Նկարը կվերբեռնվի Պահպանել սեղմելիս։"
+                : "Ընտրեք նկար համակարգչից կամ ներքևում տեղադրեք նկարի հղումը։"}
+            </p>
           </div>
           <Field label="Նկարի հղում" id="tour-image">
             <Input
