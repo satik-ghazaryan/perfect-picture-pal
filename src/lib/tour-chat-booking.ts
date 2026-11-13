@@ -191,8 +191,7 @@ export function bookingSummary(input: {
   party: number;
   price: number | null;
 }) {
-  const priceKnown = input.price !== null && input.price > 0;
-  const total = priceKnown ? input.price * input.party : null;
+  const total = input.price !== null && input.price > 0 ? input.price * input.party : null;
   return [
     `Տուրը՝ ${input.title}։`,
     `Մեկնումը՝ ${input.dateLabel}${input.time ? `, ժամը ${input.time}` : "։ Մեկնման ժամը նշված չէ"}։`,

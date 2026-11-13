@@ -1282,10 +1282,10 @@ export type ChatSection = "upcoming" | "directions" | "tour" | "booking";
 
 export function openChatSection(input: {
   section: ChatSection;
-  tourId?: string | null;
+  tourId?: string | null | undefined;
   facts: ChatFacts;
-  now?: Date;
-  registered?: { tourId: string | null; key: string }[];
+  now?: Date | undefined;
+  registered?: { tourId: string | null; key: string }[] | undefined;
 }): ChatAnswer {
   const now = input.now ?? new Date();
   if (!input.facts.ok) return catalogFailureReply();
@@ -1398,8 +1398,8 @@ export function groundChatAnswer(input: {
   calls: ChatToolCall[];
   suggest: "none" | "booking" | "interest" | "choices";
   facts: ChatFacts;
-  now?: Date;
-  registered?: { tourId: string | null; key: string }[];
+  now?: Date | undefined;
+  registered?: { tourId: string | null; key: string }[] | undefined;
 }): ChatAnswer & { selectedTourId: string | null; grounded: boolean } {
   if (!input.facts.ok) return { ...catalogFailureReply(), selectedTourId: null, grounded: false };
   const now = input.now ?? new Date();

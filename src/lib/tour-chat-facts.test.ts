@@ -846,8 +846,8 @@ describe("public tour chat limit", () => {
 
 describe("telegram chat bucket", () => {
   it("keeps a telegram chat separate only when the server secret matches", () => {
-    const previous = process.env.CHAT_INTENT_API_SECRET;
-    process.env.CHAT_INTENT_API_SECRET = "1234567890abcdef";
+    const previous = process.env["CHAT_INTENT_API_SECRET"];
+    process.env["CHAT_INTENT_API_SECRET"] = "1234567890abcdef";
     const accepted = new Request("https://example.test/api/tour-chat", {
       headers: { "x-chat-client": "telegram", "x-api-secret": "1234567890abcdef", "x-chat-id": "42" },
     });
@@ -856,8 +856,8 @@ describe("telegram chat bucket", () => {
     });
     assert.equal(telegramRateKey(accepted), "telegram:42");
     assert.equal(telegramRateKey(rejected), null);
-    if (previous === undefined) delete process.env.CHAT_INTENT_API_SECRET;
-    else process.env.CHAT_INTENT_API_SECRET = previous;
+    if (previous === undefined) delete process.env["CHAT_INTENT_API_SECRET"];
+    else process.env["CHAT_INTENT_API_SECRET"] = previous;
   });
 });
 

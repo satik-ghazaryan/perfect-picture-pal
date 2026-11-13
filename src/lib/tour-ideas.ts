@@ -553,7 +553,7 @@ export async function generateTourIdeas(input: TourIdeaInput): Promise<{
     throw new Error(ideaRequestError(response.status));
   }
   const payload = (await response.json().catch(() => null)) as GeneratePayload | null;
-  let ideas = Array.isArray(payload?.ideas)
+  const ideas = Array.isArray(payload?.ideas)
     ? payload.ideas.map(normalizeTourIdea).filter((item): item is TourIdeaResult => item !== null)
     : [];
   const summary = typeof payload?.research_summary === "string" ? payload.research_summary : "";

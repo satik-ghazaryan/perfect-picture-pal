@@ -184,12 +184,12 @@ function readToolCalls(value: unknown): ChatToolCall[] {
 
 export async function answerChatWithTools(input: {
   message: string;
-  history?: ChatTurn[];
-  selectedTourId?: string | null;
+  history?: ChatTurn[] | undefined;
+  selectedTourId?: string | null | undefined;
   facts: ChatFacts;
-  now?: Date;
-  requestId?: string | null;
-  skipModel?: boolean;
+  now?: Date | undefined;
+  requestId?: string | null | undefined;
+  skipModel?: boolean | undefined;
 }): Promise<{ reply: string; calls: ChatToolCall[]; suggest: "none" | "booking" | "interest" | "choices" } | null> {
   if (input.skipModel || !input.facts.ok) return null;
   const base = envValue("PYTHON_BACKEND_URL").replace(/\/$/, "");

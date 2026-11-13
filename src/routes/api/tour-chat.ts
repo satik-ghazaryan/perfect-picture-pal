@@ -79,7 +79,7 @@ async function handlePost({ request }: { request: Request }) {
     return json(429, { error: "Շատ հարց եկավ կարճ ժամանակում։ Մի րոպե հետո նորից փորձեք։ Ամրագրումը էջում բաց է մնում։" });
   }
   if (record["action"] === "interest-preview") {
-    if (process.env.VERCEL_ENV === "production") return json(404, { error: "Չկա։" });
+    if (process.env["VERCEL_ENV"] === "production") return json(404, { error: "Չկա։" });
     const scenario = interestPreviewScenario();
     return json(200, {
       unknown: scenario.loriNotified === false,
@@ -115,7 +115,7 @@ async function handlePost({ request }: { request: Request }) {
     });
   }
   if (record["action"] === "interest-publish") {
-    if (process.env.VERCEL_ENV === "production") return json(404, { error: "Չկա։" });
+    if (process.env["VERCEL_ENV"] === "production") return json(404, { error: "Չկա։" });
     const departureId = typeof record["departureId"] === "string" ? record["departureId"] : "";
     const dateLabel = typeof record["dateLabel"] === "string" ? record["dateLabel"].slice(0, 40) : "";
     const time = typeof record["time"] === "string" ? record["time"].slice(0, 5) : "";
@@ -137,18 +137,18 @@ async function handlePost({ request }: { request: Request }) {
     });
   }
   if (record["action"] === "isolated-booking") {
-    if (process.env.VERCEL_ENV === "production") return json(404, { error: "Չկա։" });
+    if (process.env["VERCEL_ENV"] === "production") return json(404, { error: "Չկա։" });
     return json(200, { isolated: isolatedBookingChecks() });
   }
   if (record["action"] === "isolated-ticket") {
-    if (process.env.VERCEL_ENV === "production") return json(404, { error: "Չկա։" });
+    if (process.env["VERCEL_ENV"] === "production") return json(404, { error: "Չկա։" });
     const code = typeof record["ticketCode"] === "string" ? record["ticketCode"] : "";
     const ticket = findPreviewTicket(code);
     if (!ticket) return json(404, { error: "Տոմսը չի գտնվել։" });
     return json(200, { ticket });
   }
   if (record["action"] === "isolated-confirm") {
-    if (process.env.VERCEL_ENV === "production") return json(404, { error: "Չկա։" });
+    if (process.env["VERCEL_ENV"] === "production") return json(404, { error: "Չկա։" });
     const adults = typeof record["adults"] === "number" ? record["adults"] : 0;
     const children = typeof record["children"] === "number" ? record["children"] : 0;
     return json(200, {
@@ -210,7 +210,7 @@ async function handlePost({ request }: { request: Request }) {
     && (section === "upcoming" || section === "directions" || section === "tour" || section === "booking");
   if (!openSection && (message.length < 1 || message.length > 500)) return json(422, { error: "Գրիր մինչև 500 նիշանոց հարց։" });
   try {
-    if (!openSection && process.env.VERCEL_ENV !== "production" && message.toLocaleLowerCase("hy").includes("թեստային ամրագրում")) {
+    if (!openSection && process.env["VERCEL_ENV"] !== "production" && message.toLocaleLowerCase("hy").includes("թեստային ամրագրում")) {
       const fixture = previewFixtureOffer();
       return json(200, { reply: fixture.reply, booking: fixture.booking });
     }
@@ -223,7 +223,7 @@ async function handlePost({ request }: { request: Request }) {
       shownTourIds: readShown(record["shownTourIds"]),
       registered: readRegistered(record["registered"]),
       requestId: request.headers.get("x-vercel-id") ?? request.headers.get("x-request-id"),
-      skipModel: process.env.VERCEL_ENV !== "production" && request.headers.get("x-chat-intent") === "skip",
+      skipModel: process.env["VERCEL_ENV"] !== "production" && request.headers.get("x-chat-intent") === "skip",
     });
     const delivery = interestDeliveryPlan();
     const channel = interestOfferEnabled() ? delivery.mode : "off";
