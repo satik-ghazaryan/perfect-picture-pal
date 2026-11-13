@@ -90,3 +90,91 @@ def test_missing_secret_is_rejected(monkeypatch):
     monkeypatch.delenv("TELEGRAM_WEBHOOK_SECRET", raising=False)
     os.environ.pop("TELEGRAM_WEBHOOK_SECRET", None)
     assert webhook_authorized("webhook-secret-16") is False
+
+
+class _Response:
+    def __init__(self, payload=None, status=200):
+        self._payload = payload
+        self.status_code = status
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError("http error")
+
+    def json(self):
+        return self._payload
+
+
+class _Database:
+    def __init__(self):
+        self.rows = {}
+        self.fail = False
+
+    def get(self, url, params, headers, timeout):
+        assert url == "https://project.supabase.co/rest/v1/telegram_chats"
+        assert headers["apikey"] == "service-role-key-0123456789"
+        if self.fail:
+            return _Response(status=500)
+        chat_id = int(params["chat_id"].removeprefix("eq."))
+        return _Response([self.rows[chat_id]] if chat_id in self.rows else [])
+
+    def post(self, url, params, headers, json, timeout):
+        assert params == {"on_conflict": "chat_id"}
+        assert "merge-duplicates" in headers["prefer"]
+        if self.fail:
+            return _Response(status=500)
+        self.rows[json["chat_id"]] = json
+        return _Response()
+
+
+def test_chat_memory_survives_a_restart(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from functools import partial
+
+    from telegram_bot import load_memory, remember, save_memory
+
+    monkeypatch.setenv("SUPABASE_URL", "https://project.supabase.co/")
+    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "service-role-key-0123456789")
+    database = _Database()
+    now = datetime(2026, 11, 13, 9, 0, tzinfo=timezone.utc)
+    load = partial(load_memory, http=database, now=now)
+    save = partial(save_memory, http=database, now=now)
+
+    first = ChatStore(load=load, save=save)
+    memory = first.get(42)
+    remember(
+        memory,
+        "Դիլիջանի տուրը ինչ արժե, համարս +374 94 123456",
+        {
+            "reply": "8000 դրամ՝ մեկ անձի համար։",
+            "selectedTourId": "dilijan-autumn",
+            "choices": [{"id": "garni", "title": "Գառնի"}],
+        },
+    )
+    assert first.save(42) is True
+    assert "123456" not in str(database.rows[42])
+
+    restarted = ChatStore(load=load, save=save)
+    again = restarted.get(42)
+    assert again.selected == "dilijan-autumn"
+    assert again.choices == [{"id": "garni", "title": "Գառնի"}]
+    assert [turn["role"] for turn in again.history] == ["user", "assistant"]
+    assert restarted.get(7).history == []
+
+    later = partial(load_memory, http=database, now=now + timedelta(days=8))
+    assert ChatStore(load=later, save=save).get(42).history == []
+
+    database.fail = True
+    broken = ChatStore(load=load, save=save)
+    assert broken.get(42).history == []
+    assert broken.save(42) is False
+
+
+def test_chat_memory_stays_local_without_a_database(monkeypatch):
+    from telegram_bot import load_memory, save_memory
+
+    monkeypatch.delenv("SUPABASE_SERVICE_ROLE_KEY", raising=False)
+    assert load_memory(1) is None
+    assert save_memory(1, ChatMemory()) is False
+    store = ChatStore()
+    assert store.get(1) is store.get(1)
