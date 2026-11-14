@@ -1,5 +1,6 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { GuestBookingLookup } from "@/components/guest-booking-lookup";
 import { SiteHeader } from "@/components/site-header";
 import { TouristAuthForm } from "@/components/tourist-auth";
 import {
@@ -104,6 +105,7 @@ function LoginPage() {
             onSuccess={go}
           />
         )}
+        {accountStatus === "ready" && !guideEntry && !driverEntry && <GuestBookingLookup />}
       </main>
     </div>
   );
