@@ -1335,6 +1335,42 @@ export async function signInTourist(identifier: string, password: string) {
   return openAccountSession(user, crypto.randomUUID());
 }
 
+/**
+ * Save a guide's or driver's details. With Supabase this goes through the server, because
+ * the name, the sign-in email and the password cannot be changed from the browser.
+ */
+export async function updateStaffAccount(next: DirectoryUser, password: string) {
+  if (isSupabaseConfigured && supabase) {
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) throw new Error("Մուտքը չի հաստատվել։");
+    const response = await fetch("/api/staff/accounts", {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        id: next.id,
+        role: next.role,
+        fullName: next.fullName,
+        phone: next.phone,
+        email: next.email,
+        password,
+        avatarUrl: next.avatarUrl,
+        bio: next.bio,
+      }),
+    });
+    const payload = (await response.json().catch(() => null)) as { error?: unknown } | null;
+    if (!response.ok) {
+      throw new Error(typeof payload?.error === "string" ? payload.error : "Տվյալները չպահվեցին։");
+    }
+    await updateDirectoryUser({ ...next, email: next.email.trim().toLowerCase(), password: "" });
+    return;
+  }
+  await updateDirectoryUser({ ...next, password: password || next.password });
+}
+
 export async function createStaffAccount(input: {
   role: "guide" | "driver";
   fullName: string;

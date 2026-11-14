@@ -77,6 +77,7 @@ import {
   confirmBookingDeparture,
   loadBookingLinkConflicts,
   createStaffAccount,
+  updateStaffAccount,
   updateDirectoryUser,
   loadAssignmentConflicts,
   loadDepartures,
@@ -1540,20 +1541,21 @@ function StaffSection({
       if (draft.id) {
         const current = users.find((member) => member.id === draft.id);
         if (!current) throw new Error("Անձնակազմի հաշիվը չի գտնվել։");
-        const password = draft.password.trim() || current.password;
-        if (draft.password.trim() && draft.password.trim().length < 4) {
-          throw new Error("Գաղտնաբառը առնվազն 4 նիշ պետք է լինի։");
+        if (draft.password && draft.password.length < 6) {
+          throw new Error("Գաղտնաբառը առնվազն 6 նիշ պետք է լինի։");
         }
-        await updateDirectoryUser({
-          ...current,
-          role,
-          fullName: draft.fullName,
-          phone: draft.phone,
-          email: draft.email,
-          password,
-          avatarUrl: draft.avatarUrl,
-          bio: draft.bio,
-        });
+        await updateStaffAccount(
+          {
+            ...current,
+            role,
+            fullName: draft.fullName,
+            phone: draft.phone,
+            email: draft.email,
+            avatarUrl: draft.avatarUrl,
+            bio: draft.bio,
+          },
+          draft.password,
+        );
         setDraft(emptyStaffDraft);
         await onSaved();
         toast.success("Տվյալները պահվեցին");
