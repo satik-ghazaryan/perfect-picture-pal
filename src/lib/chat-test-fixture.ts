@@ -21,7 +21,7 @@ export function chatTestTour(): Tour {
     location_hy: "Փորձարկում",
     location_en: "Test",
     location_ru: "Тест",
-    image_url: "/favicon.svg",
+    image_url: "/logo.png",
     category: "Փորձարկում",
     type: "Մշակութային",
     departurePlace: CHAT_TEST_PLACE,
