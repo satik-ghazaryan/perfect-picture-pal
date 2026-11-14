@@ -2,7 +2,7 @@
 
 Մեկօրյա տուրեր Արմավիրից. կայք, Telegram բոտ և աշխատանքային էջեր զբոսավարի, վարորդի ու ադմինի համար։
 
-- Կայք՝ https://perfect-picture-pal-beige.vercel.app
+- Կայք՝ https://arignanq.vercel.app
 - Backend (AI և Telegram)՝ https://perfect-picture-pal.onrender.com
 - Ավարտական աշխատանք «Վայբ կոդինգ և բիզնես ավտոմատացում» դասընթացի համար
 

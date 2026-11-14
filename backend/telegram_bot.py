@@ -16,7 +16,7 @@ from telegram_booking import BOOK, booking_step, clean_booking, start_booking
 START_TEXT = "Բարև՜ 👋 Ո՞ւր գնանք այս անգամ։"
 UPCOMING = "Առաջիկա տուրեր"
 DIRECTIONS = "Մեր ուղղությունները"
-SITE_ORIGIN = "https://perfect-picture-pal-beige.vercel.app"
+SITE_ORIGIN = "https://arignanq.vercel.app"
 _TOUR_ID = re.compile(r"^[a-z0-9-]{1,64}$")
 _LINK = re.compile(r"\[([^\]]+)\]\((/tours/[a-z0-9-]+)\)")
 _PRIVATE = re.compile(r"\+?\d[\d\s-]{6,}\d")
