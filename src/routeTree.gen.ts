@@ -16,10 +16,12 @@ import { Route as GuideRouteImport } from './routes/guide'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as LoyaltyRouteImport } from './routes/loyalty'
 import { Route as ProfileRouteImport } from './routes/profile'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as VendorRouteImport } from './routes/vendor'
 import { Route as VirtualRouteImport } from './routes/virtual'
 import { Route as ApiTourChatRouteImport } from './routes/api/tour-chat'
 import { Route as ToursIdRouteImport } from './routes/tours/$id'
+import { Route as ApiBookingsLookupRouteImport } from './routes/api/bookings/lookup'
 import { Route as ApiIdeasGenerateRouteImport } from './routes/api/ideas/generate'
 import { Route as ApiNotificationsDispatchRouteImport } from './routes/api/notifications/dispatch'
 import { Route as ApiPaymentArcaCallbackRouteImport } from './routes/api/payment/arca-callback'
@@ -63,6 +65,11 @@ const ProfileRoute = ProfileRouteImport.update({
   path: '/profile',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const VendorRoute = VendorRouteImport.update({
   id: '/vendor',
   path: '/vendor',
@@ -81,6 +88,11 @@ const ApiTourChatRoute = ApiTourChatRouteImport.update({
 const ToursIdRoute = ToursIdRouteImport.update({
   id: '/tours/$id',
   path: '/tours/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiBookingsLookupRoute = ApiBookingsLookupRouteImport.update({
+  id: '/api/bookings/lookup',
+  path: '/api/bookings/lookup',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiIdeasGenerateRoute = ApiIdeasGenerateRouteImport.update({
@@ -129,10 +141,12 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/loyalty': typeof LoyaltyRoute
   '/profile': typeof ProfileRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/vendor': typeof VendorRoute
   '/virtual': typeof VirtualRoute
   '/api/tour-chat': typeof ApiTourChatRoute
   '/tours/$id': typeof ToursIdRoute
+  '/api/bookings/lookup': typeof ApiBookingsLookupRoute
   '/api/ideas/generate': typeof ApiIdeasGenerateRoute
   '/api/notifications/dispatch': typeof ApiNotificationsDispatchRoute
   '/api/payment/arca-callback': typeof ApiPaymentArcaCallbackRoute
@@ -149,10 +163,12 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/loyalty': typeof LoyaltyRoute
   '/profile': typeof ProfileRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/vendor': typeof VendorRoute
   '/virtual': typeof VirtualRoute
   '/api/tour-chat': typeof ApiTourChatRoute
   '/tours/$id': typeof ToursIdRoute
+  '/api/bookings/lookup': typeof ApiBookingsLookupRoute
   '/api/ideas/generate': typeof ApiIdeasGenerateRoute
   '/api/notifications/dispatch': typeof ApiNotificationsDispatchRoute
   '/api/payment/arca-callback': typeof ApiPaymentArcaCallbackRoute
@@ -170,10 +186,12 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/loyalty': typeof LoyaltyRoute
   '/profile': typeof ProfileRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/vendor': typeof VendorRoute
   '/virtual': typeof VirtualRoute
   '/api/tour-chat': typeof ApiTourChatRoute
   '/tours/$id': typeof ToursIdRoute
+  '/api/bookings/lookup': typeof ApiBookingsLookupRoute
   '/api/ideas/generate': typeof ApiIdeasGenerateRoute
   '/api/notifications/dispatch': typeof ApiNotificationsDispatchRoute
   '/api/payment/arca-callback': typeof ApiPaymentArcaCallbackRoute
@@ -192,10 +210,12 @@ export interface FileRouteTypes {
     | '/login'
     | '/loyalty'
     | '/profile'
+    | '/reset-password'
     | '/vendor'
     | '/virtual'
     | '/api/tour-chat'
     | '/tours/$id'
+    | '/api/bookings/lookup'
     | '/api/ideas/generate'
     | '/api/notifications/dispatch'
     | '/api/payment/arca-callback'
@@ -212,10 +232,12 @@ export interface FileRouteTypes {
     | '/login'
     | '/loyalty'
     | '/profile'
+    | '/reset-password'
     | '/vendor'
     | '/virtual'
     | '/api/tour-chat'
     | '/tours/$id'
+    | '/api/bookings/lookup'
     | '/api/ideas/generate'
     | '/api/notifications/dispatch'
     | '/api/payment/arca-callback'
@@ -232,10 +254,12 @@ export interface FileRouteTypes {
     | '/login'
     | '/loyalty'
     | '/profile'
+    | '/reset-password'
     | '/vendor'
     | '/virtual'
     | '/api/tour-chat'
     | '/tours/$id'
+    | '/api/bookings/lookup'
     | '/api/ideas/generate'
     | '/api/notifications/dispatch'
     | '/api/payment/arca-callback'
@@ -253,10 +277,12 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   LoyaltyRoute: typeof LoyaltyRoute
   ProfileRoute: typeof ProfileRoute
+  ResetPasswordRoute: typeof ResetPasswordRoute
   VendorRoute: typeof VendorRoute
   VirtualRoute: typeof VirtualRoute
   ApiTourChatRoute: typeof ApiTourChatRoute
   ToursIdRoute: typeof ToursIdRoute
+  ApiBookingsLookupRoute: typeof ApiBookingsLookupRoute
   ApiIdeasGenerateRoute: typeof ApiIdeasGenerateRoute
   ApiNotificationsDispatchRoute: typeof ApiNotificationsDispatchRoute
   ApiPaymentArcaCallbackRoute: typeof ApiPaymentArcaCallbackRoute
@@ -317,6 +343,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProfileRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/vendor': {
       id: '/vendor'
       path: '/vendor'
@@ -343,6 +376,13 @@ declare module '@tanstack/react-router' {
       path: '/tours/$id'
       fullPath: '/tours/$id'
       preLoaderRoute: typeof ToursIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/bookings/lookup': {
+      id: '/api/bookings/lookup'
+      path: '/api/bookings/lookup'
+      fullPath: '/api/bookings/lookup'
+      preLoaderRoute: typeof ApiBookingsLookupRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/ideas/generate': {
@@ -405,10 +445,12 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   LoyaltyRoute: LoyaltyRoute,
   ProfileRoute: ProfileRoute,
+  ResetPasswordRoute: ResetPasswordRoute,
   VendorRoute: VendorRoute,
   VirtualRoute: VirtualRoute,
   ApiTourChatRoute: ApiTourChatRoute,
   ToursIdRoute: ToursIdRoute,
+  ApiBookingsLookupRoute: ApiBookingsLookupRoute,
   ApiIdeasGenerateRoute: ApiIdeasGenerateRoute,
   ApiNotificationsDispatchRoute: ApiNotificationsDispatchRoute,
   ApiPaymentArcaCallbackRoute: ApiPaymentArcaCallbackRoute,

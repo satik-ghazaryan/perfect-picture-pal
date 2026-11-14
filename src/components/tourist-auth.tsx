@@ -1,3 +1,4 @@
+import { requestPasswordReset } from "@/lib/password-reset";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -62,6 +63,25 @@ export function TouristAuthForm({
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetNote, setResetNote] = useState("");
+
+  const sendReset = async () => {
+    setPending(true);
+    setError("");
+    setResetNote("");
+    try {
+      await requestPasswordReset(resetEmail, window.location.origin);
+      setResetNote(
+        "Եթե այս հասցեով հաշիվ կա, մի քանի րոպեից կստանաք նամակ գաղտնաբառը փոխելու հղումով։ Նայեք նաև Spam թղթապանակը։",
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Նամակը չուղարկվեց։");
+    } finally {
+      setPending(false);
+    }
+  };
 
   const signIn = async () => {
     setPending(true);
@@ -162,6 +182,53 @@ export function TouristAuthForm({
               {pending ? "Մուտք է գործում" : "Մուտք"}
             </Button>
           </form>
+          <div className="mt-3 border-t border-border pt-3">
+            {!resetting ? (
+              <button
+                type="button"
+                className="text-sm font-semibold text-primary underline-offset-4 hover:underline"
+                onClick={() => {
+                  setResetting(true);
+                  setError("");
+                  setResetEmail(identifier.includes("@") ? identifier : "");
+                }}
+              >
+                Մոռացե՞լ եք գաղտնաբառը
+              </button>
+            ) : (
+              <form
+                className="space-y-3"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void sendReset();
+                }}
+              >
+                <div className="space-y-1.5">
+                  <Label htmlFor="reset-email">Ձեր հաշվի էլ. փոստը</Label>
+                  <Input
+                    id="reset-email"
+                    type="email"
+                    value={resetEmail}
+                    onChange={(event) => setResetEmail(event.target.value)}
+                    autoComplete="email"
+                    className="h-11 rounded-2xl"
+                  />
+                </div>
+                {resetNote && <p className="text-xs text-muted-foreground">{resetNote}</p>}
+                <Button
+                  type="submit"
+                  variant="outline"
+                  className="h-11 w-full rounded-full font-bold"
+                  disabled={pending}
+                >
+                  {pending ? "Ուղարկվում է" : "Ուղարկել գաղտնաբառը փոխելու հղումը"}
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  Զբոսավարների և վարորդների գաղտնաբառը փոխում է ադմինիստրատորը։
+                </p>
+              </form>
+            )}
+          </div>
         </TabsContent>
 
         <TabsContent value="signup">
