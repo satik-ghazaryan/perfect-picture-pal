@@ -205,11 +205,9 @@ export function BookingPanel({ tour }: { tour: Tour }) {
   const liveCredit = !remote && signedInTourist ? Math.min(activeCreditTotal(phone), total) : 0;
   const balance = quoteHold?.balance ?? liveBalance;
   const creditApplied = quoteHold?.credit ?? liveCredit;
-  const pointsOn = remote
-    ? false
-    : quoteHold
-      ? quoteHold.usePoints
-      : signedInTourist && usePoints && liveBalance > 0;
+  const pointsOn = quoteHold
+    ? quoteHold.usePoints
+    : signedInTourist && usePoints && liveBalance > 0;
   const quote = quoteCheckout(balance, total - creditApplied, pointsOn, cashback / 100);
   const coveredByPoints = quote.payable === 0 && (pointsOn || creditApplied > 0);
   const soldOut = seatLimit < 1;
@@ -621,7 +619,7 @@ export function BookingPanel({ tour }: { tour: Tour }) {
                   </button>
                 );
               })}
-              {!remote && signedInTourist && balance > 0 && (
+              {signedInTourist && balance > 0 && (
                 <div className="flex items-start gap-3 rounded-2xl border border-border px-3 py-3">
                   <Checkbox
                     id="use-points"
@@ -776,6 +774,11 @@ export function BookingPanel({ tour }: { tour: Tour }) {
                       {receipt?.notified && (
                         <p className="mt-1 text-[11px] text-muted-foreground">
                           SMS և WhatsApp ուղարկված է
+                        </p>
+                      )}
+                      {receipt?.notifyTestMode && (
+                        <p className="mt-1 text-[11px] text-muted-foreground">
+                          Թեստային ռեժիմ. SMS և WhatsApp չեն ուղարկվել, պահեք այս տոմսը։
                         </p>
                       )}
                       {receipt?.pointsSaved && receipt.redeemed > 0 && (

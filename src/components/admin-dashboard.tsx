@@ -163,6 +163,21 @@ const paymentStatusLabel = {
   FAILED: "Չհաջողված",
 } as const;
 
+/**
+ * A booking with nothing to pay is not "paid": the tour was free, or points covered it.
+ * Shown separately so the paid count and the revenue only reflect money that came in.
+ */
+function paymentText(booking: {
+  paymentStatus: keyof typeof paymentStatusLabel | null;
+  amount: number;
+  usedPoints?: number;
+}) {
+  if (booking.paymentStatus === "SUCCESS" && booking.amount === 0) {
+    return (booking.usedPoints ?? 0) > 0 ? "Միավորներով" : "Անվճար";
+  }
+  return booking.paymentStatus ? paymentStatusLabel[booking.paymentStatus] : "—";
+}
+
 type ChapterDraft = {
   id: string;
   title: string;
@@ -2180,6 +2195,7 @@ function BookingsSection({
     paymentStatus: keyof typeof paymentStatusLabel | null;
     status: "booked" | "checked_in";
     amount: number;
+    usedPoints?: number;
     adults: number;
     children: number;
   }[];
@@ -2194,7 +2210,9 @@ function BookingsSection({
   }[];
   onConfirmLink?: (bookingId: string) => Promise<void>;
 }) {
-  const paid = bookings.filter((booking) => booking.paymentStatus === "SUCCESS").length;
+  const paid = bookings.filter(
+    (booking) => booking.paymentStatus === "SUCCESS" && booking.amount > 0,
+  ).length;
   const pending = bookings.filter((booking) => booking.paymentStatus === "PENDING").length;
   const checkedIn = bookings.filter((booking) => booking.status === "checked_in").length;
   const titleOf = (tourId: string) => {
@@ -2231,7 +2249,7 @@ function BookingsSection({
         phone: booking.phone,
         email: emailForPhone(users, booking.phone),
         seats: booking.adults + booking.children,
-        paymentStatus: booking.paymentStatus ? paymentStatusLabel[booking.paymentStatus] : "—",
+        paymentStatus: paymentText(booking),
         notes: "",
       }));
     try {
@@ -2366,9 +2384,7 @@ function BookingsSection({
                 <TableCell>
                   {booking.paymentProvider ? paymentLabel[booking.paymentProvider] : "—"}
                 </TableCell>
-                <TableCell>
-                  {booking.paymentStatus ? paymentStatusLabel[booking.paymentStatus] : "—"}
-                </TableCell>
+                <TableCell>{paymentText(booking)}</TableCell>
                 <TableCell>
                   {booking.status === "checked_in" ? "Գրանցված է" : "Սպասում է"}
                 </TableCell>

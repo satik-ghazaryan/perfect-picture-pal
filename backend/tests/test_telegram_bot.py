@@ -234,7 +234,7 @@ def test_booking_reply_sends_people_to_the_booking_form_instead_of_claiming_a_bo
         {"booking": {"tourId": "dilijan-autumn"}},
     )
     assert "https://perfect-picture-pal-beige.vercel.app/tours/dilijan-autumn#book" in text
-    assert "լրացրու անունդ ու հեռախոսդ" in text
+    assert "«🎫 Ամրագրել»" in text
     assert "արված է" not in text
 
 

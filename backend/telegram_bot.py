@@ -11,6 +11,8 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 
+from telegram_booking import BOOK, booking_step, clean_booking, start_booking
+
 START_TEXT = "Բարև՜ 👋 Ո՞ւր գնանք այս անգամ։"
 UPCOMING = "Առաջիկա տուրեր"
 DIRECTIONS = "Մեր ուղղությունները"
@@ -69,11 +71,13 @@ class ChatMemory:
     history: list[dict[str, str]] = field(default_factory=list)
     selected: str | None = None
     choices: list[dict[str, str]] = field(default_factory=list)
+    booking: dict | None = None
 
     def reset(self) -> None:
         self.history.clear()
         self.selected = None
         self.choices.clear()
+        self.booking = None
 
 
 MEMORY_TURNS = 16
@@ -130,16 +134,21 @@ def load_memory(chat_id: int, now: datetime | None = None, http=httpx) -> ChatMe
     if not target:
         return None
     url, key = target
-    try:
-        response = http.get(
-            url,
-            params={"chat_id": f"eq.{chat_id}", "select": "history,selected,choices,updated_at"},
-            headers=_headers(key),
-            timeout=4,
-        )
-        response.raise_for_status()
-        rows = response.json()
-    except Exception:
+    rows = None
+    for columns in ("history,selected,choices,booking,updated_at", "history,selected,choices,updated_at"):
+        try:
+            response = http.get(
+                url,
+                params={"chat_id": f"eq.{chat_id}", "select": columns},
+                headers=_headers(key),
+                timeout=4,
+            )
+            response.raise_for_status()
+            rows = response.json()
+            break
+        except Exception:
+            continue
+    if rows is None:
         return None
     row = rows[0] if isinstance(rows, list) and rows and isinstance(rows[0], dict) else None
     if not row:
@@ -157,6 +166,7 @@ def load_memory(chat_id: int, now: datetime | None = None, http=httpx) -> ChatMe
         history=_turns(row.get("history")),
         selected=selected if isinstance(selected, str) and _TOUR_ID.fullmatch(selected) else None,
         choices=_choices(row.get("choices")),
+        booking=clean_booking(row.get("booking")),
     )
 
 
@@ -165,24 +175,29 @@ def save_memory(chat_id: int, memory: ChatMemory, now: datetime | None = None, h
     if not target:
         return False
     url, key = target
-    try:
-        response = http.post(
-            url,
-            params={"on_conflict": "chat_id"},
-            headers={**_headers(key), "prefer": "resolution=merge-duplicates,return=minimal"},
-            json={
-                "chat_id": chat_id,
-                "history": _turns(memory.history),
-                "selected": memory.selected,
-                "choices": _choices(memory.choices),
-                "updated_at": (now or datetime.now(timezone.utc)).isoformat(),
-            },
-            timeout=4,
-        )
-        response.raise_for_status()
-    except Exception:
-        return False
-    return True
+    row = {
+        "chat_id": chat_id,
+        "history": _turns(memory.history),
+        "selected": memory.selected,
+        "choices": _choices(memory.choices),
+        "booking": clean_booking(memory.booking),
+        "updated_at": (now or datetime.now(timezone.utc)).isoformat(),
+    }
+    # Without the booking column (migration not run yet) the chat is still kept.
+    for body in (row, {k: v for k, v in row.items() if k != "booking"}):
+        try:
+            response = http.post(
+                url,
+                params={"on_conflict": "chat_id"},
+                headers={**_headers(key), "prefer": "resolution=merge-duplicates,return=minimal"},
+                json=body,
+                timeout=4,
+            )
+            response.raise_for_status()
+            return True
+        except Exception:
+            continue
+    return False
 
 
 class ChatStore:
@@ -208,11 +223,12 @@ class ChatStore:
         return self._save(chat_id, memory) if memory is not None else False
 
 
-def main_keyboard(choices: list[dict[str, str]] | None = None) -> dict:
-    rows = [[UPCOMING], [DIRECTIONS]]
+def main_keyboard(choices: list[dict[str, str]] | None = None, can_book: bool = False) -> dict:
+    rows = [[BOOK]] if can_book else []
+    rows += [[UPCOMING], [DIRECTIONS]]
     for choice in (choices or [])[:6]:
         title = choice.get("title", "").strip()
-        if title and title not in {UPCOMING, DIRECTIONS}:
+        if title and title not in {UPCOMING, DIRECTIONS, BOOK}:
             rows.append([title])
     return {
         "keyboard": [[{"text": item} for item in row] for row in rows],
@@ -248,8 +264,7 @@ def render_reply(text: str, origin: str, payload: dict | None = None) -> str:
         url = tour_url(origin, str(booking["tourId"]))
         if url and url not in body and url not in " ".join(extra):
             extra.append(
-                "Ամրագրումը կատարվում է կայքում։ Բացիր էջը, սեղմիր «Ամրագրել հիմա» "
-                f"և լրացրու անունդ ու հեռախոսդ՝ {url}#book"
+                f"Կարող ես ամրագրել հենց այստեղ՝ սեղմիր «{BOOK}», կամ կայքում՝ {url}#book"
             )
     if extra:
         body = f"{body}\n" + "\n".join(extra)
@@ -337,7 +352,13 @@ def ask_site(body: dict, chat_id: int) -> dict:
     return payload
 
 
-def send_message(chat_id: int, text: str, choices: list[dict[str, str]] | None = None) -> None:
+def send_message(
+    chat_id: int,
+    text: str,
+    choices: list[dict[str, str]] | None = None,
+    keyboard: dict | None = None,
+    can_book: bool = False,
+) -> None:
     token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
     if len(token) < 20:
         raise RuntimeError("Telegram bot token is not configured.")
@@ -347,12 +368,27 @@ def send_message(chat_id: int, text: str, choices: list[dict[str, str]] | None =
             "chat_id": chat_id,
             "text": text,
             "parse_mode": "HTML",
-            "reply_markup": main_keyboard(choices),
+            "reply_markup": keyboard or main_keyboard(choices, can_book),
             "disable_web_page_preview": True,
         },
         timeout=10,
     )
     response.raise_for_status()
+
+
+def booking_reply(memory: ChatMemory, text: str, contact_phone: str | None, chat_id: int, http=httpx) -> tuple[str, dict] | None:
+    """The bot's own booking flow. None when the message is not part of a booking."""
+    if text == "/start":
+        memory.booking = None
+        return None
+    origin = site_origin()
+    if memory.booking:
+        return booking_step(memory, text, contact_phone, chat_id, origin, http=http)
+    if text == BOOK:
+        if not memory.selected:
+            return ("Նախ ընտրիր տուրը, հետո սեղմիր «Ամրագրել»։", {})
+        return start_booking(memory, memory.selected, f"{origin}/tours/{memory.selected}#book", http=http)
+    return None
 
 
 def answer_for(memory: ChatMemory, text: str, chat_id: int, ask=ask_site) -> tuple[str, str]:
@@ -361,6 +397,9 @@ def answer_for(memory: ChatMemory, text: str, chat_id: int, ask=ask_site) -> tup
         return START_TEXT, "rules"
     payload = ask(site_body(memory, plan), chat_id)
     remember(memory, text, payload)
+    booking = payload.get("booking") if isinstance(payload.get("booking"), dict) else None
+    if booking and isinstance(booking.get("tourId"), str) and _TOUR_ID.fullmatch(booking["tourId"]):
+        memory.selected = booking["tourId"]
     reply = payload.get("reply") if isinstance(payload.get("reply"), str) else ""
     if not reply:
         reply = "Չաթը հիմա չկարողացավ պատասխանել։ Կարող ես բացել կատալոգը։"
