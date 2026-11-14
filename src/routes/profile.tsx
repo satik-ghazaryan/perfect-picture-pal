@@ -47,6 +47,8 @@ import {
   type BookingRecord,
 } from "@/lib/guide-api";
 import { isSupabaseConfigured } from "@/lib/supabase";
+import { claimRememberedGuestBookings } from "@/lib/guest-claims";
+import { LinkGuestBooking } from "@/components/link-guest-booking";
 import { formatAssignedDepartureDate } from "@/lib/calendar-date";
 
 export const Route = createFileRoute("/profile")({
@@ -108,6 +110,7 @@ function ProfilePage() {
   const portal = useSyncExternalStore(subscribePortal, getPortalSnapshot, getPortalServerSnapshot);
   const [ownBookings, setOwnBookings] = useState<BookingRecord[]>([]);
   const [bookingsError, setBookingsError] = useState("");
+  const [bookingsVersion, setBookingsVersion] = useState(0);
   const wallet = useSyncExternalStore(
     subscribeLoyalty,
     getLoyaltySnapshot,
@@ -133,7 +136,19 @@ function ProfilePage() {
   useEffect(() => {
     if (!ready || !isSupabaseConfigured || session?.role !== "tourist" || !session.id) return;
     let cancelled = false;
-    void loadOwnBookings(session.id)
+    // Guest bookings made on this device join the account first, so they show in the list.
+    void claimRememberedGuestBookings()
+      .catch(() => [] as string[])
+      .then((linked) => {
+        if (!cancelled && linked.length > 0) {
+          toast.success(
+            linked.length === 1
+              ? `Ամրագրումը (${linked[0]}) կցվեց ձեր հաշվին։`
+              : `${linked.length} ամրագրում կցվեց ձեր հաշվին։`,
+          );
+        }
+        return loadOwnBookings(session.id);
+      })
       .then((rows) => {
         if (cancelled) return;
         setOwnBookings(rows);
@@ -147,7 +162,7 @@ function ProfilePage() {
     return () => {
       cancelled = true;
     };
-  }, [ready, session]);
+  }, [ready, session, bookingsVersion]);
 
   useEffect(() => {
     if (!ready) return;
@@ -259,6 +274,10 @@ function ProfilePage() {
           </div>
           <RedeemPoints phone={phone} fullName={fullName} points={points} credits={credits} />
         </section>
+
+        {isSupabaseConfigured && (
+          <LinkGuestBooking onLinked={() => setBookingsVersion((value) => value + 1)} />
+        )}
 
         <Tabs defaultValue="current">
           <TabsList className="grid h-auto w-full grid-cols-1 gap-1 rounded-2xl p-1 sm:grid-cols-3">

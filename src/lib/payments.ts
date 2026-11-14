@@ -1,3 +1,4 @@
+import { rememberGuestBooking } from "@/lib/guest-claims";
 import { peekNextSeat, registerBooking } from "@/lib/guide-api";
 import { partySize, shouldDeliverTicket } from "@/lib/departure-booking";
 import { requestCarriesPaymentSecret, serverPaymentSecret } from "@/lib/payment-secret";
@@ -678,6 +679,9 @@ async function confirmDepartureBooking(input: {
     }
     return { ok: false, status: "FAILED", message: data.message || "Ամրագրումը չպահպանվեց։" };
   }
+
+  // Kept on this device so the booking can join the account after the person signs in.
+  rememberGuestBooking(input.idempotencyKey, input.guestProof);
 
   const seatNumbers = Array.isArray(data.seat_numbers)
     ? data.seat_numbers.join(", ")
