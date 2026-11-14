@@ -122,7 +122,10 @@ def option_text(option: dict) -> str:
 def load_departures(tour_id: str, http=httpx, today: str | None = None) -> tuple[dict, list[dict]] | None:
     """The tour and its next bookable dates. None when the database cannot be reached."""
     target = supabase_target()
-    if not target or not _TOUR_ID.fullmatch(tour_id):
+    if not target:
+        print("telegram booking: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is missing on the server", flush=True)
+        return None
+    if not _TOUR_ID.fullmatch(tour_id):
         return None
     base, key = target
     day = today or datetime.now(YEREVAN).date().isoformat()
@@ -150,7 +153,9 @@ def load_departures(tour_id: str, http=httpx, today: str | None = None) -> tuple
         )
         departures.raise_for_status()
         dates = departures.json()
-    except Exception:
+    except Exception as error:
+        status = getattr(getattr(error, "response", None), "status_code", None)
+        print(f"telegram booking: departures not loaded ({type(error).__name__} {status or ''})".strip(), flush=True)
         return None
     if not isinstance(rows, list) or not rows or not isinstance(rows[0], dict):
         return {}, []
