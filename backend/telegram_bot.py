@@ -428,6 +428,7 @@ def register_webhook() -> None:
     except Exception:
         ok = False
     print(f"telegram webhook registered: {str(ok).lower()}", flush=True)
+    print(f"telegram database configured: {str(_database() is not None).lower()}", flush=True)
     if not ok:
         return
     try:
