@@ -485,20 +485,44 @@ export async function listBookings(tourId: string): Promise<BookingRecord[]> {
   return data.map(mapBooking);
 }
 
+const OWN_BOOKING_COLUMNS =
+  "id, tour_id, departure_id, passenger_name, phone, seat_number, ticket_code, status, adults, children, payment_provider, payment_status, amount, attendance";
+
 export async function loadOwnBookings(userId: string) {
   if (!supabase || !userId) return [];
-  const { data, error } = await supabase
+  const client = supabase;
+  const withDates = await client
     .from("bookings")
-    .select(
-      "id, tour_id, departure_id, passenger_name, phone, seat_number, ticket_code, status, adults, children, payment_provider, payment_status, amount, attendance, departures(departure_date)",
-    )
+    .select(`${OWN_BOOKING_COLUMNS}, departures(departure_date)`)
     .eq("user_id", userId);
-  if (error) throw new Error("Ամրագրումները չբեռնվեցին։");
-  return data.map((row) => {
+  if (!withDates.error) {
+    return withDates.data.map((row) => {
+      const booking = mapBooking(row);
+      const departure = row.departures;
+      const departureDate =
+        departure && !Array.isArray(departure) ? departure.departure_date : null;
+      if (typeof departureDate === "string") booking.departureDate = departureDate;
+      return booking;
+    });
+  }
+  // The departure date is a convenience. If reading it fails, still show the bookings.
+  const plain = await client.from("bookings").select(OWN_BOOKING_COLUMNS).eq("user_id", userId);
+  if (plain.error) throw new Error("Ամրագրումները չբեռնվեցին։");
+  const departureIds = [
+    ...new Set(plain.data.flatMap((row) => (row.departure_id ? [row.departure_id] : []))),
+  ];
+  const dates = new Map<string, string>();
+  if (departureIds.length > 0) {
+    const { data } = await client
+      .from("departures")
+      .select("id, departure_date")
+      .in("id", departureIds);
+    for (const row of data ?? []) dates.set(row.id, row.departure_date);
+  }
+  return plain.data.map((row) => {
     const booking = mapBooking(row);
-    const departure = row.departures;
-    const departureDate = departure && !Array.isArray(departure) ? departure.departure_date : null;
-    if (typeof departureDate === "string") booking.departureDate = departureDate;
+    const date = row.departure_id ? dates.get(row.departure_id) : undefined;
+    if (date) booking.departureDate = date;
     return booking;
   });
 }

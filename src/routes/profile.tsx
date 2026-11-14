@@ -107,6 +107,7 @@ function ProfilePage() {
   const catalog = useSyncExternalStore(subscribeAdmin, getAdminSnapshot, getAdminServerSnapshot);
   const portal = useSyncExternalStore(subscribePortal, getPortalSnapshot, getPortalServerSnapshot);
   const [ownBookings, setOwnBookings] = useState<BookingRecord[]>([]);
+  const [bookingsError, setBookingsError] = useState("");
   const wallet = useSyncExternalStore(
     subscribeLoyalty,
     getLoyaltySnapshot,
@@ -134,10 +135,14 @@ function ProfilePage() {
     let cancelled = false;
     void loadOwnBookings(session.id)
       .then((rows) => {
-        if (!cancelled) setOwnBookings(rows);
+        if (cancelled) return;
+        setOwnBookings(rows);
+        setBookingsError("");
       })
-      .catch(() => {
-        if (!cancelled) setOwnBookings([]);
+      .catch((reason) => {
+        if (cancelled) return;
+        setOwnBookings([]);
+        setBookingsError(reason instanceof Error ? reason.message : "Ամրագրումները չբեռնվեցին։");
       });
     return () => {
       cancelled = true;
@@ -269,7 +274,12 @@ function ProfilePage() {
           </TabsList>
 
           <TabsContent value="current" className="mt-4 space-y-4">
-            {upcoming.length === 0 ? (
+            {bookingsError ? (
+              <p className="rounded-3xl border border-destructive/40 bg-card px-4 py-3 text-sm text-destructive">
+                {bookingsError} Թարմացրեք էջը։ Եթե չօգնի, ամրագրումը կարող եք գտնել տոմսի կոդով
+                Մուտք էջում։
+              </p>
+            ) : upcoming.length === 0 ? (
               <p className="rounded-3xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
                 Ընթացիկ ամրագրում չկա։
               </p>
