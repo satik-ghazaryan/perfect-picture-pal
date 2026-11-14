@@ -616,6 +616,14 @@ export type Database = {
         };
         Returns: null;
       };
+      claim_guest_booking: {
+        Args: { p_ticket_code: string; p_phone: string };
+        Returns: Json;
+      };
+      claim_guest_bookings_by_proof: {
+        Args: { p_items: Json };
+        Returns: Json;
+      };
     };
     Enums: {
       user_role: UserRole;
