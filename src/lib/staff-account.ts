@@ -208,3 +208,56 @@ export async function updateStaffAccountRecord(
   }
   return { ok: true, account };
 }
+
+export type StaffActiveResult =
+  | { ok: true; id: string; active: boolean }
+  | { ok: false; code: "invalid" | "not_staff" | "failed"; message: string };
+
+/**
+ * Switch a guide's or driver's sign-in off or back on. Switching it off also takes the person
+ * off upcoming departures, so a tour is not left with a crew member who cannot sign in.
+ * Nothing is deleted: past tours keep their history and the account can be switched on again.
+ */
+export async function setStaffAccountActive(
+  input: { id: string; active: boolean },
+  deps: {
+    loadProfile: (id: string) => Promise<{ role: string } | null>;
+    setSignIn: (id: string, allowed: boolean) => Promise<void>;
+    clearUpcoming: (id: string) => Promise<void>;
+  },
+): Promise<StaffActiveResult> {
+  if (!UUID_PATTERN.test(input.id)) {
+    return { ok: false, code: "invalid", message: "Անձնակազմի հաշիվը չի գտնվել։" };
+  }
+  let current: { role: string } | null;
+  try {
+    current = await deps.loadProfile(input.id);
+  } catch {
+    return { ok: false, code: "failed", message: "Հաշիվը չփոխվեց։ Կրկնեք գործողությունը։" };
+  }
+  if (!current || (current.role !== "guide" && current.role !== "driver")) {
+    return {
+      ok: false,
+      code: "not_staff",
+      message: "Այստեղ կարելի է անջատել միայն զբոսավարի կամ վարորդի հաշիվը։",
+    };
+  }
+  try {
+    await deps.setSignIn(input.id, input.active);
+  } catch {
+    return { ok: false, code: "failed", message: "Հաշիվը չփոխվեց։ Կրկնեք գործողությունը։" };
+  }
+  if (!input.active) {
+    try {
+      await deps.clearUpcoming(input.id);
+    } catch {
+      return {
+        ok: false,
+        code: "failed",
+        message:
+          "Մուտքն անջատվեց, բայց առաջիկա մեկնումներից հանել չստացվեց։ Կրկնեք գործողությունը։",
+      };
+    }
+  }
+  return { ok: true, id: input.id, active: input.active };
+}

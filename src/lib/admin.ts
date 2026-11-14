@@ -1371,6 +1371,40 @@ export async function updateStaffAccount(next: DirectoryUser, password: string) 
   await updateDirectoryUser({ ...next, password: password || next.password });
 }
 
+async function staffRequest(method: "GET" | "PUT", body?: unknown) {
+  if (!isSupabaseConfigured || !supabase) throw new Error("Հաշիվների կառավարումը միացված չէ։");
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error("Մուտքը չի հաստատվել։");
+  const response = await fetch("/api/staff/accounts", {
+    method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+  if (!response.ok) {
+    throw new Error(
+      typeof payload?.["error"] === "string" ? payload["error"] : "Գործողությունը չստացվեց։",
+    );
+  }
+  return payload ?? {};
+}
+
+/** Ids of staff accounts whose sign-in is switched off. */
+export async function loadDisabledStaff(): Promise<string[]> {
+  const payload = await staffRequest("GET");
+  const list = payload["disabled"];
+  return Array.isArray(list) ? list.filter((id): id is string => typeof id === "string") : [];
+}
+
+/** Switch a guide's or driver's sign-in off or back on. */
+export async function setStaffActive(id: string, active: boolean) {
+  await staffRequest("PUT", { id, active });
+}
+
 export async function createStaffAccount(input: {
   role: "guide" | "driver";
   fullName: string;

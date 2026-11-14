@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { createStaffAccountRecord, updateStaffAccountRecord } from "./staff-account";
+import {
+  createStaffAccountRecord,
+  setStaffAccountActive,
+  updateStaffAccountRecord,
+} from "./staff-account";
 
 const valid = {
   role: "guide",
@@ -144,5 +148,66 @@ describe("staff account editing", () => {
     assert.equal(result.ok, false);
     if (!result.ok) assert.equal(result.code, "duplicate");
     assert.deepEqual(calls.saved, []);
+  });
+});
+
+describe("switching a staff account off and on", () => {
+  const id = "11111111-2222-4333-8444-555555555555";
+  const deps = (role: string | null) => {
+    const calls: string[] = [];
+    return {
+      calls,
+      deps: {
+        loadProfile: async () => (role ? { role } : null),
+        setSignIn: async (_: string, allowed: boolean) => {
+          calls.push(allowed ? "sign-in on" : "sign-in off");
+        },
+        clearUpcoming: async () => {
+          calls.push("removed from upcoming departures");
+        },
+      },
+    };
+  };
+
+  it("switches the sign-in off and takes the person off upcoming departures", async () => {
+    const { calls, deps: d } = deps("guide");
+    const result = await setStaffAccountActive({ id, active: false }, d);
+    assert.deepEqual(result, { ok: true, id, active: false });
+    assert.deepEqual(calls, ["sign-in off", "removed from upcoming departures"]);
+  });
+
+  it("switches the sign-in back on without touching departures", async () => {
+    const { calls, deps: d } = deps("driver");
+    const result = await setStaffAccountActive({ id, active: true }, d);
+    assert.equal(result.ok, true);
+    assert.deepEqual(calls, ["sign-in on"]);
+  });
+
+  it("never switches off an admin, a tourist or an unknown account", async () => {
+    for (const role of ["admin", "tourist", null]) {
+      const { calls, deps: d } = deps(role);
+      const result = await setStaffAccountActive({ id, active: false }, d);
+      assert.equal(result.ok, false);
+      assert.deepEqual(calls, []);
+    }
+    const bad = deps("guide");
+    const invalid = await setStaffAccountActive({ id: "not-an-id", active: false }, bad.deps);
+    assert.equal(invalid.ok, false);
+    assert.deepEqual(bad.calls, []);
+  });
+
+  it("says so when the sign-in is off but the departures could not be cleared", async () => {
+    const { deps: d } = deps("guide");
+    const result = await setStaffAccountActive(
+      { id, active: false },
+      {
+        ...d,
+        clearUpcoming: async () => {
+          throw new Error("database down");
+        },
+      },
+    );
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.match(result.message, /Մուտքն անջատվեց/);
   });
 });

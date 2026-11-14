@@ -3,6 +3,7 @@ import { requireAdmin, jsonError } from "@/lib/ideas-proxy.server";
 import {
   createStaffAccountRecord,
   isDuplicateStaffAuthError,
+  setStaffAccountActive,
   updateStaffAccountRecord,
   type StaffAccountDraft,
   type StaffAccountRecord,
@@ -179,4 +180,86 @@ export async function handleUpdateStaffAccount(request: Request) {
     return jsonError(status, result.message);
   }
   return Response.json(result.account, { status: 200, headers: { "cache-control": "no-store" } });
+}
+
+/** A date far enough ahead that a switched-off account stays off until it is switched on again. */
+const SWITCHED_OFF = "876000h";
+
+function yerevanToday() {
+  return new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+export async function handleSetStaffActive(request: Request) {
+  const admin = await requireAdmin(request);
+  if (admin instanceof Response) return admin;
+  const service = serviceClient();
+  if (!service) return jsonError(503, MISSING_KEY);
+  let payload: unknown;
+  try {
+    payload = await request.json();
+  } catch {
+    return jsonError(422, "Հարցումը թերի է։");
+  }
+  const body = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+  if (typeof body["active"] !== "boolean") return jsonError(422, "Հարցումը թերի է։");
+  const result = await setStaffAccountActive(
+    { id: typeof body["id"] === "string" ? body["id"] : "", active: body["active"] },
+    {
+      loadProfile: async (id) => {
+        const { data, error } = await service
+          .from("profiles")
+          .select("role")
+          .eq("id", id)
+          .maybeSingle();
+        if (error) throw new Error("profile lookup failed");
+        return data ? { role: (data as { role: string | null }).role ?? "" } : null;
+      },
+      setSignIn: async (id, allowed) => {
+        const { error } = await service.auth.admin.updateUserById(id, {
+          ban_duration: allowed ? "none" : SWITCHED_OFF,
+        });
+        if (error) throw new Error("sign-in change failed");
+      },
+      clearUpcoming: async (id) => {
+        const today = yerevanToday();
+        const guide = await service
+          .from("departures")
+          .update({ guide_id: null })
+          .eq("guide_id", id)
+          .gte("departure_date", today);
+        const driver = await service
+          .from("departures")
+          .update({ driver_id: null })
+          .eq("driver_id", id)
+          .gte("departure_date", today);
+        if (guide.error || driver.error) throw new Error("assignment change failed");
+      },
+    },
+  );
+  if (!result.ok) {
+    const status = result.code === "invalid" ? 422 : result.code === "not_staff" ? 403 : 500;
+    return jsonError(status, result.message);
+  }
+  return Response.json(
+    { id: result.id, active: result.active },
+    { status: 200, headers: { "cache-control": "no-store" } },
+  );
+}
+
+/** Ids of accounts whose sign-in is switched off, so the admin page can mark them. */
+export async function handleListDisabledStaff(request: Request) {
+  const admin = await requireAdmin(request);
+  if (admin instanceof Response) return admin;
+  const service = serviceClient();
+  if (!service) return jsonError(503, MISSING_KEY);
+  const { data, error } = await service.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  if (error) return jsonError(500, "Հաշիվների վիճակը չբեռնվեց։");
+  const now = Date.now();
+  const disabled = data.users
+    .filter((user) => {
+      const until = (user as { banned_until?: string | null }).banned_until;
+      return typeof until === "string" && Date.parse(until) > now;
+    })
+    .map((user) => user.id);
+  return Response.json({ disabled }, { status: 200, headers: { "cache-control": "no-store" } });
 }
