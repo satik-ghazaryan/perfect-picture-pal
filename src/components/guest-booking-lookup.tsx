@@ -33,8 +33,16 @@ function CrewCard({ label, person }: { label: string; person: LookupCrewMember |
 }
 
 /** For people who booked without an account: the ticket code and phone open that one booking. */
-export function GuestBookingLookup() {
-  const [ticketCode, setTicketCode] = useState("");
+export function GuestBookingLookup({
+  initialCode = "",
+  title = "Ամրագրել եք առանց գրանցվելու՞",
+  intro = "Գրեք տոմսի կոդը և այն հեռախոսահամարը, որով ամրագրել եք։",
+}: {
+  initialCode?: string;
+  title?: string;
+  intro?: string;
+} = {}) {
+  const [ticketCode, setTicketCode] = useState(initialCode);
   const [phone, setPhone] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
@@ -68,10 +76,8 @@ export function GuestBookingLookup() {
 
   return (
     <section className="mt-6 rounded-3xl border border-border bg-card p-5">
-      <h2 className="text-lg font-black tracking-tight">Ամրագրել եք առանց գրանցվելու՞</h2>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Գրեք տոմսի կոդը և այն հեռախոսահամարը, որով ամրագրել եք։
-      </p>
+      <h2 className="text-lg font-black tracking-tight">{title}</h2>
+      <p className="mt-1 text-sm text-muted-foreground">{intro}</p>
       <form
         className="mt-4 space-y-3"
         onSubmit={(event) => {

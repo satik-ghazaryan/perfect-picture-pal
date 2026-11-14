@@ -7,6 +7,8 @@ import { SiteHeader } from "@/components/site-header";
 import { TourPanorama } from "@/components/tour-panorama";
 import { AudioGuidePlayer } from "@/components/audio-guide-player";
 import { BookingPanel } from "@/components/express-booking";
+import { GuestBookingLookup } from "@/components/guest-booking-lookup";
+import { TicketQr } from "@/components/ticket-qr";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { CHAT_TEST_TOUR_ID, chatTestTour } from "@/lib/chat-test-fixture";
@@ -238,6 +240,27 @@ function TourDetailPage() {
               <p className="max-w-2xl text-sm text-muted-foreground sm:text-base">{summary}</p>
             </div>
           </section>
+
+          {tour.id !== CHAT_TEST_TOUR_ID && shownTicket && (
+            <section id="ticket" className="rounded-3xl border border-border bg-card p-5">
+              <div className="flex flex-wrap items-center gap-4">
+                <TicketQr value={shownTicket} className="h-36 w-36" />
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-muted-foreground">Թվային տոմս</p>
+                  <p className="font-mono text-xl font-black tracking-wide">{shownTicket}</p>
+                  <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+                    Մեկնման օրը ցույց տվեք այս QR կոդը զբոսավարին։
+                  </p>
+                </div>
+              </div>
+              <GuestBookingLookup
+                key={shownTicket}
+                initialCode={shownTicket}
+                title="Ամրագրման մանրամասները"
+                intro="Գրեք այն հեռախոսահամարը, որով ամրագրել եք՝ նստատեղը, ամսաթիվը և վճարման վիճակը տեսնելու համար։"
+              />
+            </section>
+          )}
 
           <section className="grid gap-3 rounded-3xl border border-border bg-card p-4 sm:grid-cols-3">
             <DetailFact icon={MapPin} label="Մեկնման վայր" value={tour.departurePlace} />

@@ -1,3 +1,4 @@
+import { TicketQr } from "@/components/ticket-qr";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { format, parseISO } from "date-fns";
 import { hy } from "date-fns/locale";
@@ -67,32 +68,6 @@ type MethodId = (typeof methods)[number]["id"];
 function validPhone(value: string) {
   const digits = value.replace(/\D/g, "");
   return digits.length >= 8 && digits.length <= 15;
-}
-
-function TicketQr({ value }: { value: string }) {
-  const [src, setSrc] = useState("");
-
-  useEffect(() => {
-    let cancelled = false;
-    void import("qrcode").then((QR) =>
-      QR.toDataURL(value, { margin: 1, width: 192, errorCorrectionLevel: "M" }).then((url) => {
-        if (!cancelled) setSrc(url);
-      }),
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [value]);
-
-  return (
-    <span className="grid h-24 w-24 shrink-0 place-items-center rounded-xl bg-white p-1">
-      {src ? (
-        <img src={src} alt="" className="h-full w-full" />
-      ) : (
-        <span className="h-full w-full" />
-      )}
-    </span>
-  );
 }
 
 export function BookingPanel({ tour }: { tour: Tour }) {
