@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -45,7 +45,7 @@ def save_run(
     run_id = str(uuid4())
     record = {
         "id": run_id,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
         "inputs": inputs,
         "research_summary": research_summary,
         "research": research or {},

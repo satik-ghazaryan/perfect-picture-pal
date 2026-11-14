@@ -16,8 +16,8 @@ from agent.place_discovery import (
     parse_place_json,
     select_fetch_urls,
 )
-from agent.search import usable_web_distance_snippet
 from agent.pricing import apply_unit_economics
+from agent.search import usable_web_distance_snippet
 
 
 class PlaceDiscoveryTests(unittest.TestCase):

@@ -14,7 +14,7 @@ def parse_amd(value: Any) -> int:
     if isinstance(value, bool) or value is None:
         return 0
     if isinstance(value, (int, float)):
-        return max(0, int(round(value)))
+        return max(0, round(value))
     if isinstance(value, str):
         digits = re.sub(r"[^\d]", "", value)
         return int(digits) if digits else 0

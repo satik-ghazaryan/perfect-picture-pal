@@ -12,16 +12,16 @@ from agent.quality import (
     NO_LIVE_RESULTS,
     NOT_ENOUGH_PLACES,
     WEB_SEARCH_FEW,
-    has_live_data,
     classify_itinerary_stops,
+    has_live_data,
     hy_copy_ok,
     is_generic_stop_title,
     mark_hy_review,
     rewrite_copy_from_numbers,
     sanitize_competitors,
     strip_customer_ops_text,
-    strip_invented_claims,
     strip_internal_ops,
+    strip_invented_claims,
     strip_money_figures,
 )
 

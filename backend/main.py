@@ -8,7 +8,7 @@ import sys
 import time
 from collections import defaultdict, deque
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from uuid import UUID
 
@@ -34,6 +34,9 @@ from pydantic import ValidationError
 from agent.graph import run_idea_workflow
 from chat_answer import ChatAnswerRequest, answer_public_chat
 from chat_intent import ChatIntentRequest, classify_chat_intent
+from idea_store import get_run, save_run
+from schemas import GenerateIdeasRequest, GenerateIdeasResponse, HealthResponse, ResearchBundle, TourIdea
+from setup_check import setup_status
 from telegram_bot import (
     ChatStore,
     UpdateLedger,
@@ -43,8 +46,6 @@ from telegram_bot import (
     send_message,
     webhook_authorized,
 )
-from idea_store import get_run, save_run
-from schemas import GenerateIdeasRequest, GenerateIdeasResponse, HealthResponse, ResearchBundle, TourIdea
 
 GENERATE_RATE_LIMIT = 5
 GENERATE_RATE_WINDOW_SEC = 60
@@ -151,6 +152,12 @@ def health() -> HealthResponse:
     return HealthResponse(status="ok")
 
 
+@app.get("/health/setup")
+def health_setup() -> dict[str, object]:
+    """Which settings are present and whether the database has what this version needs."""
+    return setup_status()
+
+
 @app.post("/api/chat-intent", dependencies=[Depends(require_chat_intent_secret)])
 def chat_intent(
     body: ChatIntentRequest,
@@ -249,10 +256,8 @@ def telegram_webhook(
         print(json.dumps({"update": update_id, "status": 200, "source": source}, separators=(",", ":")), flush=True)
     except Exception:
         print(json.dumps({"update": update_id, "status": 200, "source": "rules"}, separators=(",", ":")), flush=True)
-        try:
+        with suppress(Exception):
             send_message(chat_id, "Չաթը հիմա չկարողացավ պատասխանել։ Կարող ես բացել կատալոգը։")
-        except Exception:
-            pass
     return {"ok": True}
 
 

@@ -66,11 +66,13 @@ export function QrScanner({ onScan, disabled = false }: Props) {
 
   useEffect(() => {
     const session = sessionRef.current;
+    // The reader element lives as long as this component, so the one seen now is the one to release.
+    const reader = readerRef.current;
     return () => {
       session.invalidate();
       const scanner = scannerRef.current;
       scannerRef.current = null;
-      void releaseScanner(scanner, readerRef.current);
+      void releaseScanner(scanner, reader);
     };
   }, []);
 

@@ -100,7 +100,7 @@ class ChatAnswerTests(unittest.TestCase):
         self.assertEqual(result["reply"], "Երկուսով կլինի 16000 դրամ։")
         self.assertEqual(result["suggest"], "booking")
         self.assertEqual(create.call_args.kwargs["tool_choice"], "none")
-        self.assertEqual([call["name"] for call in result["calls"]][0], "get_price")
+        self.assertEqual(next(call["name"] for call in result["calls"]), "get_price")
 
     def test_model_that_refuses_a_custom_temperature_still_answers(self) -> None:
         create = mock.Mock(side_effect=[RuntimeError("Unsupported value: 'temperature'"), _reply("Բարև։")])

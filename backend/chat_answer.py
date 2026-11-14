@@ -308,7 +308,7 @@ def _complete(client: OpenAI, **kwargs):
     """Some newer models only accept their default temperature. Ask again without it."""
     try:
         return client.chat.completions.create(**kwargs)
-    except Exception as error:  # noqa: BLE001
+    except Exception as error:
         if "temperature" not in str(error).lower() or "temperature" not in kwargs:
             raise
         kwargs.pop("temperature")

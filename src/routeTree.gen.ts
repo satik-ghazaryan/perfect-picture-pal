@@ -22,6 +22,7 @@ import { Route as VirtualRouteImport } from './routes/virtual'
 import { Route as ApiTourChatRouteImport } from './routes/api/tour-chat'
 import { Route as ToursIdRouteImport } from './routes/tours/$id'
 import { Route as ApiBookingsLookupRouteImport } from './routes/api/bookings/lookup'
+import { Route as ApiHealthSetupRouteImport } from './routes/api/health/setup'
 import { Route as ApiIdeasGenerateRouteImport } from './routes/api/ideas/generate'
 import { Route as ApiNotificationsDispatchRouteImport } from './routes/api/notifications/dispatch'
 import { Route as ApiPaymentArcaCallbackRouteImport } from './routes/api/payment/arca-callback'
@@ -95,6 +96,11 @@ const ApiBookingsLookupRoute = ApiBookingsLookupRouteImport.update({
   path: '/api/bookings/lookup',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiHealthSetupRoute = ApiHealthSetupRouteImport.update({
+  id: '/api/health/setup',
+  path: '/api/health/setup',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiIdeasGenerateRoute = ApiIdeasGenerateRouteImport.update({
   id: '/api/ideas/generate',
   path: '/api/ideas/generate',
@@ -147,6 +153,7 @@ export interface FileRoutesByFullPath {
   '/api/tour-chat': typeof ApiTourChatRoute
   '/tours/$id': typeof ToursIdRoute
   '/api/bookings/lookup': typeof ApiBookingsLookupRoute
+  '/api/health/setup': typeof ApiHealthSetupRoute
   '/api/ideas/generate': typeof ApiIdeasGenerateRoute
   '/api/notifications/dispatch': typeof ApiNotificationsDispatchRoute
   '/api/payment/arca-callback': typeof ApiPaymentArcaCallbackRoute
@@ -169,6 +176,7 @@ export interface FileRoutesByTo {
   '/api/tour-chat': typeof ApiTourChatRoute
   '/tours/$id': typeof ToursIdRoute
   '/api/bookings/lookup': typeof ApiBookingsLookupRoute
+  '/api/health/setup': typeof ApiHealthSetupRoute
   '/api/ideas/generate': typeof ApiIdeasGenerateRoute
   '/api/notifications/dispatch': typeof ApiNotificationsDispatchRoute
   '/api/payment/arca-callback': typeof ApiPaymentArcaCallbackRoute
@@ -192,6 +200,7 @@ export interface FileRoutesById {
   '/api/tour-chat': typeof ApiTourChatRoute
   '/tours/$id': typeof ToursIdRoute
   '/api/bookings/lookup': typeof ApiBookingsLookupRoute
+  '/api/health/setup': typeof ApiHealthSetupRoute
   '/api/ideas/generate': typeof ApiIdeasGenerateRoute
   '/api/notifications/dispatch': typeof ApiNotificationsDispatchRoute
   '/api/payment/arca-callback': typeof ApiPaymentArcaCallbackRoute
@@ -216,6 +225,7 @@ export interface FileRouteTypes {
     | '/api/tour-chat'
     | '/tours/$id'
     | '/api/bookings/lookup'
+    | '/api/health/setup'
     | '/api/ideas/generate'
     | '/api/notifications/dispatch'
     | '/api/payment/arca-callback'
@@ -238,6 +248,7 @@ export interface FileRouteTypes {
     | '/api/tour-chat'
     | '/tours/$id'
     | '/api/bookings/lookup'
+    | '/api/health/setup'
     | '/api/ideas/generate'
     | '/api/notifications/dispatch'
     | '/api/payment/arca-callback'
@@ -260,6 +271,7 @@ export interface FileRouteTypes {
     | '/api/tour-chat'
     | '/tours/$id'
     | '/api/bookings/lookup'
+    | '/api/health/setup'
     | '/api/ideas/generate'
     | '/api/notifications/dispatch'
     | '/api/payment/arca-callback'
@@ -283,6 +295,7 @@ export interface RootRouteChildren {
   ApiTourChatRoute: typeof ApiTourChatRoute
   ToursIdRoute: typeof ToursIdRoute
   ApiBookingsLookupRoute: typeof ApiBookingsLookupRoute
+  ApiHealthSetupRoute: typeof ApiHealthSetupRoute
   ApiIdeasGenerateRoute: typeof ApiIdeasGenerateRoute
   ApiNotificationsDispatchRoute: typeof ApiNotificationsDispatchRoute
   ApiPaymentArcaCallbackRoute: typeof ApiPaymentArcaCallbackRoute
@@ -385,6 +398,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiBookingsLookupRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/health/setup': {
+      id: '/api/health/setup'
+      path: '/api/health/setup'
+      fullPath: '/api/health/setup'
+      preLoaderRoute: typeof ApiHealthSetupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/ideas/generate': {
       id: '/api/ideas/generate'
       path: '/api/ideas/generate'
@@ -451,6 +471,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiTourChatRoute: ApiTourChatRoute,
   ToursIdRoute: ToursIdRoute,
   ApiBookingsLookupRoute: ApiBookingsLookupRoute,
+  ApiHealthSetupRoute: ApiHealthSetupRoute,
   ApiIdeasGenerateRoute: ApiIdeasGenerateRoute,
   ApiNotificationsDispatchRoute: ApiNotificationsDispatchRoute,
   ApiPaymentArcaCallbackRoute: ApiPaymentArcaCallbackRoute,

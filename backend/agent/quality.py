@@ -174,7 +174,6 @@ def collect_quality_issues(ideas: list[dict[str, Any]]) -> list[str]:
 
 def ensure_armavir_bookends(idea: dict[str, Any], departure: str) -> dict[str, Any]:
     stops = [dict(stop) for stop in idea.get("itinerary") or [] if isinstance(stop, dict)]
-    place = departure.strip() or "Արմավիր"
     joined = " ".join(_text(stop.get("title")) for stop in stops).lower()
     if stops and "արմավիր" not in joined and "armavir" not in joined:
         stops.insert(
@@ -279,9 +278,7 @@ def has_live_data(research: dict[str, Any] | None) -> bool:
         return True
     if any(isinstance(row, dict) for row in (research.get("wikipedia_places") or [])):
         return True
-    if any(isinstance(row, dict) for row in (research.get("overpass_places") or [])):
-        return True
-    return False
+    return bool(any(isinstance(row, dict) for row in research.get("overpass_places") or []))
 
 
 def is_lunch_stop(title: str) -> bool:
@@ -308,9 +305,7 @@ def is_generic_place_name(place: str, original: str = "") -> bool:
     had_generic = any(word in GENERIC_STOP_WORDS for word in original_tokens)
     if had_generic and len(leftover) <= 1:
         return True
-    if any(word in GENERIC_STOP_WORDS for word in place_tokens) and len(leftover) <= 1:
-        return True
-    return False
+    return bool(any(word in GENERIC_STOP_WORDS for word in place_tokens) and len(leftover) <= 1)
 
 
 def is_generic_stop_title(title: str) -> bool:
@@ -417,7 +412,6 @@ def ground_idea(idea: dict[str, Any], research: dict[str, Any]) -> dict[str, Any
     verify = [str(item) for item in (idea.get("verify") or []) if str(item).strip()]
     corpus = _search_corpus(research)
     useful = int(research.get("useful_result_count") or len(research.get("results") or []))
-    candidates = _candidate_rows(research)
     note = str(research.get("place_data_note") or "").strip()
     if research.get("place_data_unavailable") or note:
         flag = note or "Place data sources unavailable"

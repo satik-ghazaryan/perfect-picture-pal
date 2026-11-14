@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from telegram_bot import ChatMemory, booking_reply, load_memory, main_keyboard, save_memory
 from telegram_booking import BOOK, CANCEL, CONFIRM, clean_booking
+from telegram_bot import ChatMemory, booking_reply, load_memory, main_keyboard, save_memory
 
 DEPARTURE = "b3f34215-fe83-4766-ac5f-7e484db26655"
 
@@ -67,7 +67,7 @@ def test_full_booking_in_the_chat(monkeypatch):
     done, keyboard = booking_reply(memory, CONFIRM, None, 42, http=http)
     assert "AG-1234ABCD" in done and "ticket=AG-1234ABCD" in done
     assert memory.booking is None and keyboard == {}
-    rpc = [call for call in http.calls if call[0] == "post"][0]
+    rpc = next(call for call in http.calls if call[0] == "post")
     assert rpc[1].endswith("/rest/v1/rpc/book_departure_telegram")
     assert rpc[2]["p_departure_id"] == DEPARTURE
     assert rpc[2]["p_chat_id"] == 42 and rpc[2]["p_adults"] == 2 and rpc[2]["p_children"] == 0

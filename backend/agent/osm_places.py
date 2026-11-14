@@ -228,7 +228,7 @@ def fetch_overpass(lat: float, lon: float, radius_m: int = 10_000, *, budget_sec
             timeout = max(2.0, min(8.0, remaining - 0.4))
             try:
                 parsed = _overpass_post(endpoint, query, timeout)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 parsed = None
                 last_error = True
             else:
@@ -260,7 +260,7 @@ def fetch_overpass_bbox(
             timeout = max(2.0, min(8.0, remaining - 0.4))
             try:
                 parsed = _overpass_post(endpoint, query, timeout)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 parsed = None
                 last_error = True
             else:
@@ -351,9 +351,7 @@ def _wiki_title_hard_drop(title: str) -> bool:
         return True
     if "disambiguation" in lowered:
         return True
-    if lowered.endswith(" province") or lowered.endswith(" region"):
-        return True
-    return False
+    return bool(lowered.endswith((" province", " region")))
 
 
 def keyword_keep_visitable(row: dict[str, Any]) -> bool:
@@ -416,6 +414,7 @@ def invoke_visitable_llm(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     if not api_key or not rows:
         raise RuntimeError("no_llm")
     import json as json_lib
+
     from langchain_core.messages import HumanMessage, SystemMessage
     from langchain_openai import ChatOpenAI
 
@@ -457,7 +456,7 @@ def invoke_visitable_llm(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def classify_visitable(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     try:
         return invoke_visitable_llm(rows)
-    except Exception:  # noqa: BLE001
+    except Exception:
         return filter_visitable_heuristic(rows)
 
 
@@ -509,7 +508,7 @@ def fetch_wikipedia_geosearch(lat: float, lon: float, radius_m: int = 10_000) ->
         parsed = parse_wikipedia_geosearch(geo_payload, extracts)
         _cache_set(cache_key, parsed)
         return parsed, True
-    except Exception:  # noqa: BLE001
+    except Exception:
         return [], False
 
 
@@ -523,7 +522,7 @@ def fetch_wikipedia_geosearch_multi(points: list[tuple[float, float]]) -> tuple[
         for future in futures:
             try:
                 chunk, ok = future.result()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 continue
             any_ok = any_ok or ok
             rows.extend(chunk)
@@ -658,7 +657,7 @@ def fetch_wikipedia_text_search(place_en: str) -> tuple[list[dict[str, Any]], bo
                         row["source_url"] = wiki_url
             _cache_set(cache_key, parsed)
             return parsed, True
-    except Exception:  # noqa: BLE001
+    except Exception:
         return [], False
 
 
@@ -687,7 +686,7 @@ def fetch_wikipedia_extracts_by_title(titles: list[str], client: httpx.Client | 
         payload = response.json()
         pages = ((payload.get("query") or {}).get("pages") or {}) if isinstance(payload, dict) else {}
         return pages if isinstance(pages, dict) else {}
-    except Exception:  # noqa: BLE001
+    except Exception:
         return {}
 
 
@@ -703,7 +702,7 @@ def wikipedia_summary(title: str) -> dict[str, str] | None:
         if response.status_code >= 400:
             return None
         payload = response.json()
-    except Exception:  # noqa: BLE001
+    except Exception:
         return None
     if not isinstance(payload, dict) or str(payload.get("type") or "") == "disambiguation":
         return None
@@ -787,13 +786,13 @@ def _attach_armavir_km(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def _place_lookup(name: str, region_en: str) -> dict[str, Any] | None:
     try:
         lookup = nominatim_lookup(name, region_en, require_meta=True)
-    except Exception:  # noqa: BLE001
+    except Exception:
         lookup = None
     if lookup:
         return lookup
     try:
         coord = nominatim_coord(name, region_en)
-    except Exception:  # noqa: BLE001
+    except Exception:
         return None
     if coord is None:
         return None
@@ -847,18 +846,18 @@ def collect_structured_bundle(place_en: str, region_en: str = "") -> dict[str, A
             for future in geo_futures:
                 try:
                     chunk, ok = future.result()
-                except Exception:  # noqa: BLE001
+                except Exception:
                     continue
                 wiki_geo_ok = wiki_geo_ok or ok
                 wiki_geo_chunks.extend(chunk)
             wiki_geo = merge_candidates(wiki_geo_chunks, cap=40)
             try:
                 wiki_text, wiki_text_ok = wiki_text_f.result()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 wiki_text, wiki_text_ok = [], False
             try:
                 osm_rows, osm_ok = osm_f.result()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 osm_rows, osm_ok = [], False
         wiki_raw = filter_rows_to_bbox(merge_candidates(wiki_text, wiki_geo, cap=40), (south, north, west, east))
         osm_rows = filter_rows_to_bbox(osm_rows, (south, north, west, east))

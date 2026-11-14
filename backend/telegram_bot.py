@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-import html
 import hmac
+import html
 import json
 import os
 import re
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import httpx
 
@@ -154,12 +154,12 @@ def load_memory(chat_id: int, now: datetime | None = None, http=httpx) -> ChatMe
     if not row:
         return None
     try:
-        saved = datetime.fromisoformat(str(row.get("updated_at") or "").replace("Z", "+00:00"))
+        saved = datetime.fromisoformat(str(row.get("updated_at") or ""))
     except ValueError:
         return None
     if saved.tzinfo is None:
-        saved = saved.replace(tzinfo=timezone.utc)
-    if (now or datetime.now(timezone.utc)) - saved > timedelta(days=MEMORY_DAYS):
+        saved = saved.replace(tzinfo=UTC)
+    if (now or datetime.now(UTC)) - saved > timedelta(days=MEMORY_DAYS):
         return None
     selected = row.get("selected")
     return ChatMemory(
@@ -181,7 +181,7 @@ def save_memory(chat_id: int, memory: ChatMemory, now: datetime | None = None, h
         "selected": memory.selected,
         "choices": _choices(memory.choices),
         "booking": clean_booking(memory.booking),
-        "updated_at": (now or datetime.now(timezone.utc)).isoformat(),
+        "updated_at": (now or datetime.now(UTC)).isoformat(),
     }
     # Without the booking column (migration not run yet) the chat is still kept.
     for body in (row, {k: v for k, v in row.items() if k != "booking"}):

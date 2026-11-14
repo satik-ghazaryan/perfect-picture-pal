@@ -7,7 +7,7 @@ const copy = {
   ru: "Тестовый режим: реальные деньги не списываются",
 };
 
-export function isPaymentSandbox() {
+function isPaymentSandbox() {
   return import.meta.env.VITE_PAYMENT_MODE !== "live";
 }
 

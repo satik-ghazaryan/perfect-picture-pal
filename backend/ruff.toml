@@ -1,0 +1,14 @@
+# Lint rules for the backend. Run: ruff check .
+target-version = "py311"
+line-length = 120
+
+[lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "PIE", "FURB"]
+ignore = [
+  "E501",   # Armenian messages are long sentences; wrapping them hurts readability.
+  "RUF001", # Armenian letters look like Latin ones to this rule; they are intended.
+]
+
+[lint.per-file-ignores]
+"tests/*" = ["E402"] # tests put the backend folder on sys.path before importing it.
+"main.py" = ["E402"] # .env is loaded before the modules that read it are imported.

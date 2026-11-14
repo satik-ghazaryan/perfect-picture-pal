@@ -155,7 +155,7 @@ class SearchResilienceTests(unittest.TestCase):
         }
         keywords = search.place_keywords({"preferences": "Lori hiking", "tour_type": "hiking"})
         self.assertNotIn("hiking", [item.lower() for item in keywords])
-        self.assertFalse(search.result_is_useful(texas, keywords + ["hiking"]))
+        self.assertFalse(search.result_is_useful(texas, [*keywords, "hiking"]))
         self.assertTrue(search.result_is_useful(lori, keywords))
         with patch.object(search, "_tavily_one", lambda *_: [texas, lori, dsegh]), patch.object(
             search, "_ddg_one", lambda *_: []
