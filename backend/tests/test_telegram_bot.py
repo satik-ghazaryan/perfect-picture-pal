@@ -65,7 +65,7 @@ def test_start_buttons_and_private_context():
 
     reply, source = answer_for(first, "Սյունիք ունե՞ք", 10, ask)
     assert source == "openai"
-    assert "https://perfect-picture-pal-beige.vercel.app/tours/tatev" in reply
+    assert "https://arignanq.vercel.app/tours/tatev" in reply
     assert "Գրանցել հետաքրքրություն" in reply
     price, _source = answer_for(first, "իսկ գինը՞", 10, ask)
     assert "դեռ հրապարակված չէ" in price
@@ -80,10 +80,10 @@ def test_start_buttons_and_private_context():
     })
     assert first.selected == "tatev"
     assert second.selected == "lori"
-    lori = render_reply("Ընտրիր ուղղությունը։", "https://perfect-picture-pal-beige.vercel.app", {
+    lori = render_reply("Ընտրիր ուղղությունը։", "https://arignanq.vercel.app", {
         "choices": [{"id": "lori", "title": "Լոռի՝ Արմավիրից"}],
     })
-    assert lori == 'Ընտրիր ուղղությունը։\n<a href="https://perfect-picture-pal-beige.vercel.app/tours/lori">Լոռի՝ Արմավիրից</a>'
+    assert lori == 'Ընտրիր ուղղությունը։\n<a href="https://arignanq.vercel.app/tours/lori">Լոռի՝ Արմավիրից</a>'
     assert site_body(second, plan_message(second, "Լոռի՝ Արմավիրից"))["section"] == "tour"
 
 
@@ -231,10 +231,10 @@ def test_booking_reply_sends_people_to_the_booking_form_instead_of_claiming_a_bo
 
     text = render_reply(
         "Ազատ է 17 տեղ։",
-        "https://perfect-picture-pal-beige.vercel.app",
+        "https://arignanq.vercel.app",
         {"booking": {"tourId": "dilijan-autumn"}},
     )
-    assert "https://perfect-picture-pal-beige.vercel.app/tours/dilijan-autumn#book" in text
+    assert "https://arignanq.vercel.app/tours/dilijan-autumn#book" in text
     assert "«🎫 Ամրագրել»" in text
     assert "արված է" not in text
 
