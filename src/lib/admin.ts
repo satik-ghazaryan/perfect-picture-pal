@@ -1146,6 +1146,7 @@ function bookingFromRow(row: {
   payment_provider: string | null;
   payment_status: string | null;
   amount: number;
+  used_points?: number | null;
 }): BookingRecord {
   const provider: PaymentProviderName | null =
     row.payment_provider === "idram" ||
@@ -1173,6 +1174,7 @@ function bookingFromRow(row: {
     paymentStatus,
     amount: row.amount,
     attendance: null,
+    usedPoints: row.used_points ?? 0,
   };
 }
 
@@ -1543,7 +1545,7 @@ export async function loadAdminBookings(): Promise<BookingRecord[]> {
   const { data, error } = await supabase
     .from("bookings")
     .select(
-      "id, tour_id, departure_id, passenger_name, phone, seat_number, ticket_code, status, adults, children, payment_provider, payment_status, amount, departures(departure_date)",
+      "id, tour_id, departure_id, passenger_name, phone, seat_number, ticket_code, status, adults, children, payment_provider, payment_status, amount, used_points, departures(departure_date)",
     )
     .order("seat_number");
   if (error) throw new Error("Ամրագրումները չբեռնվեցին։");

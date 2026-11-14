@@ -51,6 +51,8 @@ export type BookingRecord = {
   attendance: AttendanceStatus | null;
   departureId?: string;
   departureDate?: string;
+  /** Loyalty points spent on this booking, when known. */
+  usedPoints?: number;
 };
 
 export type TourPhoto = {

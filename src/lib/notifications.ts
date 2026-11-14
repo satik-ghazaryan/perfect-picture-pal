@@ -129,7 +129,7 @@ function queueMockToast() {
   if (now - lastMockToast < 1500) return;
   lastMockToast = now;
   void import("sonner").then(({ toast }) => {
-    toast.success("Ծանուցումն ուղարկված է (Mock Mode)");
+    toast.message("Թեստային ռեժիմ. ծանուցումը չի ուղարկվել։");
   });
 }
 

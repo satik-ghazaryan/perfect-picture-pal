@@ -335,9 +335,20 @@ export type CheckoutSuccess = {
   earned: number;
   points: number;
   pointsSaved: boolean;
+  /** A real SMS or WhatsApp left. Test mode does not count. */
   notified: boolean;
+  /** Messages were only simulated, so the passenger received nothing. */
+  notifyTestMode: boolean;
   coveredByPoints: boolean;
 };
+
+/** "live" means a message really left; "mock" is test mode and reaches nobody. */
+export function deliveryOutcome(modes: DeliveryMode[]) {
+  return {
+    notified: modes.includes("live"),
+    notifyTestMode: !modes.includes("live") && modes.includes("mock"),
+  };
+}
 
 export type CheckoutFailure = {
   ok: false;
@@ -515,6 +526,7 @@ export async function completeCheckout(input: {
   }
 
   let notified = false;
+  let notifyTestMode = false;
   if (input.notify) {
     const details: TicketDetails = {
       customerName: notice.customerName,
@@ -527,12 +539,14 @@ export async function completeCheckout(input: {
     try {
       if (confirmed.notification) {
         publishBookingNotices(input.phone, details, confirmed.notification);
-        notified =
-          confirmed.notification.sms !== "failed" || confirmed.notification.whatsapp !== "failed";
+        ({ notified, notifyTestMode } = deliveryOutcome([
+          confirmed.notification.sms,
+          confirmed.notification.whatsapp,
+        ]));
       } else {
         const sms = await sendBookingSMS(input.phone, details);
         const whatsapp = await sendBookingWhatsApp(input.phone, details);
-        notified = sms.mode !== "failed" || whatsapp.mode !== "failed";
+        ({ notified, notifyTestMode } = deliveryOutcome([sms.mode, whatsapp.mode]));
       }
     } catch {
       /* The passenger still has the ticket on screen. */
@@ -553,6 +567,7 @@ export async function completeCheckout(input: {
     points,
     pointsSaved: true,
     notified,
+    notifyTestMode,
     coveredByPoints: quote.payable === 0 && quote.redeem > 0,
   };
 }
@@ -669,6 +684,7 @@ async function confirmDepartureBooking(input: {
     : formatSeatNumbers(data.seat_number ?? 1, data.seats_count ?? seats);
   const payable = data.payable ?? 0;
   let notified = false;
+  let notifyTestMode = false;
   if (shouldDeliverTicket(data.repeated === true, input.notify) && data.ticket_code) {
     const details: TicketDetails = {
       customerName: input.passengerName.trim(),
@@ -681,9 +697,10 @@ async function confirmDepartureBooking(input: {
     try {
       const sms = await sendBookingSMS(input.phone, details);
       const whatsapp = await sendBookingWhatsApp(input.phone, details);
-      notified = sms.mode !== "failed" || whatsapp.mode !== "failed";
+      ({ notified, notifyTestMode } = deliveryOutcome([sms.mode, whatsapp.mode]));
     } catch {
       notified = false;
+      notifyTestMode = false;
     }
   }
   return {
@@ -700,6 +717,7 @@ async function confirmDepartureBooking(input: {
     points: data.points ?? 0,
     pointsSaved: (data.redeemed ?? 0) > 0 || (!data.repeated && (data.earned ?? 0) > 0),
     notified,
+    notifyTestMode,
     coveredByPoints: payable === 0 && (data.redeemed ?? 0) > 0,
   };
 }

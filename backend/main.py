@@ -34,7 +34,15 @@ from pydantic import ValidationError
 from agent.graph import run_idea_workflow
 from chat_answer import ChatAnswerRequest, answer_public_chat
 from chat_intent import ChatIntentRequest, classify_chat_intent
-from telegram_bot import ChatStore, UpdateLedger, answer_for, register_webhook, send_message, webhook_authorized
+from telegram_bot import (
+    ChatStore,
+    UpdateLedger,
+    answer_for,
+    booking_reply,
+    register_webhook,
+    send_message,
+    webhook_authorized,
+)
 from idea_store import get_run, save_run
 from schemas import GenerateIdeasRequest, GenerateIdeasResponse, HealthResponse, ResearchBundle, TourIdea
 
@@ -187,6 +195,18 @@ def chat_answer(
     return result
 
 
+def _own_contact_phone(message: dict | None) -> str | None:
+    """A phone shared with the contact button, only when it is the sender's own number."""
+    if not isinstance(message, dict) or not isinstance(message.get("contact"), dict):
+        return None
+    contact = message["contact"]
+    sender = message.get("from") if isinstance(message.get("from"), dict) else {}
+    if contact.get("user_id") is None or contact.get("user_id") != sender.get("id"):
+        return None
+    phone = contact.get("phone_number")
+    return phone if isinstance(phone, str) and phone.strip() else None
+
+
 _telegram_updates = UpdateLedger()
 _telegram_chats = ChatStore()
 
@@ -209,13 +229,23 @@ def telegram_webhook(
     chat_id = chat.get("id") if isinstance(chat, dict) else None
     if chat.get("type") != "private" if isinstance(chat, dict) else True:
         return {"ok": True}
-    if not isinstance(chat_id, int) or not text.strip():
+    contact_phone = _own_contact_phone(message)
+    if not isinstance(chat_id, int) or not (text.strip() or contact_phone):
         return {"ok": True}
     memory = _telegram_chats.get(chat_id)
     try:
+        flow = booking_reply(memory, text.strip()[:500], contact_phone, chat_id)
+        if flow is not None:
+            reply, keyboard = flow
+            _telegram_chats.save(chat_id)
+            send_message(chat_id, reply, memory.choices, keyboard or None, can_book=bool(memory.selected))
+            print(json.dumps({"update": update_id, "status": 200, "source": "booking"}, separators=(",", ":")), flush=True)
+            return {"ok": True}
+        if not text.strip():
+            return {"ok": True}
         reply, source = answer_for(memory, text.strip()[:500], chat_id)
         _telegram_chats.save(chat_id)
-        send_message(chat_id, reply, memory.choices)
+        send_message(chat_id, reply, memory.choices, can_book=bool(memory.selected))
         print(json.dumps({"update": update_id, "status": 200, "source": source}, separators=(",", ":")), flush=True)
     except Exception:
         print(json.dumps({"update": update_id, "status": 200, "source": "rules"}, separators=(",", ":")), flush=True)
