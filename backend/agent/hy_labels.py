@@ -105,7 +105,7 @@ def _langlinks_hy(titles: list[str]) -> dict[str, str]:
         if response.status_code >= 400:
             return {}
         payload = response.json()
-    except Exception:  # noqa: BLE001
+    except Exception:
         return {}
     pages = ((payload.get("query") or {}).get("pages") or {}) if isinstance(payload, dict) else {}
     out: dict[str, str] = {}
@@ -145,7 +145,7 @@ def _hywiki_search(title: str) -> str:
         if response.status_code >= 400:
             return ""
         payload = response.json()
-    except Exception:  # noqa: BLE001
+    except Exception:
         return ""
     hits = ((payload.get("query") or {}).get("search") or []) if isinstance(payload, dict) else []
     if not hits or not isinstance(hits[0], dict):
@@ -173,7 +173,7 @@ def _wikidata_hy(title: str) -> str:
         if response.status_code >= 400:
             return ""
         payload = response.json()
-    except Exception:  # noqa: BLE001
+    except Exception:
         return ""
     entities = payload.get("entities") if isinstance(payload, dict) else {}
     if not isinstance(entities, dict):

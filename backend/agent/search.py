@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
-import re
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError, as_completed
-from datetime import datetime, timezone
-from typing import Any, Callable
-
 import os
+import re
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import TimeoutError as FuturesTimeoutError
+from datetime import UTC, datetime
+from typing import Any
 
 from schemas import parse_amd
 
@@ -356,7 +357,7 @@ def _call_with_timeout(
         if str(exc) == "tavily_no_key":
             return [], "tavily_no_key"
         return [], _reason_from_exc(exc, prefix)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return [], _reason_from_exc(exc, prefix)
     finally:
         pool.shutdown(wait=False, cancel_futures=True)
@@ -376,7 +377,7 @@ def _search_all(
         for future in as_completed(futures):
             try:
                 part, reason = future.result(timeout=SEARCH_CALL_TIMEOUT_SEC + 2)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 reasons.append(_reason_from_exc(exc, prefix))
                 continue
             rows.extend(part)
@@ -436,7 +437,7 @@ def extract_offer(text: str) -> dict[str, Any]:
     usd = _first_amount(USD_PRICE_RE.search(blob))
     if 15 <= usd <= 500:
         rate, estimated = conversion_rate("USD")
-        amd = int(round(usd * rate))
+        amd = round(usd * rate)
         if 2000 <= amd <= 200_000:
             return {
                 "observed_amount": usd,
@@ -448,7 +449,7 @@ def extract_offer(text: str) -> dict[str, Any]:
     eur = _first_amount(EUR_PRICE_RE.search(blob))
     if 15 <= eur <= 500:
         rate, estimated = conversion_rate("EUR")
-        amd = int(round(eur * rate))
+        amd = round(eur * rate)
         if 2000 <= amd <= 200_000:
             return {
                 "observed_amount": eur,
@@ -522,9 +523,7 @@ def result_is_useful(row: dict[str, str], keywords: list[str] | None = None) -> 
     has_armenia = any(marker in blob for marker in ARMENIA_MARKERS) or any(place and place in blob for place in places)
     if not has_armenia:
         return False
-    if "wikipedia.org" in url.lower() and "armenia" not in blob and "armenian" not in blob:
-        return False
-    return True
+    return not ("wikipedia.org" in url.lower() and "armenia" not in blob and "armenian" not in blob)
 
 
 def _tavily_key_present() -> bool:
@@ -548,7 +547,7 @@ def _provider_flag(rows: list[dict[str, str]], reasons: list[str], prefix: str, 
 
 
 def _pick_status(results: list[dict[str, str]], reasons: list[str]) -> str:
-    unique_reasons = list(dict.fromkeys(item for item in reasons if item in REASON_CODES or item.endswith("_timeout") or item.endswith("_error") or item.endswith("_no_key")))
+    unique_reasons = list(dict.fromkeys(item for item in reasons if item in REASON_CODES or item.endswith(("_timeout", "_error", "_no_key"))))
     if results and unique_reasons:
         return "partial"
     if results:
@@ -570,7 +569,7 @@ def run_queries_search(
     *,
     require_min_unique: bool = True,
 ) -> dict[str, Any]:
-    found_on = datetime.now(timezone.utc).date().isoformat()
+    found_on = datetime.now(UTC).date().isoformat()
     tavily_ran = True
     tavily_rows, tavily_reasons = _search_all(queries, max_results, _tavily_one, "tavily")
     useful_tavily = [row for row in tavily_rows if result_is_useful(row, keywords)]

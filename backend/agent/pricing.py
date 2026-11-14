@@ -30,11 +30,11 @@ def transport_rate_per_km() -> int:
 
 
 def transport_group_amd(route_km: float) -> int:
-    return int(round(max(0.0, float(route_km)) * transport_rate_per_km()))
+    return round(max(0.0, float(route_km)) * transport_rate_per_km())
 
 
 def cost_per_person_amd(transport_group: int) -> int:
-    return int(round((int(transport_group) + GUIDE_FEE_GROUP_AMD) / GROUP_SIZE))
+    return round((int(transport_group) + GUIDE_FEE_GROUP_AMD) / GROUP_SIZE)
 
 
 def min_price_amd(cost_pp: int) -> int:
@@ -79,7 +79,7 @@ def choose_suggested_price(cost_pp: int, offers: list[dict[str, Any]]) -> tuple[
         "label": "market_reference",
         "offer_count": len(prices),
         "price_min_amd": min(prices) if prices else None,
-        "price_median_amd": int(round(median(prices))) if prices else None,
+        "price_median_amd": round(median(prices)) if prices else None,
         "price_max_amd": max(prices) if prices else None,
         "offers": offers,
     }

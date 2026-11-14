@@ -14,9 +14,10 @@ from pydantic import ValidationError
 
 from agent.admin_copy import search_status_note
 from agent.distance import has_stop_outside_armavir, one_way_route_km
-from agent.place_discovery import discover_place
+from agent.hy_labels import fallback_title_hy, hy_labels_for_candidates
 from agent.onewaytour import UNAVAILABLE as ONEWAYTOUR_UNAVAILABLE
 from agent.onewaytour import _offer_from_tour, idea_match_names, is_one_day_tour, partition_tours
+from agent.place_discovery import discover_place
 from agent.pricing import (
     GROUP_SIZE,
     GUIDE_FEE_GROUP_AMD,
@@ -24,7 +25,6 @@ from agent.pricing import (
     apply_yerevan_transfer,
     tag_budget_fit,
 )
-from agent.hy_labels import fallback_title_hy, hy_labels_for_candidates
 from agent.quality import (
     NO_LIVE_RESULTS,
     WEB_SEARCH_FEW,
@@ -152,7 +152,7 @@ def _invoke_json(
     messages = [SystemMessage(content=system), HumanMessage(content=prompt)]
     try:
         response = _llm(temperature, model).invoke(messages)
-    except Exception as error:  # noqa: BLE001
+    except Exception as error:
         # Some newer models only accept their default temperature.
         if "temperature" not in str(error).lower():
             raise
@@ -710,7 +710,7 @@ def hy_adapt_node(state: State) -> dict[str, Any]:
         adapted = data.get("ideas") if isinstance(data, dict) else data
         if isinstance(adapted, list) and adapted:
             merged = _merge_hy_ideas(originals, adapted)
-    except Exception:  # noqa: BLE001
+    except Exception:
         merged = ideas
     if merged and not all(hy_copy_ok(item) for item in merged):
         try:
@@ -723,7 +723,7 @@ def hy_adapt_node(state: State) -> dict[str, Any]:
             adapted = data.get("ideas") if isinstance(data, dict) else data
             if isinstance(adapted, list) and adapted:
                 merged = _merge_hy_ideas(originals, adapted)
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
     research = {}
     try:
@@ -839,8 +839,9 @@ def refinement_node(state: State) -> dict[str, Any]:
             candidate["verify"] = [
                 item for item in (candidate.get("verify") or []) if item != NO_LIVE_RESULTS
             ]
-        if research.get("onewaytour_unavailable") or research.get("onewaytour_verify"):
-            if ONEWAYTOUR_UNAVAILABLE not in candidate["verify"]:
+        if (
+            research.get("onewaytour_unavailable") or research.get("onewaytour_verify")
+        ) and ONEWAYTOUR_UNAVAILABLE not in candidate["verify"]:
                 candidate["verify"].append(ONEWAYTOUR_UNAVAILABLE)
         match_names = idea_match_names(candidate, research)
         matched_owt, other_owt, owt_reasons = partition_tours(owt_tours, match_names)
@@ -1021,10 +1022,8 @@ def run_idea_workflow(request: GenerateIdeasRequest) -> tuple[list[dict[str, Any
     if status_note and status_note not in research_summary:
         research_summary = f"{status_note}. {research_summary}".strip()
     live_data = has_live_data(research)
-    if useful < 2 and live_data:
-        if WEB_SEARCH_FEW not in research_summary:
-            research_summary = f"{WEB_SEARCH_FEW}. {research_summary}".strip()
-    if not live_data:
-        if NO_LIVE_RESULTS not in research_summary:
-            research_summary = f"{NO_LIVE_RESULTS} {research_summary}".strip()
+    if useful < 2 and live_data and WEB_SEARCH_FEW not in research_summary:
+        research_summary = f"{WEB_SEARCH_FEW}. {research_summary}".strip()
+    if not live_data and NO_LIVE_RESULTS not in research_summary:
+        research_summary = f"{NO_LIVE_RESULTS} {research_summary}".strip()
     return ideas, research_summary, research

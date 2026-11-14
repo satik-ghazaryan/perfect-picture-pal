@@ -5,7 +5,7 @@ import os
 import re
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
@@ -41,19 +41,19 @@ SKIP_PLACE = {
 }
 MULTI_DAY_RE = re.compile(
     r"\b(?:two|three|four|five|six|seven|eight|nine|ten|[2-9]|[1-9]\d)\s*-?\s*days?\b",
-    re.I,
+    re.IGNORECASE,
 )
-DAY_TOUR_RE = re.compile(r"(?<![0-9-])\bday tour\b|\bone[- ]day\b|\b1[- ]day\b", re.I)
-DURATION_ISO_RE = re.compile(r"PT(?:(\d+)H)?(?:(\d+)M)?", re.I)
-DURATION_PERIOD_RE = re.compile(r"\bP(\d+)D\b", re.I)
-NIGHTS_RE = re.compile(r"\bovernight\b|\b([2-9]|[1-9]\d)\s*-?\s*nights?\b", re.I)
-PLACE_SPLIT_RE = re.compile(r"\s*,\s*|\s*&\s*|\s+and\s+", re.I)
+DAY_TOUR_RE = re.compile(r"(?<![0-9-])\bday tour\b|\bone[- ]day\b|\b1[- ]day\b", re.IGNORECASE)
+DURATION_ISO_RE = re.compile(r"PT(?:(\d+)H)?(?:(\d+)M)?", re.IGNORECASE)
+DURATION_PERIOD_RE = re.compile(r"\bP(\d+)D\b", re.IGNORECASE)
+NIGHTS_RE = re.compile(r"\bovernight\b|\b([2-9]|[1-9]\d)\s*-?\s*nights?\b", re.IGNORECASE)
+PLACE_SPLIT_RE = re.compile(r"\s*,\s*|\s*&\s*|\s+and\s+", re.IGNORECASE)
 TITLE_JUNK_RE = re.compile(
     r"\b(day tour|group tour|private tour|tour|experience|package)\b",
-    re.I,
+    re.IGNORECASE,
 )
-FOREIGN_RE = re.compile(r"\b(tbilisi|georgia|signagi|mtskheta|iran|tehran)\b", re.I)
-LOC_RE = re.compile(r"<loc>\s*([^<]+)\s*</loc>", re.I)
+FOREIGN_RE = re.compile(r"\b(tbilisi|georgia|signagi|mtskheta|iran|tehran)\b", re.IGNORECASE)
+LOC_RE = re.compile(r"<loc>\s*([^<]+)\s*</loc>", re.IGNORECASE)
 LANG_PATH_RE = re.compile(r"^/(hy|ru|fr|es|de|it|ar|zh|hi|pl)/")
 GENERIC_TOKENS = {
     "tour",
@@ -180,7 +180,7 @@ def _robots_url(url: str) -> str:
 
 def _path_blocked(url: str) -> bool:
     path = (urlparse(url).path or "").lower()
-    return any(path == item or path.startswith(item.rstrip("/") + "/") or path.startswith(item) for item in _BLOCKED_PATHS)
+    return any(path == item or path.startswith((item.rstrip("/") + "/", item)) for item in _BLOCKED_PATHS)
 
 
 def _can_fetch(robots: RobotFileParser | None, url: str) -> bool:
@@ -190,7 +190,7 @@ def _can_fetch(robots: RobotFileParser | None, url: str) -> bool:
         return False
     try:
         return bool(robots.can_fetch(USER_AGENT, _robots_url(url)))
-    except Exception:  # noqa: BLE001
+    except Exception:
         return False
 
 
@@ -231,7 +231,7 @@ def fetch_url(url: str, *, robots: RobotFileParser | None, budget: dict[str, int
                 body = (response.content or b"")[:MAX_BYTES].decode("utf-8", errors="replace")
                 _cache_set(f"body:{url}", body)
                 return body
-    except Exception:  # noqa: BLE001
+    except Exception:
         return ""
     return ""
 
@@ -288,16 +288,18 @@ def fetch_sitemap_locs(robots: RobotFileParser | None, budget: dict[str, int]) -
     chunks: list[str] = []
     total = 0
     try:
-        with httpx.Client(timeout=TIMEOUT_SEC, follow_redirects=True, headers={"user-agent": USER_AGENT}) as client:
-            with client.stream("GET", TOUR_XML_URL) as response:
-                if response.status_code >= 400:
-                    return []
-                for piece in response.iter_text():
-                    chunks.append(piece)
-                    total += len(piece)
-                    if total > 6_000_000:
-                        break
-    except Exception:  # noqa: BLE001
+        with (
+            httpx.Client(timeout=TIMEOUT_SEC, follow_redirects=True, headers={"user-agent": USER_AGENT}) as client,
+            client.stream("GET", TOUR_XML_URL) as response,
+        ):
+            if response.status_code >= 400:
+                return []
+            for piece in response.iter_text():
+                chunks.append(piece)
+                total += len(piece)
+                if total > 6_000_000:
+                    break
+    except Exception:
         return []
     urls = extract_english_tour_urls("".join(chunks))
     _cache_set(f"locs:{TOUR_XML_URL}", urls)
@@ -358,10 +360,10 @@ def _offer_price(offer: Any) -> tuple[float, str, int]:
     except (TypeError, ValueError):
         numeric = 0.0
     currency = str(offer.get("priceCurrency") or offer.get("currency") or "AMD").upper()
-    rate, estimated = conversion_rate(currency)
+    rate, _estimated = conversion_rate(currency)
     if rate <= 0 or numeric <= 0:
         return numeric, currency, 0
-    amd = int(round(numeric * rate)) if currency != "AMD" else int(round(numeric))
+    amd = round(numeric * rate) if currency != "AMD" else round(numeric)
     return numeric, currency, amd
 
 
@@ -441,7 +443,7 @@ def _h1(html: str) -> str:
     try:
         parser.feed(html)
         parser.close()
-    except Exception:  # noqa: BLE001
+    except Exception:
         return ""
     return " ".join(parser.h1.split())
 
@@ -680,7 +682,7 @@ def collect_onewaytour(
     region_en: str = "",
     match_names: list[str] | None = None,
 ) -> dict[str, Any]:
-    retrieved_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    retrieved_at = datetime.now(UTC).isoformat(timespec="seconds")
     empty = {
         "unavailable": True,
         "tours": [],

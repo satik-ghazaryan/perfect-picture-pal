@@ -1,4 +1,5 @@
 import os
+from datetime import UTC
 
 from telegram_bot import (
     DIRECTIONS,
@@ -128,7 +129,7 @@ class _Database:
 
 
 def test_chat_memory_survives_a_restart(monkeypatch):
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
     from functools import partial
 
     from telegram_bot import load_memory, remember, save_memory
@@ -136,7 +137,7 @@ def test_chat_memory_survives_a_restart(monkeypatch):
     monkeypatch.setenv("SUPABASE_URL", "https://project.supabase.co/")
     monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "service-role-key-0123456789")
     database = _Database()
-    now = datetime(2026, 11, 13, 9, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 11, 13, 9, 0, tzinfo=UTC)
     load = partial(load_memory, http=database, now=now)
     save = partial(save_memory, http=database, now=now)
 

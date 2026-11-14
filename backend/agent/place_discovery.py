@@ -7,9 +7,10 @@ import os
 import re
 import socket
 from html.parser import HTMLParser
-from typing import Any
+from typing import Any, ClassVar
 from urllib.parse import urljoin, urlparse
 
+from agent.gazetteer import places_for
 from agent.osm_places import (
     CANDIDATE_CAP,
     PLACE_DATA_UNAVAILABLE,
@@ -17,7 +18,6 @@ from agent.osm_places import (
     collect_structured_bundle,
     merge_candidates,
 )
-from agent.gazetteer import places_for
 from agent.search import discovery_queries, run_place_attraction_search
 
 LOGGER = logging.getLogger("ari.gnank.place_discovery")
@@ -52,7 +52,7 @@ NULL_NAMES = {"null", "none", "n/a", "-"}
 
 
 class _HTMLTextParser(HTMLParser):
-    _SKIP = {"script", "style", "noscript", "svg", "template", "iframe"}
+    _SKIP: ClassVar[frozenset[str]] = frozenset({"script", "style", "noscript", "svg", "template", "iframe"})
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -87,7 +87,7 @@ def html_to_text(html: str) -> str:
     try:
         parser.feed(str(html or ""))
         parser.close()
-    except Exception:  # noqa: BLE001
+    except Exception:
         stripped = re.sub(r"(?is)<(script|style|noscript).*?>.*?</\1>", " ", str(html or ""))
         stripped = re.sub(r"(?s)<[^>]+>", " ", stripped)
         return " ".join(stripped.split())
@@ -186,8 +186,13 @@ def select_fetch_urls(results: list[dict[str, Any]], place_en: str = "") -> list
         if not is_public_http_url(url, resolve=False) or is_login_or_booking_url(url):
             continue
         blob = f"{row.get('title') or ''} {row.get('snippet') or ''} {url}".lower()
-        if place and place not in blob and "armenia" not in blob and "armenian" not in blob:
-            if "onewaytour.com" not in url.lower():
+        if (
+            place
+            and place not in blob
+            and "armenia" not in blob
+            and "armenian" not in blob
+            and "onewaytour.com" not in url.lower()
+        ):
                 continue
         seen.add(url)
         picked.append(url)
@@ -224,7 +229,7 @@ def fetch_page(url: str) -> str:
                 if content_type and "html" not in content_type and "text" not in content_type:
                     return ""
                 return (response.content or b"")[:FETCH_MAX_BYTES].decode("utf-8", errors="replace")
-    except Exception:  # noqa: BLE001
+    except Exception:
         return ""
     return ""
 
@@ -248,10 +253,7 @@ def _literal_in_text(name: str, blob: str) -> bool:
 
 
 def parse_candidate_places(data: Any, pages: list[dict[str, str]]) -> list[dict[str, str]]:
-    if isinstance(data, dict):
-        rows = data.get("places") or data.get("candidates") or []
-    else:
-        rows = data
+    rows = data.get("places") or data.get("candidates") or [] if isinstance(data, dict) else data
     if not isinstance(rows, list):
         return []
     blob_by_url = {str(page.get("url") or ""): str(page.get("text") or "").lower() for page in pages}
@@ -347,7 +349,7 @@ def invoke_candidate_llm(place_en: str, pages: list[dict[str, str]]) -> list[dic
 def extract_place_candidates(place_en: str, pages: list[dict[str, str]]) -> list[dict[str, str]]:
     try:
         return invoke_candidate_llm(place_en, pages)
-    except Exception:  # noqa: BLE001
+    except Exception:
         return []
 
 
@@ -381,7 +383,7 @@ def discover_place(preferences: str) -> dict[str, Any]:
         return {**empty, "place_candidates": known, "candidate_source": "gazetteer"}
     try:
         extracted = invoke_place_llm(prefs)
-    except Exception:  # noqa: BLE001
+    except Exception:
         extracted = {"place_en": None, "region_en": None}
     place_en = extracted.get("place_en")
     region_en = extracted.get("region_en")
@@ -425,7 +427,7 @@ def discover_place(preferences: str) -> dict[str, Any]:
         match_names = [str(place_en), str(region_en or "")]
         match_names.extend(str(item.get("name_en") or "") for item in structured if isinstance(item, dict))
         owt = collect_onewaytour(str(place_en), str(region_en or ""), match_names=match_names)
-    except Exception:  # noqa: BLE001
+    except Exception:
         owt["verify"] = "OneWayTour data unavailable"
     owt_places = [item for item in (owt.get("place_candidates") or []) if isinstance(item, dict)]
     known = places_for(str(place_en), str(region_en or ""))

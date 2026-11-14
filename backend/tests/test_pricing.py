@@ -63,7 +63,7 @@ class PricingTests(unittest.TestCase):
         low = [{"observed_price_amd": 4000, "title": "Low", "url": "https://example.com/l", "found_on": "2026-10-26"}]
         floor = min_price_amd(7998)
         high_price, high_pos, high_market = choose_suggested_price(7998, high)
-        low_price, low_pos, low_market = choose_suggested_price(7998, low)
+        low_price, low_pos, _low_market = choose_suggested_price(7998, low)
         none_price, none_pos, none_market = choose_suggested_price(7998, [])
         self.assertEqual(high_price, floor)
         self.assertEqual(low_price, floor)

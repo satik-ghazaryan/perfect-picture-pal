@@ -315,13 +315,13 @@ def booking_step(
             return (f"Գրիր թիվ 1-ից {limit}։", flow_keyboard([[str(n) for n in range(1, min(limit, 5) + 1)]]))
         booking.update(adults=count, step="children")
         room = limit - count
-        return ("Քանի՞ երեխա։", flow_keyboard([[str(n) for n in range(0, min(room, 4) + 1)]]))
+        return ("Քանի՞ երեխա։", flow_keyboard([[str(n) for n in range(min(room, 4) + 1)]]))
 
     if step == "children":
         room = min(MAX_SEATS, booking.get("seats_left", MAX_SEATS)) - booking.get("adults", 1)
         count = _number(text)
         if count is None or count < 0 or count > room:
-            return (f"Գրիր թիվ 0-ից {room}։", flow_keyboard([[str(n) for n in range(0, min(room, 4) + 1)]]))
+            return (f"Գրիր թիվ 0-ից {room}։", flow_keyboard([[str(n) for n in range(min(room, 4) + 1)]]))
         booking.update(children=count, step="confirm")
         return (_summary(booking), flow_keyboard([[CONFIRM]]))
 

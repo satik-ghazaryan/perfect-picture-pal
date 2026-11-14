@@ -642,7 +642,6 @@ def one_way_route_km(
         return RouteKm(0.0, True, notes, km_source="", geocoded_stops=[])
     points: list[tuple[float, float]] = [ARMAVIR_COORD]
     last_ok = ARMAVIR_COORD
-    used_osm = True
     stops_by_title = {}
     for stop in itinerary or []:
         if not isinstance(stop, dict) or is_lunch_or_rest_stop(stop):
@@ -655,10 +654,7 @@ def one_way_route_km(
         coord, how = _stop_coord(title, stops_by_title.get(title), region, lookup)
         if coord is None:
             notes.append(f"Could not geocode stop: {title}; stop skipped")
-            used_osm = False
             continue
-        if how not in {"OSM", "OSM/Wikipedia"}:
-            used_osm = False
         geocoded_stops.append(
             {
                 "name": title,

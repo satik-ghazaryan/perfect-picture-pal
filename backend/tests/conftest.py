@@ -8,9 +8,9 @@ import pytest
 @pytest.fixture(autouse=True)
 def nominatim_disk_cache_tmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from agent import distance
-    from agent.osm_places import clear_place_cache
     from agent.hy_labels import clear_hy_label_cache
     from agent.onewaytour import clear_onewaytour_cache
+    from agent.osm_places import clear_place_cache
 
     path = tmp_path / "nominatim_cache.json"
     monkeypatch.setattr(distance, "_DISK_CACHE_PATH", path)
