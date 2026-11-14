@@ -1335,6 +1335,76 @@ export async function signInTourist(identifier: string, password: string) {
   return openAccountSession(user, crypto.randomUUID());
 }
 
+/**
+ * Save a guide's or driver's details. With Supabase this goes through the server, because
+ * the name, the sign-in email and the password cannot be changed from the browser.
+ */
+export async function updateStaffAccount(next: DirectoryUser, password: string) {
+  if (isSupabaseConfigured && supabase) {
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) throw new Error("Մուտքը չի հաստատվել։");
+    const response = await fetch("/api/staff/accounts", {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        id: next.id,
+        role: next.role,
+        fullName: next.fullName,
+        phone: next.phone,
+        email: next.email,
+        password,
+        avatarUrl: next.avatarUrl,
+        bio: next.bio,
+      }),
+    });
+    const payload = (await response.json().catch(() => null)) as { error?: unknown } | null;
+    if (!response.ok) {
+      throw new Error(typeof payload?.error === "string" ? payload.error : "Տվյալները չպահվեցին։");
+    }
+    await updateDirectoryUser({ ...next, email: next.email.trim().toLowerCase(), password: "" });
+    return;
+  }
+  await updateDirectoryUser({ ...next, password: password || next.password });
+}
+
+async function staffRequest(method: "GET" | "PUT", body?: unknown) {
+  if (!isSupabaseConfigured || !supabase) throw new Error("Հաշիվների կառավարումը միացված չէ։");
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error("Մուտքը չի հաստատվել։");
+  const response = await fetch("/api/staff/accounts", {
+    method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+  if (!response.ok) {
+    throw new Error(
+      typeof payload?.["error"] === "string" ? payload["error"] : "Գործողությունը չստացվեց։",
+    );
+  }
+  return payload ?? {};
+}
+
+/** Ids of staff accounts whose sign-in is switched off. */
+export async function loadDisabledStaff(): Promise<string[]> {
+  const payload = await staffRequest("GET");
+  const list = payload["disabled"];
+  return Array.isArray(list) ? list.filter((id): id is string => typeof id === "string") : [];
+}
+
+/** Switch a guide's or driver's sign-in off or back on. */
+export async function setStaffActive(id: string, active: boolean) {
+  await staffRequest("PUT", { id, active });
+}
+
 export async function createStaffAccount(input: {
   role: "guide" | "driver";
   fullName: string;

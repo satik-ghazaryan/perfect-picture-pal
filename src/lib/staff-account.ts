@@ -124,3 +124,140 @@ export async function createStaffAccountRecord(
   }
   return { ok: true, account };
 }
+
+export type StaffUpdateInput = Omit<StaffAccountInput, "password"> & {
+  id: string;
+  password: string;
+};
+
+export type StaffUpdateResult =
+  | { ok: true; account: StaffAccountRecord }
+  | { ok: false; code: "invalid" | "not_staff" | "duplicate" | "failed"; message: string };
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Change an existing guide or driver. The sign-in email and password live in Supabase Auth,
+ * so they are changed there; an empty password keeps the current one. Only accounts that are
+ * already guide or driver can be changed here, so this cannot be used to take over an admin
+ * or a tourist account.
+ */
+export async function updateStaffAccountRecord(
+  input: StaffUpdateInput,
+  deps: {
+    loadProfile: (id: string) => Promise<{ role: string; email: string } | null>;
+    updateAuth: (id: string, change: { email?: string; password?: string }) => Promise<void>;
+    saveProfile: (account: StaffAccountRecord) => Promise<void>;
+  },
+): Promise<StaffUpdateResult> {
+  if (!UUID_PATTERN.test(input.id)) {
+    return { ok: false, code: "invalid", message: "Անձնակազմի հաշիվը չի գտնվել։" };
+  }
+  const keepsPassword = input.password.length === 0;
+  const normalized = normalizeStaffAccountInput({
+    ...input,
+    password: keepsPassword ? "unchanged-password" : input.password,
+  });
+  if (!normalized.ok) return { ok: false, code: "invalid", message: normalized.message };
+  let current: { role: string; email: string } | null;
+  try {
+    current = await deps.loadProfile(input.id);
+  } catch {
+    return { ok: false, code: "failed", message: "Տվյալները չպահվեցին։ Կրկնեք գործողությունը։" };
+  }
+  if (!current || (current.role !== "guide" && current.role !== "driver")) {
+    return {
+      ok: false,
+      code: "not_staff",
+      message: "Այստեղ կարելի է փոխել միայն զբոսավարի կամ վարորդի հաշիվը։",
+    };
+  }
+  const change: { email?: string; password?: string } = {};
+  if (normalized.value.email !== current.email.trim().toLowerCase()) {
+    change.email = normalized.value.email;
+  }
+  if (!keepsPassword) change.password = input.password;
+  if (change.email !== undefined || change.password !== undefined) {
+    try {
+      await deps.updateAuth(input.id, change);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (isDuplicateStaffAuthError(message)) {
+        return { ok: false, code: "duplicate", message: "Այս էլ. փոստով հաշիվ արդեն կա։" };
+      }
+      return {
+        ok: false,
+        code: "failed",
+        message: "Մուտքի տվյալները չփոխվեցին։ Կրկնեք գործողությունը։",
+      };
+    }
+  }
+  const account: StaffAccountRecord = {
+    id: input.id,
+    role: normalized.value.role,
+    fullName: normalized.value.fullName,
+    phone: normalized.value.phone,
+    email: normalized.value.email,
+    avatarUrl: normalized.value.avatarUrl,
+    bio: normalized.value.bio,
+  };
+  try {
+    await deps.saveProfile(account);
+  } catch {
+    return { ok: false, code: "failed", message: "Տվյալները չպահվեցին։ Կրկնեք գործողությունը։" };
+  }
+  return { ok: true, account };
+}
+
+export type StaffActiveResult =
+  | { ok: true; id: string; active: boolean }
+  | { ok: false; code: "invalid" | "not_staff" | "failed"; message: string };
+
+/**
+ * Switch a guide's or driver's sign-in off or back on. Switching it off also takes the person
+ * off upcoming departures, so a tour is not left with a crew member who cannot sign in.
+ * Nothing is deleted: past tours keep their history and the account can be switched on again.
+ */
+export async function setStaffAccountActive(
+  input: { id: string; active: boolean },
+  deps: {
+    loadProfile: (id: string) => Promise<{ role: string } | null>;
+    setSignIn: (id: string, allowed: boolean) => Promise<void>;
+    clearUpcoming: (id: string) => Promise<void>;
+  },
+): Promise<StaffActiveResult> {
+  if (!UUID_PATTERN.test(input.id)) {
+    return { ok: false, code: "invalid", message: "Անձնակազմի հաշիվը չի գտնվել։" };
+  }
+  let current: { role: string } | null;
+  try {
+    current = await deps.loadProfile(input.id);
+  } catch {
+    return { ok: false, code: "failed", message: "Հաշիվը չփոխվեց։ Կրկնեք գործողությունը։" };
+  }
+  if (!current || (current.role !== "guide" && current.role !== "driver")) {
+    return {
+      ok: false,
+      code: "not_staff",
+      message: "Այստեղ կարելի է անջատել միայն զբոսավարի կամ վարորդի հաշիվը։",
+    };
+  }
+  try {
+    await deps.setSignIn(input.id, input.active);
+  } catch {
+    return { ok: false, code: "failed", message: "Հաշիվը չփոխվեց։ Կրկնեք գործողությունը։" };
+  }
+  if (!input.active) {
+    try {
+      await deps.clearUpcoming(input.id);
+    } catch {
+      return {
+        ok: false,
+        code: "failed",
+        message:
+          "Մուտքն անջատվեց, բայց առաջիկա մեկնումներից հանել չստացվեց։ Կրկնեք գործողությունը։",
+      };
+    }
+  }
+  return { ok: true, id: input.id, active: input.active };
+}

@@ -77,6 +77,9 @@ import {
   confirmBookingDeparture,
   loadBookingLinkConflicts,
   createStaffAccount,
+  loadDisabledStaff,
+  setStaffActive,
+  updateStaffAccount,
   updateDirectoryUser,
   loadAssignmentConflicts,
   loadDepartures,
@@ -1493,8 +1496,13 @@ function StaffSection({
   error: string;
   onSaved: () => Promise<void>;
 }) {
-  const guides = users.filter((member) => member.role === "guide");
-  const drivers = users.filter((member) => member.role === "driver");
+  const [disabled, setDisabled] = useState<Set<string>>(new Set());
+  const [switching, setSwitching] = useState<string | null>(null);
+  const allGuides = users.filter((member) => member.role === "guide");
+  const allDrivers = users.filter((member) => member.role === "driver");
+  // A switched-off account stays in the list but cannot be put on a departure.
+  const guides = allGuides.filter((member) => !disabled.has(member.id));
+  const drivers = allDrivers.filter((member) => !disabled.has(member.id));
   const [draft, setDraft] = useState<StaffDraft>(emptyStaffDraft);
   const [savingStaff, setSavingStaff] = useState(false);
   const [departures, setDepartures] = useState<CatalogDeparture[]>([]);
@@ -1519,6 +1527,49 @@ function StaffSection({
     };
   }, []);
 
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    let cancelled = false;
+    loadDisabledStaff()
+      .then((ids) => {
+        if (!cancelled) setDisabled(new Set(ids));
+      })
+      .catch(() => {
+        /* The list still works; only the "switched off" marks are missing. */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const switchStaff = async (member: DirectoryUser) => {
+    const turnOff = !disabled.has(member.id);
+    if (
+      turnOff &&
+      !window.confirm(
+        `Անջատե՞լ ${member.fullName}-ի հաշիվը։ Նա այլևս չի կարողանա մուտք գործել և կհանվի առաջիկա մեկնումներից։ Հաշիվը չի ջնջվում, հետո կարող եք նորից միացնել։`,
+      )
+    ) {
+      return;
+    }
+    setSwitching(member.id);
+    try {
+      await setStaffActive(member.id, !turnOff);
+      setDisabled((current) => {
+        const next = new Set(current);
+        if (turnOff) next.add(member.id);
+        else next.delete(member.id);
+        return next;
+      });
+      if (turnOff) setDepartures(await loadDepartures());
+      toast.success(turnOff ? "Հաշիվն անջատվեց" : "Հաշիվը նորից միացվեց");
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "Գործողությունը չստացվեց։");
+    } finally {
+      setSwitching(null);
+    }
+  };
+
   const handleEditStaff = (member: DirectoryUser) => {
     if (member.role !== "guide" && member.role !== "driver") return;
     setDraft({
@@ -1540,20 +1591,21 @@ function StaffSection({
       if (draft.id) {
         const current = users.find((member) => member.id === draft.id);
         if (!current) throw new Error("Անձնակազմի հաշիվը չի գտնվել։");
-        const password = draft.password.trim() || current.password;
-        if (draft.password.trim() && draft.password.trim().length < 4) {
-          throw new Error("Գաղտնաբառը առնվազն 4 նիշ պետք է լինի։");
+        if (draft.password && draft.password.length < 6) {
+          throw new Error("Գաղտնաբառը առնվազն 6 նիշ պետք է լինի։");
         }
-        await updateDirectoryUser({
-          ...current,
-          role,
-          fullName: draft.fullName,
-          phone: draft.phone,
-          email: draft.email,
-          password,
-          avatarUrl: draft.avatarUrl,
-          bio: draft.bio,
-        });
+        await updateStaffAccount(
+          {
+            ...current,
+            role,
+            fullName: draft.fullName,
+            phone: draft.phone,
+            email: draft.email,
+            avatarUrl: draft.avatarUrl,
+            bio: draft.bio,
+          },
+          draft.password,
+        );
         setDraft(emptyStaffDraft);
         await onSaved();
         toast.success("Տվյալները պահվեցին");
@@ -1630,13 +1682,13 @@ function StaffSection({
         />
         <div className="space-y-2">
           <h3 className="text-sm font-bold">Գրանցված անձնակազմ</h3>
-          {guides.length + drivers.length === 0 ? (
+          {allGuides.length + allDrivers.length === 0 ? (
             <p className="rounded-2xl bg-muted px-4 py-3 text-sm text-muted-foreground">
               Զբոսավար կամ վարորդ դեռ չկա։
             </p>
           ) : (
             <ul className="divide-y divide-border rounded-2xl border border-border">
-              {[...guides, ...drivers].map((member) => (
+              {[...allGuides, ...allDrivers].map((member) => (
                 <li
                   key={member.id}
                   className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm"
@@ -1646,16 +1698,30 @@ function StaffSection({
                     <span className="mt-0.5 block text-xs text-muted-foreground">
                       {member.role === "guide" ? "Զբոսավար" : "Վարորդ"}
                       {member.phone ? ` · ${member.phone}` : ""}
+                      {disabled.has(member.id) ? " · Հաշիվն անջատված է" : ""}
                     </span>
                   </span>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="rounded-full"
-                    onClick={() => handleEditStaff(member)}
-                  >
-                    Խմբագրել
-                  </Button>
+                  <span className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="rounded-full"
+                      onClick={() => handleEditStaff(member)}
+                    >
+                      Խմբագրել
+                    </Button>
+                    {isSupabaseConfigured && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="rounded-full"
+                        disabled={switching === member.id}
+                        onClick={() => void switchStaff(member)}
+                      >
+                        {disabled.has(member.id) ? "Միացնել հաշիվը" : "Անջատել հաշիվը"}
+                      </Button>
+                    )}
+                  </span>
                 </li>
               ))}
             </ul>

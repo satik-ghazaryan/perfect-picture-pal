@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { createStaffAccountRecord } from "./staff-account";
+import {
+  createStaffAccountRecord,
+  setStaffAccountActive,
+  updateStaffAccountRecord,
+} from "./staff-account";
 
 const valid = {
   role: "guide",
@@ -71,5 +75,139 @@ describe("staff account creation", () => {
       assert.equal(result.account.role, "guide");
       assert.equal("password" in result.account, false);
     }
+  });
+});
+
+describe("staff account editing", () => {
+  const id = "11111111-2222-4333-8444-555555555555";
+  const edit = { ...valid, id, password: "" };
+  const deps = (profile: { role: string; email: string } | null) => {
+    const calls: { auth: { email?: string; password?: string }[]; saved: unknown[] } = {
+      auth: [],
+      saved: [],
+    };
+    return {
+      calls,
+      deps: {
+        loadProfile: async () => profile,
+        updateAuth: async (_: string, change: { email?: string; password?: string }) => {
+          calls.auth.push(change);
+        },
+        saveProfile: async (account: unknown) => {
+          calls.saved.push(account);
+        },
+      },
+    };
+  };
+
+  it("saves the name without touching the sign-in when email and password are unchanged", async () => {
+    const { calls, deps: d } = deps({ role: "guide", email: "Guide@Example.test" });
+    const result = await updateStaffAccountRecord({ ...edit, fullName: " Անի Պետրոսյան " }, d);
+    assert.equal(result.ok, true);
+    assert.deepEqual(calls.auth, []);
+    assert.equal((calls.saved[0] as { fullName: string }).fullName, "Անի Պետրոսյան");
+  });
+
+  it("changes the sign-in email and password in auth, not only in the profile", async () => {
+    const { calls, deps: d } = deps({ role: "guide", email: "old@example.test" });
+    const result = await updateStaffAccountRecord({ ...edit, password: "new-secret" }, d);
+    assert.equal(result.ok, true);
+    assert.deepEqual(calls.auth, [{ email: "guide@example.test", password: "new-secret" }]);
+  });
+
+  it("refuses a short new password and an account that is not staff", async () => {
+    const short = deps({ role: "guide", email: "guide@example.test" });
+    const tooShort = await updateStaffAccountRecord({ ...edit, password: "123" }, short.deps);
+    assert.equal(tooShort.ok, false);
+    assert.deepEqual(short.calls.auth, []);
+
+    for (const role of ["admin", "tourist"]) {
+      const other = deps({ role, email: "boss@example.test" });
+      const refused = await updateStaffAccountRecord(
+        { ...edit, password: "new-secret" },
+        other.deps,
+      );
+      assert.equal(refused.ok, false);
+      if (!refused.ok) assert.equal(refused.code, "not_staff");
+      assert.deepEqual(other.calls.auth, []);
+      assert.deepEqual(other.calls.saved, []);
+    }
+    const missing = deps(null);
+    const gone = await updateStaffAccountRecord(edit, missing.deps);
+    assert.equal(gone.ok, false);
+  });
+
+  it("reports an email that another account already uses and saves nothing", async () => {
+    const { calls, deps: d } = deps({ role: "driver", email: "old@example.test" });
+    const result = await updateStaffAccountRecord(edit, {
+      ...d,
+      updateAuth: async () => {
+        throw new Error("A user with this email address has already been registered");
+      },
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.code, "duplicate");
+    assert.deepEqual(calls.saved, []);
+  });
+});
+
+describe("switching a staff account off and on", () => {
+  const id = "11111111-2222-4333-8444-555555555555";
+  const deps = (role: string | null) => {
+    const calls: string[] = [];
+    return {
+      calls,
+      deps: {
+        loadProfile: async () => (role ? { role } : null),
+        setSignIn: async (_: string, allowed: boolean) => {
+          calls.push(allowed ? "sign-in on" : "sign-in off");
+        },
+        clearUpcoming: async () => {
+          calls.push("removed from upcoming departures");
+        },
+      },
+    };
+  };
+
+  it("switches the sign-in off and takes the person off upcoming departures", async () => {
+    const { calls, deps: d } = deps("guide");
+    const result = await setStaffAccountActive({ id, active: false }, d);
+    assert.deepEqual(result, { ok: true, id, active: false });
+    assert.deepEqual(calls, ["sign-in off", "removed from upcoming departures"]);
+  });
+
+  it("switches the sign-in back on without touching departures", async () => {
+    const { calls, deps: d } = deps("driver");
+    const result = await setStaffAccountActive({ id, active: true }, d);
+    assert.equal(result.ok, true);
+    assert.deepEqual(calls, ["sign-in on"]);
+  });
+
+  it("never switches off an admin, a tourist or an unknown account", async () => {
+    for (const role of ["admin", "tourist", null]) {
+      const { calls, deps: d } = deps(role);
+      const result = await setStaffAccountActive({ id, active: false }, d);
+      assert.equal(result.ok, false);
+      assert.deepEqual(calls, []);
+    }
+    const bad = deps("guide");
+    const invalid = await setStaffAccountActive({ id: "not-an-id", active: false }, bad.deps);
+    assert.equal(invalid.ok, false);
+    assert.deepEqual(bad.calls, []);
+  });
+
+  it("says so when the sign-in is off but the departures could not be cleared", async () => {
+    const { deps: d } = deps("guide");
+    const result = await setStaffAccountActive(
+      { id, active: false },
+      {
+        ...d,
+        clearUpcoming: async () => {
+          throw new Error("database down");
+        },
+      },
+    );
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.match(result.message, /Մուտքն անջատվեց/);
   });
 });
