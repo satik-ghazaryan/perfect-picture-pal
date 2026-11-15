@@ -657,7 +657,12 @@ async function confirmDepartureBooking(input: {
     p_expected_seats: input.expectedSeats ?? 0,
     p_expected_cashback: cashback,
   });
-  if (error || !data) return { ok: false, status: "FAILED", message: "Ամրագրումը չպահպանվեց։" };
+  if (error || !data) {
+    // Keep the database's reason visible: without it a failed booking cannot be diagnosed.
+    if (error) console.error("book_departure failed", error);
+    const detail = error?.message ? ` (${error.message.slice(0, 160)})` : "";
+    return { ok: false, status: "FAILED", message: `Ամրագրումը չպահպանվեց։${detail}` };
+  }
   if (!data.ok) {
     if (
       data.code === "stale" &&
