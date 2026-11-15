@@ -502,7 +502,9 @@ export async function cancelOwnBooking(bookingId: string): Promise<CancelResult>
   if (!supabase) return { ok: false, message: "Կապը հիմա հասանելի չէ։" };
   const { data, error } = await supabase.rpc("cancel_my_booking", { p_booking_id: bookingId });
   if (error || !data || typeof data !== "object") {
-    return { ok: false, message: "Ամրագրումը հիմա չչեղարկվեց։ Փորձեք կրկին։" };
+    if (error) console.error("cancel_my_booking failed", error);
+    const detail = error?.message ? ` (${error.message.slice(0, 160)})` : "";
+    return { ok: false, message: `Ամրագրումը հիմա չչեղարկվեց։${detail}` };
   }
   const result = data as {
     ok?: boolean;
