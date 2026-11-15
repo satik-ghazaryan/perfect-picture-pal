@@ -118,6 +118,14 @@ function Index() {
   );
   const [region, setRegion] = useState("all");
   const [type, setType] = useState("all");
+  // The fields are a draft; the list changes only when "Որոնել" is pressed.
+  const [applied, setApplied] = useState<{ date?: Date | undefined; region: string; type: string }>(
+    {
+      region: "all",
+      type: "all",
+    },
+  );
+  const [searchFlash, setSearchFlash] = useState(0);
   const [policyId, setPolicyId] = useState<(typeof policies)[number]["id"] | null>(null);
   const lang = useSiteLocale();
   const policy = policies.find((item) => item.id === policyId);
@@ -166,27 +174,44 @@ function Index() {
         ]),
     ).values(),
   ].sort((left, right) => left.hy.localeCompare(right.hy, "hy"));
-  const dateKey = date ? format(date, "yyyy-MM-dd") : "";
+  const dateKey = applied.date ? format(applied.date, "yyyy-MM-dd") : "";
   const toursOnDate = dateKey
     ? new Set(
         (departures ?? []).filter((row) => row.departureDate === dateKey).map((row) => row.tourId),
       )
     : null;
-  const filtersActive = Boolean(dateKey) || region !== "all" || type !== "all";
+  const filtersActive = Boolean(dateKey) || applied.region !== "all" || applied.type !== "all";
   const filtered = tourList.filter(
     (t) =>
-      (region === "all" || t.location_hy.trim() === region || t.category === region) &&
-      (type === "all" || t.type === type) &&
+      (applied.region === "all" ||
+        t.location_hy.trim() === applied.region ||
+        t.category === applied.region) &&
+      (applied.type === "all" || t.type === applied.type) &&
       (!toursOnDate || toursOnDate.has(t.id)),
   );
   const resetFilters = () => {
     setDate(undefined);
     setRegion("all");
     setType("all");
+    setApplied({ region: "all", type: "all" });
   };
   const showResults = () => {
-    document.getElementById("tours")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setApplied({ date, region, type });
+    setSearchFlash((value) => value + 1);
+    window.requestAnimationFrame(() => {
+      const target = document.getElementById("tours");
+      if (!target) return;
+      const header = document.querySelector("header")?.getBoundingClientRect().height ?? 0;
+      const top = target.getBoundingClientRect().top + window.scrollY - header - 8;
+      window.scrollTo({ top, behavior: "smooth" });
+    });
   };
+
+  useEffect(() => {
+    if (!searchFlash) return;
+    const timer = window.setTimeout(() => setSearchFlash(0), 1800);
+    return () => window.clearTimeout(timer);
+  }, [searchFlash]);
 
   return (
     <div id="top" className="min-h-screen bg-background font-sans">
@@ -304,7 +329,11 @@ function Index() {
               </SelectContent>
             </Select>
 
-            <Button className="h-12 rounded-2xl px-8 text-sm font-bold" onClick={showResults}>
+            <Button
+              type="button"
+              className="h-12 rounded-2xl px-8 text-sm font-bold active:scale-95 transition-transform"
+              onClick={showResults}
+            >
               <Search className="h-4 w-4" />
               Որոնել
             </Button>
@@ -317,13 +346,18 @@ function Index() {
       {/* Tours grid */}
       <section id="tours" className="mx-auto max-w-7xl px-4 py-12 sm:px-6 sm:py-16">
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-4 sm:flex sm:justify-between">
-          <div className="min-w-0">
+          <div
+            className={cn(
+              "min-w-0 rounded-2xl transition-colors duration-500",
+              searchFlash > 0 && "bg-primary-soft px-3 py-2 ring-2 ring-primary/40",
+            )}
+          >
             <h2 className="text-2xl font-black tracking-tight sm:text-3xl">
-              Առաջարկվող մեկօրյա տուրեր
+              {filtersActive ? "Որոնման արդյունքներ" : "Առաջարկվող մեկօրյա տուրեր"}
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
               {catalog.catalogStatus === "loaded"
-                ? `Գտնվել է ${filtered.length} տուր${date ? ` · ${format(date, "d MMMM", { locale: hy })}` : ""}`
+                ? `Գտնվել է ${filtered.length} տուր${applied.date ? ` · ${format(applied.date, "d MMMM", { locale: hy })}` : ""}`
                 : catalog.catalogStatus === "error"
                   ? "Ցանկը չբեռնվեց"
                   : "Բեռնվում է..."}
