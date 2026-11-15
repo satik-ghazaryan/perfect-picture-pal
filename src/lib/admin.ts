@@ -1157,7 +1157,8 @@ function bookingFromRow(row: {
   const paymentStatus: PaymentState | null =
     row.payment_status === "SUCCESS" ||
     row.payment_status === "FAILED" ||
-    row.payment_status === "PENDING"
+    row.payment_status === "PENDING" ||
+    row.payment_status === "REFUNDED"
       ? row.payment_status
       : null;
   return {

@@ -161,6 +161,7 @@ const paymentStatusLabel = {
   SUCCESS: "Վճարված",
   PENDING: "Սպասում",
   FAILED: "Չհաջողված",
+  REFUNDED: "Վերադարձված",
 } as const;
 
 /**
@@ -414,7 +415,7 @@ export function AdminDashboard({ session }: { session: AdminSession }) {
 
   const bookings = isSupabaseConfigured ? remoteBookings : portal.bookings;
   const revenue = bookings
-    .filter((booking) => booking.paymentStatus === "SUCCESS")
+    .filter((booking) => booking.paymentStatus === "SUCCESS" && booking.status !== "cancelled")
     .reduce((sum, booking) => sum + booking.amount, 0);
 
   return (
@@ -1894,6 +1895,7 @@ function formatProfileDate(value: string | undefined) {
 }
 
 function bookingStatusText(booking: BookingRecord) {
+  if (booking.status === "cancelled") return "Չեղարկված";
   if (booking.paymentStatus === "FAILED") return "Չհաջողված";
   if (booking.paymentStatus === "PENDING") return "Սպասում";
   if (booking.status === "checked_in") return "Գրանցված";
@@ -2193,7 +2195,7 @@ function BookingsSection({
     ticketCode: string;
     paymentProvider: keyof typeof paymentLabel | null;
     paymentStatus: keyof typeof paymentStatusLabel | null;
-    status: "booked" | "checked_in";
+    status: "booked" | "checked_in" | "cancelled";
     amount: number;
     usedPoints?: number;
     adults: number;
@@ -2211,7 +2213,8 @@ function BookingsSection({
   onConfirmLink?: (bookingId: string) => Promise<void>;
 }) {
   const paid = bookings.filter(
-    (booking) => booking.paymentStatus === "SUCCESS" && booking.amount > 0,
+    (booking) =>
+      booking.paymentStatus === "SUCCESS" && booking.amount > 0 && booking.status !== "cancelled",
   ).length;
   const pending = bookings.filter((booking) => booking.paymentStatus === "PENDING").length;
   const checkedIn = bookings.filter((booking) => booking.status === "checked_in").length;
@@ -2223,7 +2226,9 @@ function BookingsSection({
     ...new Set(bookings.flatMap((booking) => (booking.departureId ? [booking.departureId] : []))),
   ];
   const departures = linkedIds.map((departureId) => {
-    const rows = bookings.filter((booking) => booking.departureId === departureId);
+    const rows = bookings.filter(
+      (booking) => booking.departureId === departureId && booking.status !== "cancelled",
+    );
     const sample = rows[0];
     const tour = tours.find((item) => item.id === sample?.tourId);
     const date = sample?.departureDate || "ամսաթիվ չկա";
@@ -2386,7 +2391,11 @@ function BookingsSection({
                 </TableCell>
                 <TableCell>{paymentText(booking)}</TableCell>
                 <TableCell>
-                  {booking.status === "checked_in" ? "Գրանցված է" : "Սպասում է"}
+                  {booking.status === "cancelled"
+                    ? "Չեղարկված"
+                    : booking.status === "checked_in"
+                      ? "Գրանցված է"
+                      : "Սպասում է"}
                 </TableCell>
                 <TableCell className="text-right font-semibold">
                   {formatAmd(booking.amount)}

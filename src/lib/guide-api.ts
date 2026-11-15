@@ -155,7 +155,9 @@ function paymentProviderOf(value: unknown): PaymentProviderName | null {
 }
 
 function paymentStatusOf(value: unknown): PaymentState | null {
-  return value === "SUCCESS" || value === "FAILED" || value === "PENDING" ? value : null;
+  return value === "SUCCESS" || value === "FAILED" || value === "PENDING" || value === "REFUNDED"
+    ? value
+    : null;
 }
 
 function attendanceOf(value: unknown): AttendanceStatus | null {
@@ -482,6 +484,7 @@ export async function listBookings(tourId: string): Promise<BookingRecord[]> {
       "id, tour_id, passenger_name, phone, seat_number, ticket_code, status, adults, children, payment_provider, payment_status, amount, attendance",
     )
     .eq("tour_id", tourId)
+    .neq("status", "cancelled")
     .order("seat_number");
   if (error) throw new Error("Ուղևորացուցակը չբեռնվեց։");
   return data.map(mapBooking);
@@ -489,6 +492,47 @@ export async function listBookings(tourId: string): Promise<BookingRecord[]> {
 
 const OWN_BOOKING_COLUMNS =
   "id, tour_id, departure_id, passenger_name, phone, seat_number, ticket_code, status, adults, children, payment_provider, payment_status, amount, attendance";
+
+export type CancelResult =
+  | { ok: true; refund: number; pointsReturned: number; pointsRemoved: number }
+  | { ok: false; message: string };
+
+/** A tourist cancels their own booking; allowed up to 24 hours before departure. */
+export async function cancelOwnBooking(bookingId: string): Promise<CancelResult> {
+  if (!supabase) return { ok: false, message: "Կապը հիմա հասանելի չէ։" };
+  const { data, error } = await supabase.rpc("cancel_my_booking", { p_booking_id: bookingId });
+  if (error || !data || typeof data !== "object") {
+    return { ok: false, message: "Ամրագրումը հիմա չչեղարկվեց։ Փորձեք կրկին։" };
+  }
+  const result = data as {
+    ok?: boolean;
+    message?: unknown;
+    refund?: unknown;
+    points_returned?: unknown;
+    points_removed?: unknown;
+  };
+  if (result.ok !== true) {
+    return {
+      ok: false,
+      message: typeof result.message === "string" ? result.message : "Ամրագրումը չչեղարկվեց։",
+    };
+  }
+  const num = (value: unknown) => (typeof value === "number" && value > 0 ? value : 0);
+  return {
+    ok: true,
+    refund: num(result.refund),
+    pointsReturned: num(result.points_returned),
+    pointsRemoved: num(result.points_removed),
+  };
+}
+
+/** True while there are still more than 24 hours until departure (Yerevan time, UTC+4). */
+export function canCancelBooking(departureDate: string, departureTime: string, now = Date.now()) {
+  const time = /^\d{2}:\d{2}/.test(departureTime) ? departureTime.slice(0, 5) : "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(departureDate) || !time) return false;
+  const startsAt = Date.parse(`${departureDate}T${time}:00+04:00`);
+  return Number.isFinite(startsAt) && startsAt - now > 24 * 60 * 60 * 1000;
+}
 
 export async function loadOwnBookings(userId: string) {
   if (!supabase || !userId) return [];
@@ -538,6 +582,7 @@ export async function loadDepartureManifest(departureId: string) {
       "id, tour_id, departure_id, passenger_name, phone, seat_number, ticket_code, status, adults, children, payment_provider, payment_status, amount, attendance",
     )
     .eq("departure_id", departureId)
+    .neq("status", "cancelled")
     .order("seat_number");
   if (error) throw new Error("Ուղևորացուցակը չբեռնվեց։");
   const manifest = data.map(mapBooking);
@@ -718,6 +763,7 @@ export async function checkInPassenger(
     )
     .eq("departure_id", departureId)
     .eq("ticket_code", ticketCode)
+    .neq("status", "cancelled")
     .maybeSingle();
   if (error) return { ok: false, message: "Գրանցումը չստուգվեց։" };
   const plan = planPassengerCheckIn({

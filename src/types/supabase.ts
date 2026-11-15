@@ -616,6 +616,10 @@ export type Database = {
         };
         Returns: null;
       };
+      cancel_my_booking: {
+        Args: { p_booking_id: string };
+        Returns: Json;
+      };
       claim_guest_booking: {
         Args: { p_ticket_code: string; p_phone: string };
         Returns: Json;

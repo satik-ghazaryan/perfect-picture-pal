@@ -6,6 +6,7 @@ import { hy } from "date-fns/locale";
 import { toast } from "sonner";
 import { SiteHeader } from "@/components/site-header";
 import { DepartureCrew } from "@/components/departure-crew";
+import { CancelBooking } from "@/components/cancel-booking";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,6 +43,7 @@ import {
 import {
   getPortalServerSnapshot,
   getPortalSnapshot,
+  canCancelBooking,
   loadOwnBookings,
   subscribePortal,
   type BookingRecord,
@@ -76,6 +78,9 @@ function formatDeparture(date: string) {
 }
 
 function bookingStatusText(booking: BookingRecord) {
+  if (booking.status === "cancelled") {
+    return booking.paymentStatus === "REFUNDED" ? "Չեղարկված · գումարը կվերադարձվի" : "Չեղարկված";
+  }
   if (booking.paymentStatus === "FAILED") return "Չհաջողված";
   if (booking.paymentStatus === "PENDING") return "Սպասում";
   if (booking.status === "checked_in") return "Գրանցված";
@@ -210,6 +215,8 @@ function ProfilePage() {
         departureTime: tour?.departureTime || assigned?.departureTime || "",
         seats: booking.adults + booking.children,
         status: bookingStatusText(booking),
+        cancelled: booking.status === "cancelled",
+        cancellable: booking.status === "booked" && !booking.attendance,
         guideId: tour?.guideId ?? assigned?.guideId ?? null,
         driverId: tour?.driverId ?? assigned?.driverId ?? null,
         image: tour?.image_url ?? "",
@@ -317,13 +324,24 @@ function ProfilePage() {
                       {trip.departureTime ? ` · մեկնում ${trip.departureTime}` : ""}
                     </p>
                     <p className="mt-1 text-sm font-semibold">Տեղերի քանակ՝ {trip.seats}</p>
+                    {trip.cancellable && isSupabaseConfigured && (
+                      <div className="mt-3">
+                        <CancelBooking
+                          bookingId={trip.id}
+                          allowed={canCancelBooking(trip.departureDate, trip.departureTime)}
+                          onCancelled={() => setBookingsVersion((value) => value + 1)}
+                        />
+                      </div>
+                    )}
                   </div>
-                  <DepartureCrew
-                    departureDate={trip.departureDate}
-                    departureTime={trip.departureTime}
-                    guideId={trip.guideId}
-                    driverId={trip.driverId}
-                  />
+                  {!trip.cancelled && (
+                    <DepartureCrew
+                      departureDate={trip.departureDate}
+                      departureTime={trip.departureTime}
+                      guideId={trip.guideId}
+                      driverId={trip.driverId}
+                    />
+                  )}
                 </article>
               ))
             )}
