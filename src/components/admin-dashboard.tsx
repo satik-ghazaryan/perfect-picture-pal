@@ -145,7 +145,8 @@ const sections = [
   { id: "staff", label: "Զբոսավարներ և Վարորդներ", icon: Users },
   { id: "tourists", label: "Զբոսաշրջիկներ", icon: UserRound },
   { id: "bookings", label: "Ամրագրումներ", icon: Ticket },
-  { id: "transfer", label: "Տեղային տեղափոխում", icon: FileSpreadsheet },
+  // Kept for the rare case a tour exists only in one browser; not shown in the menu.
+  { id: "transfer", label: "Տեղային տեղափոխում", icon: FileSpreadsheet, hidden: true },
   { id: "settings", label: "Կարգավորումներ", icon: Settings },
 ] as const;
 
@@ -438,25 +439,27 @@ export function AdminDashboard({ session }: { session: AdminSession }) {
         <p className="px-3 pt-2 text-xs font-semibold text-muted-foreground">Ադմին պորտալ</p>
         <p className="px-3 pb-3 text-sm font-black">{session.fullName}</p>
         <nav className="flex gap-2 overflow-x-auto lg:flex-col">
-          {sections.map((item) => {
-            const Icon = item.icon;
-            const active = section === item.id;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setSection(item.id)}
-                className={`flex shrink-0 items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-semibold ${
-                  active
-                    ? "bg-primary text-primary-foreground"
-                    : "text-foreground hover:bg-primary-soft"
-                }`}
-              >
-                <Icon className="h-4 w-4 shrink-0" />
-                {item.label}
-              </button>
-            );
-          })}
+          {sections
+            .filter((item) => !("hidden" in item && item.hidden))
+            .map((item) => {
+              const Icon = item.icon;
+              const active = section === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setSection(item.id)}
+                  className={`flex shrink-0 items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-semibold ${
+                    active
+                      ? "bg-primary text-primary-foreground"
+                      : "text-foreground hover:bg-primary-soft"
+                  }`}
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  {item.label}
+                </button>
+              );
+            })}
         </nav>
         <Button
           type="button"
