@@ -1217,7 +1217,12 @@ export async function registerTourist(input: {
         data: { full_name: fullName, role: "tourist", phone, birth_date: birthDate },
       },
     });
-    if (error) throw new Error(error.message);
+    if (error) {
+      if (/rate limit/i.test(error.message)) {
+        throw new Error("Գրանցման նամակների սահմանաչափը լրացել է։ Փորձեք մի փոքր ուշ։");
+      }
+      throw new Error(error.message);
+    }
     if (data.user && data.user.identities && data.user.identities.length === 0) {
       throw new Error("Այս էլ. փոստով հաշիվ արդեն կա։");
     }

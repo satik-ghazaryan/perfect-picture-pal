@@ -226,6 +226,14 @@ function ProfilePage() {
   });
   const upcoming = trips.filter((trip) => !trip.completed);
   const past = trips.filter((trip) => trip.completed);
+  // Several bookings on one departure share one guide/driver card, shown after the last of them.
+  const upcomingGroups: { key: string; trips: typeof upcoming }[] = [];
+  for (const trip of upcoming) {
+    const key = `${trip.tourId}|${trip.departureDate}`;
+    const group = upcomingGroups.find((item) => item.key === key);
+    if (group) group.trips.push(trip);
+    else upcomingGroups.push({ key, trips: [trip] });
+  }
   const pastByTour = new Map<string, (typeof past)[number]>();
   for (const trip of past) {
     if (!pastByTour.has(trip.tourId)) pastByTour.set(trip.tourId, trip);
@@ -310,40 +318,45 @@ function ProfilePage() {
                 Ընթացիկ ամրագրում չկա։
               </p>
             ) : (
-              upcoming.map((trip) => (
-                <article key={trip.id} className="space-y-3">
-                  <div className="rounded-3xl border border-border bg-card p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <h2 className="text-base font-black leading-snug">{trip.title}</h2>
-                      <span className="shrink-0 rounded-full bg-primary-soft px-2.5 py-1 text-xs font-bold text-primary">
-                        {trip.status}
-                      </span>
-                    </div>
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      {formatDeparture(trip.departureDate)}
-                      {trip.departureTime ? ` · մեկնում ${trip.departureTime}` : ""}
-                    </p>
-                    <p className="mt-1 text-sm font-semibold">Տեղերի քանակ՝ {trip.seats}</p>
-                    {trip.cancellable && isSupabaseConfigured && (
-                      <div className="mt-3">
-                        <CancelBooking
-                          bookingId={trip.id}
-                          allowed={canCancelBooking(trip.departureDate, trip.departureTime)}
-                          onCancelled={() => setBookingsVersion((value) => value + 1)}
-                        />
+              upcomingGroups.map(({ key, trips: group }) => {
+                const active = group.find((trip) => !trip.cancelled);
+                return (
+                  <article key={key} className="space-y-3">
+                    {group.map((trip) => (
+                      <div key={trip.id} className="rounded-3xl border border-border bg-card p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <h2 className="text-base font-black leading-snug">{trip.title}</h2>
+                          <span className="shrink-0 rounded-full bg-primary-soft px-2.5 py-1 text-xs font-bold text-primary">
+                            {trip.status}
+                          </span>
+                        </div>
+                        <p className="mt-2 text-sm text-muted-foreground">
+                          {formatDeparture(trip.departureDate)}
+                          {trip.departureTime ? ` · մեկնում ${trip.departureTime}` : ""}
+                        </p>
+                        <p className="mt-1 text-sm font-semibold">Տեղերի քանակ՝ {trip.seats}</p>
+                        {trip.cancellable && isSupabaseConfigured && (
+                          <div className="mt-3">
+                            <CancelBooking
+                              bookingId={trip.id}
+                              allowed={canCancelBooking(trip.departureDate, trip.departureTime)}
+                              onCancelled={() => setBookingsVersion((value) => value + 1)}
+                            />
+                          </div>
+                        )}
                       </div>
+                    ))}
+                    {active && (
+                      <DepartureCrew
+                        departureDate={active.departureDate}
+                        departureTime={active.departureTime}
+                        guideId={active.guideId}
+                        driverId={active.driverId}
+                      />
                     )}
-                  </div>
-                  {!trip.cancelled && (
-                    <DepartureCrew
-                      departureDate={trip.departureDate}
-                      departureTime={trip.departureTime}
-                      guideId={trip.guideId}
-                      driverId={trip.driverId}
-                    />
-                  )}
-                </article>
-              ))
+                  </article>
+                );
+              })
             )}
             <Button className="rounded-full font-bold" asChild>
               <Link to="/">Ընտրել տուր</Link>
