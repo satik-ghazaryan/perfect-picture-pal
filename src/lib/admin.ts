@@ -183,6 +183,7 @@ export type TouristSession = {
   fullName: string;
   phone: string;
   email: string;
+  birthDate?: string;
   role: "tourist" | "guide" | "driver";
   token: string;
 };
@@ -562,6 +563,7 @@ function openAccountSession(user: DirectoryUser, token: string) {
     fullName: user.fullName,
     phone: user.phone,
     email: user.email,
+    birthDate: user.birthDate ?? "",
     role: user.role,
     token,
   };
@@ -731,6 +733,14 @@ async function restoreAccountFromAuth() {
     return;
   }
   const account = userFromRow(profile);
+  // Older sign-ups have no email on the profile row; the sign-in account always has it.
+  if (!account.email) account.email = session.user.email ?? "";
+  if (!account.birthDate) {
+    const metaBirth = session.user.user_metadata?.["birth_date"];
+    if (typeof metaBirth === "string" && /^\d{4}-\d{2}-\d{2}$/.test(metaBirth)) {
+      account.birthDate = metaBirth;
+    }
+  }
   setState({ session: null });
   openAccountSession(account, session.access_token);
   if (account.role === "guide") {

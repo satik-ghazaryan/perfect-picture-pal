@@ -192,7 +192,7 @@ function ProfilePage() {
 
   const fullName = person?.fullName || session.fullName;
   const email = person?.email || session.email;
-  const birthDate = person?.birthDate ?? "";
+  const birthDate = person?.birthDate || session.birthDate || "";
   const account = wallet.accounts[phoneKey(phone)];
   const points = account?.points ?? 0;
   const credits = account?.credits ?? [];
