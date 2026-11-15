@@ -1,8 +1,8 @@
 export type UserRole = "tourist" | "guide" | "driver" | "admin";
-export type BookingStatus = "booked" | "checked_in";
+export type BookingStatus = "booked" | "checked_in" | "cancelled";
 export type AttendanceStatus = "present" | "absent" | "pending";
 export type PaymentProviderName = "idram" | "telcell" | "arca";
-export type PaymentState = "SUCCESS" | "FAILED" | "PENDING";
+export type PaymentState = "SUCCESS" | "FAILED" | "PENDING" | "REFUNDED";
 export type TourStatus = "scheduled" | "in_progress" | "completed";
 export type LoyaltyKind = "earn" | "redeem";
 
