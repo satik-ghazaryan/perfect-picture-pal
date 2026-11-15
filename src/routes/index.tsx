@@ -35,7 +35,7 @@ import { cn } from "@/lib/utils";
 import { SiteHeader } from "@/components/site-header";
 import { TourCalendar } from "@/components/tour-calendar";
 import { TourCard } from "@/components/tour-card";
-import { regions, tourTypeLabels, tourTypes } from "@/data/tours";
+import { tourTypeLabels, tourTypes } from "@/data/tours";
 import { pickLocale, useSiteLocale } from "@/lib/locale";
 import { CatalogStatusPanel } from "@/components/catalog-status-panel";
 import {
@@ -43,9 +43,11 @@ import {
   getAdminServerSnapshot,
   getAdminSnapshot,
   hydrateAdmin,
+  listLocalDepartures,
   retryLiveCatalog,
   subscribeAdmin,
 } from "@/lib/admin";
+import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import heroImage from "@/assets/hero-armenia.jpg";
 
 export const Route = createFileRoute("/")({
@@ -109,7 +111,11 @@ const policies = [
 function Index() {
   const catalog = useSyncExternalStore(subscribeAdmin, getAdminSnapshot, getAdminServerSnapshot);
   const saturday = useMemo(upcomingSaturday, []);
-  const [date, setDate] = useState<Date | undefined>(saturday);
+  const [date, setDate] = useState<Date | undefined>();
+  const [dateOpen, setDateOpen] = useState(false);
+  const [departures, setDepartures] = useState<{ tourId: string; departureDate: string }[] | null>(
+    null,
+  );
   const [region, setRegion] = useState("all");
   const [type, setType] = useState("all");
   const [policyId, setPolicyId] = useState<(typeof policies)[number]["id"] | null>(null);
@@ -124,11 +130,63 @@ function Index() {
     hydrateAdmin();
   }, []);
 
+  useEffect(() => {
+    if (!isSupabaseConfigured || !supabase) {
+      setDepartures(listLocalDepartures());
+      return;
+    }
+    let cancelled = false;
+    void supabase
+      .from("departures")
+      .select("tour_id, departure_date, available_seats")
+      .gt("available_seats", 0)
+      .then(({ data }) => {
+        if (cancelled) return;
+        setDepartures(
+          (data ?? []).map((row) => ({ tourId: row.tour_id, departureDate: row.departure_date })),
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Directions come from the published tours themselves, so every tour can be found.
+  const regionOptions = [
+    ...new Map(
+      tourList
+        .filter((tour) => tour.location_hy.trim())
+        .map((tour) => [
+          tour.location_hy.trim(),
+          {
+            hy: tour.location_hy.trim(),
+            en: tour.location_en || tour.location_hy,
+            ru: tour.location_ru || tour.location_hy,
+          },
+        ]),
+    ).values(),
+  ].sort((left, right) => left.hy.localeCompare(right.hy, "hy"));
+  const dateKey = date ? format(date, "yyyy-MM-dd") : "";
+  const toursOnDate = dateKey
+    ? new Set(
+        (departures ?? []).filter((row) => row.departureDate === dateKey).map((row) => row.tourId),
+      )
+    : null;
+  const filtersActive = Boolean(dateKey) || region !== "all" || type !== "all";
   const filtered = tourList.filter(
     (t) =>
-      (region === "all" || t.category === region || t.location_hy === region) &&
-      (type === "all" || t.type === type),
+      (region === "all" || t.location_hy.trim() === region || t.category === region) &&
+      (type === "all" || t.type === type) &&
+      (!toursOnDate || toursOnDate.has(t.id)),
   );
+  const resetFilters = () => {
+    setDate(undefined);
+    setRegion("all");
+    setType("all");
+  };
+  const showResults = () => {
+    document.getElementById("tours")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   return (
     <div id="top" className="min-h-screen bg-background font-sans">
@@ -174,7 +232,7 @@ function Index() {
       <section className="relative z-10 mx-auto -mt-12 max-w-7xl px-4 sm:px-6">
         <div className="rounded-3xl border border-border bg-card p-3 shadow-float sm:p-4">
           <div className="grid gap-3 lg:grid-cols-[1.1fr_1.2fr_1fr_auto]">
-            <Popover>
+            <Popover open={dateOpen} onOpenChange={setDateOpen}>
               <PopoverTrigger asChild>
                 <Button
                   variant="outline"
@@ -184,19 +242,37 @@ function Index() {
                   )}
                 >
                   <CalendarIcon className="h-4 w-4 text-primary" />
-                  {date ? format(date, "d MMM", { locale: hy }) : "Ընտրեք ամսաթիվը"}
+                  {date ? format(date, "d MMMM", { locale: hy }) : "Ցանկացած ամսաթիվ"}
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-0" align="start">
                 <Calendar
                   mode="single"
                   selected={date}
-                  onSelect={setDate}
-                  defaultMonth={saturday}
+                  onSelect={(next) => {
+                    setDate(next);
+                    setDateOpen(false);
+                  }}
+                  defaultMonth={date ?? saturday}
+                  disabled={{ before: new Date() }}
                   initialFocus
                   locale={hy}
                   className={cn("p-3 pointer-events-auto")}
                 />
+                {date && (
+                  <div className="border-t border-border p-2">
+                    <Button
+                      variant="ghost"
+                      className="w-full rounded-xl text-sm"
+                      onClick={() => {
+                        setDate(undefined);
+                        setDateOpen(false);
+                      }}
+                    >
+                      Ցանկացած ամսաթիվ
+                    </Button>
+                  </div>
+                )}
               </PopoverContent>
             </Popover>
 
@@ -206,7 +282,7 @@ function Index() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Բոլոր ուղղությունները</SelectItem>
-                {regions.map((item) => (
+                {regionOptions.map((item) => (
                   <SelectItem key={item.hy} value={item.hy}>
                     {pickLocale(item, lang)}
                   </SelectItem>
@@ -228,7 +304,7 @@ function Index() {
               </SelectContent>
             </Select>
 
-            <Button className="h-12 rounded-2xl px-8 text-sm font-bold">
+            <Button className="h-12 rounded-2xl px-8 text-sm font-bold" onClick={showResults}>
               <Search className="h-4 w-4" />
               Որոնել
             </Button>
@@ -247,7 +323,7 @@ function Index() {
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
               {catalog.catalogStatus === "loaded"
-                ? `Գտնվել է ${filtered.length} տուր`
+                ? `Գտնվել է ${filtered.length} տուր${date ? ` · ${format(date, "d MMMM", { locale: hy })}` : ""}`
                 : catalog.catalogStatus === "error"
                   ? "Ցանկը չբեռնվեց"
                   : "Բեռնվում է..."}
@@ -268,6 +344,18 @@ function Index() {
             <TourCard key={tour.id} tour={tour} />
           ))}
         </div>
+        {catalog.catalogStatus === "loaded" && filtersActive && (
+          <div className="mt-6 flex flex-wrap items-center gap-3">
+            {filtered.length === 0 && (
+              <p className="text-sm text-muted-foreground">
+                Ընտրված պայմաններով տուր չգտնվեց։ Փորձեք այլ ամսաթիվ կամ ուղղություն։
+              </p>
+            )}
+            <Button variant="outline" className="rounded-full font-bold" onClick={resetFilters}>
+              Ցույց տալ բոլոր տուրերը
+            </Button>
+          </div>
+        )}
       </section>
 
       {/* Loyalty strip */}
