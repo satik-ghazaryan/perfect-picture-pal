@@ -213,10 +213,20 @@ type Draft = {
   itinerary: string;
   chapters: ChapterDraft[];
   highlights: string[];
+  included: string[];
+  excluded: string[];
   departurePlace: string;
   departureDate: string;
   departureId: string | null;
 };
+
+const DEFAULT_INCLUDED = ["Հարմարավետ ավտոբուս Արմավիրից և վերադարձ", "Հայախոս ուղեկցորդ"];
+const DEFAULT_EXCLUDED = ["Ճաշ և անձնական ծախսեր"];
+
+/** One item per line; empty lines are dropped. */
+function lineItems(lines: string[]) {
+  return lines.map((item) => item.trim()).filter(Boolean);
+}
 
 const chapterLanguages: { value: AudioLanguage; label: string }[] = [
   { value: "hy", label: "HY · Հայերեն" },
@@ -245,6 +255,8 @@ function emptyDraft(virtualOnly = false): Draft {
     itinerary: "",
     chapters: [],
     highlights: [],
+    included: virtualOnly ? [] : [...DEFAULT_INCLUDED],
+    excluded: virtualOnly ? [] : [...DEFAULT_EXCLUDED],
     departurePlace: virtualOnly ? "" : getAdminSnapshot().settings.departurePlace,
     departureDate: "",
     departureId: null,
@@ -273,6 +285,8 @@ function draftFromTour(tour: ManagedTour, departure?: CatalogDeparture | null): 
       .map((stop) => `${stop.time} | ${stop.title} | ${stop.description}`)
       .join("\n"),
     highlights: [...tour.highlights],
+    included: [...tour.included],
+    excluded: [...tour.excluded],
     departurePlace: tour.departurePlace,
     departureDate: departure?.departureDate ?? "",
     departureId: departure?.id ?? null,
@@ -862,10 +876,8 @@ function ToursSection({
       day: virtualOnly ? "saturday" : (weekendDayFromIsoDate(draft.departureDate) ?? ""),
       highlights: virtualOnly ? [] : draft.highlights.map((item) => item.trim()).filter(Boolean),
       itinerary: virtualOnly ? [] : parseItinerary(draft.itinerary),
-      included: virtualOnly
-        ? []
-        : (existing?.included ?? ["Հարմարավետ ավտոբուս Արմավիրից և վերադարձ", "Հայախոս ուղեկցորդ"]),
-      excluded: virtualOnly ? [] : (existing?.excluded ?? ["Ճաշ և անձնական ծախսեր"]),
+      included: virtualOnly ? [] : lineItems(draft.included),
+      excluded: virtualOnly ? [] : lineItems(draft.excluded),
       audioChapters: audio,
       hotspots: existing?.hotspots ?? [],
       panoramaUrl,
@@ -1344,6 +1356,26 @@ function ToursSection({
                   placeholder={"08:30 | Մեկնում Արմավիրից | Հավաք Կենտրոնական հրապարակում"}
                 />
               </Field>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Ներառված է (ամեն տողում մեկ կետ)" id="tour-included">
+                  <Textarea
+                    id="tour-included"
+                    value={draft.included.join("\n")}
+                    onChange={(event) => update({ included: event.target.value.split("\n") })}
+                    className="min-h-28 rounded-2xl"
+                    placeholder={"Ավտոբուս Արմավիրից և վերադարձ\nԶբոսավար"}
+                  />
+                </Field>
+                <Field label="Ներառված չէ (ամեն տողում մեկ կետ)" id="tour-excluded">
+                  <Textarea
+                    id="tour-excluded"
+                    value={draft.excluded.join("\n")}
+                    onChange={(event) => update({ excluded: event.target.value.split("\n") })}
+                    className="min-h-28 rounded-2xl"
+                    placeholder={"Ճաշ\nՃոպանուղու տոմս"}
+                  />
+                </Field>
+              </div>
               <AudioChapterManager
                 chapters={draft.chapters}
                 onChange={(chapters) => update({ chapters })}
