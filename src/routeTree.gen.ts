@@ -29,6 +29,7 @@ import { Route as ApiPaymentArcaCallbackRouteImport } from './routes/api/payment
 import { Route as ApiPaymentIdramCallbackRouteImport } from './routes/api/payment/idram-callback'
 import { Route as ApiPaymentTelcellCallbackRouteImport } from './routes/api/payment/telcell-callback'
 import { Route as ApiStaffAccountsRouteImport } from './routes/api/staff/accounts'
+import { Route as ApiVoicePostCallRouteImport } from './routes/api/voice/post-call'
 import { Route as ApiVoiceToursRouteImport } from './routes/api/voice/tours'
 import { Route as ApiIdeasRunsRunIdRouteImport } from './routes/api/ideas/runs.$runId'
 
@@ -134,6 +135,11 @@ const ApiStaffAccountsRoute = ApiStaffAccountsRouteImport.update({
   path: '/api/staff/accounts',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiVoicePostCallRoute = ApiVoicePostCallRouteImport.update({
+  id: '/api/voice/post-call',
+  path: '/api/voice/post-call',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiVoiceToursRoute = ApiVoiceToursRouteImport.update({
   id: '/api/voice/tours',
   path: '/api/voice/tours',
@@ -166,6 +172,7 @@ export interface FileRoutesByFullPath {
   '/api/payment/idram-callback': typeof ApiPaymentIdramCallbackRoute
   '/api/payment/telcell-callback': typeof ApiPaymentTelcellCallbackRoute
   '/api/staff/accounts': typeof ApiStaffAccountsRoute
+  '/api/voice/post-call': typeof ApiVoicePostCallRoute
   '/api/voice/tours': typeof ApiVoiceToursRoute
   '/api/ideas/runs/$runId': typeof ApiIdeasRunsRunIdRoute
 }
@@ -190,6 +197,7 @@ export interface FileRoutesByTo {
   '/api/payment/idram-callback': typeof ApiPaymentIdramCallbackRoute
   '/api/payment/telcell-callback': typeof ApiPaymentTelcellCallbackRoute
   '/api/staff/accounts': typeof ApiStaffAccountsRoute
+  '/api/voice/post-call': typeof ApiVoicePostCallRoute
   '/api/voice/tours': typeof ApiVoiceToursRoute
   '/api/ideas/runs/$runId': typeof ApiIdeasRunsRunIdRoute
 }
@@ -215,6 +223,7 @@ export interface FileRoutesById {
   '/api/payment/idram-callback': typeof ApiPaymentIdramCallbackRoute
   '/api/payment/telcell-callback': typeof ApiPaymentTelcellCallbackRoute
   '/api/staff/accounts': typeof ApiStaffAccountsRoute
+  '/api/voice/post-call': typeof ApiVoicePostCallRoute
   '/api/voice/tours': typeof ApiVoiceToursRoute
   '/api/ideas/runs/$runId': typeof ApiIdeasRunsRunIdRoute
 }
@@ -241,6 +250,7 @@ export interface FileRouteTypes {
     | '/api/payment/idram-callback'
     | '/api/payment/telcell-callback'
     | '/api/staff/accounts'
+    | '/api/voice/post-call'
     | '/api/voice/tours'
     | '/api/ideas/runs/$runId'
   fileRoutesByTo: FileRoutesByTo
@@ -265,6 +275,7 @@ export interface FileRouteTypes {
     | '/api/payment/idram-callback'
     | '/api/payment/telcell-callback'
     | '/api/staff/accounts'
+    | '/api/voice/post-call'
     | '/api/voice/tours'
     | '/api/ideas/runs/$runId'
   id:
@@ -289,6 +300,7 @@ export interface FileRouteTypes {
     | '/api/payment/idram-callback'
     | '/api/payment/telcell-callback'
     | '/api/staff/accounts'
+    | '/api/voice/post-call'
     | '/api/voice/tours'
     | '/api/ideas/runs/$runId'
   fileRoutesById: FileRoutesById
@@ -314,6 +326,7 @@ export interface RootRouteChildren {
   ApiPaymentIdramCallbackRoute: typeof ApiPaymentIdramCallbackRoute
   ApiPaymentTelcellCallbackRoute: typeof ApiPaymentTelcellCallbackRoute
   ApiStaffAccountsRoute: typeof ApiStaffAccountsRoute
+  ApiVoicePostCallRoute: typeof ApiVoicePostCallRoute
   ApiVoiceToursRoute: typeof ApiVoiceToursRoute
   ApiIdeasRunsRunIdRoute: typeof ApiIdeasRunsRunIdRoute
 }
@@ -460,6 +473,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiStaffAccountsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/voice/post-call': {
+      id: '/api/voice/post-call'
+      path: '/api/voice/post-call'
+      fullPath: '/api/voice/post-call'
+      preLoaderRoute: typeof ApiVoicePostCallRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/voice/tours': {
       id: '/api/voice/tours'
       path: '/api/voice/tours'
@@ -498,6 +518,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPaymentIdramCallbackRoute: ApiPaymentIdramCallbackRoute,
   ApiPaymentTelcellCallbackRoute: ApiPaymentTelcellCallbackRoute,
   ApiStaffAccountsRoute: ApiStaffAccountsRoute,
+  ApiVoicePostCallRoute: ApiVoicePostCallRoute,
   ApiVoiceToursRoute: ApiVoiceToursRoute,
   ApiIdeasRunsRunIdRoute: ApiIdeasRunsRunIdRoute,
 }
