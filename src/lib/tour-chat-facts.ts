@@ -218,7 +218,7 @@ function marzesInText(text: string) {
   return found;
 }
 
-function tourMarzes(tour: PublicTourFact) {
+export function tourMarzes(tour: PublicTourFact) {
   const found = new Set<string>();
   const sources = [tour.location ?? "", ...aliases(tour)];
   for (const source of sources) {
